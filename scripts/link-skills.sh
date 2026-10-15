@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Link every skill in this repo into ~/.claude/skills, so the repo is the source of truth.
+# Link skills from this repo into ~/.claude/skills, so the repo is the source of truth.
+# Usage: link-skills.sh [skill-name ...]   (no names: link every skill in skills/)
 # An existing real directory is moved to ~/.claude/skill-backups/<date>/ first, never deleted.
 set -euo pipefail
 
@@ -8,7 +9,17 @@ TARGET="$HOME/.claude/skills"
 BACKUP="$HOME/.claude/skill-backups/$(date +%Y-%m-%d)"
 mkdir -p "$TARGET"
 
-for src in "$REPO"/skills/*/; do
+if [ "$#" -gt 0 ]; then
+  srcs=()
+  for name in "$@"; do
+    [ -d "$REPO/skills/$name" ] || { echo "no such skill: $name" >&2; exit 1; }
+    srcs+=("$REPO/skills/$name/")
+  done
+else
+  srcs=("$REPO"/skills/*/)
+fi
+
+for src in "${srcs[@]}"; do
   name="$(basename "$src")"
   dest="$TARGET/$name"
   if [ -L "$dest" ]; then

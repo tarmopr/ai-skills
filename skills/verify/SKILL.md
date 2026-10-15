@@ -1,6 +1,6 @@
 ---
 name: verify
-description: Use when a branch or PR must be brought to merge-ready without supervision, or when asked to "verify", "review and fix", or "get CI green" — runs the repo's own gates from .claude/ship.md, UI scenarios and review rounds until clean. Also use to resume such a loop after a context compaction.
+description: Use when a branch or PR must be brought to merge-ready without supervision, or when asked to "verify", "review and fix", or "get CI green" — for repos configured for ship (.claude/ship.md; for .claude/ship-plan.md, use verify-and-fix), runs the repo's own gates from .claude/ship.md, UI scenarios and review rounds until clean. Also use to resume such a loop after a context compaction.
 argument-hint: '[base branch name, default the config''s Base branch]'
 ---
 

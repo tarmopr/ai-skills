@@ -1,6 +1,6 @@
 ---
 name: ship
-description: Use when a written implementation plan exists and the user wants it carried, unsupervised, all the way to a merged PR on a green base branch in a GitHub repo — "ship the plan", "ship this", "implement and merge", "take this plan to the base branch". Also use to resume such a run after a context compaction.
+description: Use when a written implementation plan exists and the user wants it carried, unsupervised, all the way to a merged PR on a green base branch in a GitHub repo that tracks work in Linear or in no tracker (for Jira, use ship-plan) — "ship the plan", "ship this", "implement and merge", "take this plan to the base branch". Also use to resume such a run after a context compaction.
 argument-hint: '[plan file path, or Linear issue id when the repo configures Linear]'
 allowed-tools:
   - Bash(git switch -c feature/*)
