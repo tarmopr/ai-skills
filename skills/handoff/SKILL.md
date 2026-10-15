@@ -1,7 +1,7 @@
 ---
 name: handoff
 description: Use when the session should end so work can continue in a fresh context — the context is large, a logical step or phase is complete, a usage limit is near, or the user says "hand off", "write a handoff", "save state before I clear", "wrap up the session". Writes the state to a handoff file and tells the user to /clear and type /continue-handoff.
-argument-hint: '[short name for the handoff, e.g. for-286-pr3]'
+argument-hint: '[short name for the handoff, e.g. proj-123-pr3]'
 allowed-tools:
   - Bash(node ${CLAUDE_SKILL_DIR}/scripts/gather.mjs*)
   - Bash(node ${CLAUDE_SKILL_DIR}/scripts/check.mjs*)
