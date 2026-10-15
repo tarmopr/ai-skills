@@ -1,0 +1,14 @@
+{
+  "name": "tarmopr",
+  "description": "Tarmo Protsin's Claude Code skills",
+  "owner": {
+    "name": "Tarmo Protsin"
+  },
+  "plugins": [
+    {
+      "name": "ai-skills",
+      "source": ".",
+      "description": "Ship a plan to a merged PR, verify a branch to merge-ready, and hand off work between sessions."
+    }
+  ]
+}
