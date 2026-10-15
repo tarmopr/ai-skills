@@ -305,7 +305,7 @@ At close-out, before the report, on a branch from `origin/<base>`
 - **Every tooling blocker** you got past goes into `.claude/ship/blockers.md`, in its format.
 - Create either file from [log-formats.md](log-formats.md) if it is missing.
 - **Config changes the user approved** go into `.claude/ship.md` on the same branch.
-- **Lessons about the loop itself** (a missing step, a wrong order, a rule that misfired) go in the report as "proposed skill change", with the exact text. Never edit `~/.claude/skills/` on your own: those files are shared by every repo and not in git.
+- **Lessons about the loop itself** (a missing step, a wrong order, a rule that misfired) go in the report as "proposed skill change", with the exact text. Never edit this skill's files on your own: every repo uses them, and they are published from their own git repository.
 - **Batch empty:** open a docs-only PR, merge it through sections 4–6, and link it in the report.
 - **Batch not empty:** commit and push the branch with those entries marked `Answer: pending` *before* you ask, so the lessons survive if the session ends. When the answers come, fill them in, then open the PR and merge it the same way.
 

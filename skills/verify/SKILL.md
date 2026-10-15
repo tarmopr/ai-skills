@@ -200,7 +200,8 @@ lessons branch, so it never lands in the product PR.
   second one.
 - If the lesson changes how the loop runs (a missing step, a reviewer to add, a
   step in the wrong order), propose the change to this skill in the report.
-  Never edit `~/.claude/skills/` silently: it is shared by every repo.
+  Never edit this skill's files silently: every repo uses them, and they are
+  published from their own git repository.
 - A missing gate or reviewer: propose the `.claude/ship.md` change in the report.
 - If the lesson is a rule for the whole repo rather than for this loop, propose
   a change to the repo's agent instructions file in the report. Do not edit it
