@@ -132,6 +132,15 @@ Scope: `git diff origin/<base>...HEAD`. Launch these in parallel, each on the wh
   - The config's `## Security extras`.
   A security finding that exposes data or lets a role do more than it should is Critical, and it is not re-graded down.
 
+**Copied code, every round.** For each file the diff adds that copies another
+file in the repo (a second service's setup, a test fixture, a helper), diff it
+against its source. A CI duplication gate (Sonar's "Duplicated Lines on New
+Code", 3% by default) fails the PR on a shared block that no local gate
+catches, and finding it after the push costs a CI round and a question. A shared
+block of more than about 30 lines is an Important finding: extract it the way
+the repo's agent instructions say, or, when the plan copies on purpose, put it
+in the question batch with the extraction as the recommended option.
+
 Give each reviewer the ledger's `Ruling:` lines, so settled questions are not
 raised again as new findings.
 
