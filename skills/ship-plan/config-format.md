@@ -165,6 +165,36 @@ current checkout is busy. Dependencies come from `## Prerequisites`.
 | `Copy:` | Git-ignored files a run needs, copied from the main checkout (`.env`, local secrets files) | none |
 | `Shared:` | Resources two checkouts cannot use at once: fixed container names, ports | none |
 
+### `## Models`
+
+The model and effort for each subagent role. Every dispatch passes both
+explicitly: an omitted model inherits the session's, and the session is
+usually the most expensive seat. The session itself (it runs the stages, the
+implementation loop, triage and merges) keeps the model it was started on:
+start runs on Opus at high effort.
+
+| Role | Used by | Default |
+|---|---|---|
+| `Spec stage` | `ship-issue` I2: research, design, spec | `opus`, `xhigh` |
+| `Plan stage` | `ship-issue` I4: the plan, from the spec alone | `opus`, `high` |
+| `Implementer` | `ship-plan` section 2: each task's implementer | `sonnet`, `high` |
+| `Escalation` | `ship-plan` section 2: fix rounds 4–5, a stuck implementer | `opus`, `high` |
+| `Task review` | `ship-plan` section 2: each task's spec and quality reviewers | `sonnet`, `high` |
+| `Final review` | `ship-plan` section 2: the whole-branch review | `opus`, `xhigh` |
+| `Review round` | `verify-and-fix` section 4: every review agent | `opus`, `high` |
+
+Model: `sonnet`, `opus`, `haiku`, `fable`, or a full model ID. Effort: `low`,
+`medium`, `high`, `xhigh` or `max`. A role left out takes its default; a row
+with only a model keeps the default effort.
+
+```markdown
+## Models
+| Role | Model | Effort |
+|---|---|---|
+| Implementer | sonnet | medium |
+| Final review | opus | max |
+```
+
 ### `## Never do`
 
 Bullets. Each is added to the "never on its own" list of both skills for this
@@ -177,7 +207,7 @@ repo: `ship-plan`'s authorization and `verify-and-fix`'s stop conditions. Defaul
 2. **Manifests fill gaps** when CI is missing or thin: `package.json` scripts, `*.sln` / `*.csproj`, `pyproject.toml`, `go.mod`, `Cargo.toml`, `Makefile`, `Taskfile.yml`. Take only targets named lint, format check, typecheck, test, build.
 3. **`## CI`:** `Workflow:` the workflow that runs on `push` to the base branch. No workflow file at all: `None`. Workflows on PRs only: leave `Workflow:` out and note "no push workflow" in the batch.
    **`## Repo`:** set `Merge:` from `gh repo view --json squashMergeAllowed,mergeCommitAllowed`: `squash` when allowed, else `merge`.
-4. **Never invent** `## Jira` (the issue question drafts it), `## Slack` (pre-flight asks for it), `## Never do`, `## UI testing` sign-ins, `## Evidence`, `## Worktree`, or reviewers. List them in the batch as "consider adding".
+4. **Never invent** `## Jira` (the issue question drafts it), `## Slack` (pre-flight asks for it), `## Never do`, `## UI testing` sign-ins, `## Evidence`, `## Worktree`, `## Models`, or reviewers. List them in the batch as "consider adding".
 5. **Write the draft** to `.claude/ship-plan.md` and put it at the top of the question batch, with each gate's source (`ci.yml: job test, step 3`). Until the user confirms it, `verify-and-fix` runs no gate. Once confirmed: under `ship-plan`, it is committed on the feature branch; `verify-and-fix` run on its own leaves it uncommitted and says so.
 
 ## Examples

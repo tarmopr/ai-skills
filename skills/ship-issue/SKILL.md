@@ -51,10 +51,17 @@ with a standing answer in any of them is not asked again.
 
 From the config, this skill reads: `## Repo` (`<base>`, branch pattern),
 `## Jira`, `## CI`, `## Prerequisites`, `## UI testing`, `## Slack` (or
-`.claude/ship-plan.local.md`), `## Evidence` and `## Worktree`. **No config:** draft it, as ship-plan's config-format.md says
+`.claude/ship-plan.local.md`), `## Evidence`, `## Worktree` and `## Models`. **No config:** draft it, as ship-plan's config-format.md says
 ("Drafting a missing config"), and put the draft at the top of the I3 batch.
 Research, spec and plan proceed meanwhile; no gate runs until it is confirmed.
 Once confirmed, commit it on the feature branch with a `Ruling:`.
+
+**Two stages run as subagents:** the Spec stage (research, design, spec) and
+the Plan stage, each from a fresh context at the model and effort of its
+`## Models` row, by [stage-prompts.md](stage-prompts.md). This session never
+changes its own model or effort, which would invalidate its prompt cache: start
+it on Opus at high effort. It does the routing, Jira, the checkout, the batch,
+the commits and ship-plan.
 
 **All work is tracked in a Jira issue.** There is no "no Jira" path: with no
 issue key, I1 asks ship-plan's templates.md "Jira: issue question" (without its
@@ -90,7 +97,9 @@ Below it, one line per event, in ship-plan's formats (its section 3):
 — <options, recommendation> — <what it blocks>`, `Asked: <question> — <answer, or
 "pending">` for every question put to the user, and `Lesson: <what> — <the
 step that would have caught it>`. When the batch is sent, the last line is
-`Waiting: batch of <n>, sent <date>`.
+`Waiting: batch of <n>, sent <date>`. Each stage writes
+`Stage: <spec|plan> <new|revise> dispatched <date>` before its dispatch and
+`Stage: <spec|plan> done <path>` once its report is copied in.
 
 ship-plan keeps its own ledger in `.superpowers/ship-plan/<branch>/`. **Never
 create or write that file.** ship-plan treats an existing ledger as a resumed
@@ -118,7 +127,9 @@ With a key, take the first matching row:
 | A ship-plan ledger for the issue's branch, or an open PR for the issue (`gh pr list --state open --search "<KEY-n>"`) | Invoke ship-plan **with no argument**, or with the user's answers if this run was started with some. It resumes from its own ledger. |
 | A committed plan for the issue, and the issue description already holds its `## Plan` | I6 |
 | A committed plan, Jira not yet updated | I5 → I6 |
-| A spec with no plan | I4, step 3 |
+| This skill's ledger: its last `Stage:` line is `dispatched`, with no `done` after it (the session died during a stage) | Dispatch that stage again, same mode; it overwrites the file |
+| A spec holding a `[pending Q<n>` marker | I3: the batch, or the answers this run brings |
+| A spec with no plan | I4 |
 | Anything less | I1 |
 
 A spec or plan "for the issue" is a file under `docs/superpowers/specs/` or
@@ -138,27 +149,20 @@ These are the only questions asked before research.
 
 Then choose the checkout (section W) before writing anything.
 
-## I2. Research
+## I2. Research and spec: the Spec stage
 
-Before designing, confirm the problem is real and find its edges. Every claim
-in the spec quotes its evidence: code with `file:line`, a log count, a
-measured response. When the issue asserts something, verify it. Don't copy it.
-Research writes nothing outside the checkout chosen in W, and nothing to any
-shared environment.
-
-1. **Code:** read the flow end to end. Find every caller of what will change, not only the one the issue names. Then list the architecture rules the new files will fall under (the repo's architecture tests, layer and visibility rules), and check each one against what the tooling will generate, not only against what you write: migrations, model snapshots, scaffolded clients. Generated code breaks rules too (a generated `public` class in a project that allows one public type), and finding it here costs a spec line instead of a plan rewrite.
-2. **History:** `git log -S'<string>' --format='%h %ad %s' --date=short -- <file>` shows when and why the code arrived.
-3. **The running system,** read-only, following [evidence.md](evidence.md) and the config's `## Evidence`. **Record a baseline that will change when the fix lands.** If the behaviour can be seen on a deployed environment, the baseline is a measured response, and it becomes an acceptance check that needs no sign-in. If it can't, or `## Evidence` is absent, the baseline is a reproduction (input, observed output, expected output). The failing test that captures it is the plan's first task, not research.
-4. **Environment for the later ship-plan run:** the Prerequisites (can they run in the chosen checkout?), auth (`gh auth status`; `atlassianUserInfo` when Jira is configured; any auth check a Prerequisites row or `## Evidence` names), and **the base branch's last CI runs**: `gh run list --branch <base> --workflow <config Workflow> --limit 3`. A red base branch from someone else's work will fail this PR's checks too; record it in the spec now (ship-plan section 5, step 2 says how the run handles it).
-
-A command that would write to a shared environment goes in the batch instead.
+1. **Branch,** once the issue key is known: `git switch -c <branch> origin/<base>` in the checkout chosen in section W (in a new worktree, from its detached `origin/<base>`), named by the config's `Branch:` pattern: `<type>/<KEY-n>-<slug>`, the key upper case so GitHub for Jira links it. Never a username prefix, and never the local base branch.
+2. **Hand the issue over on disk.** Write `<ledger dir>/issue.md`: the issue as I1 read it (description, comments, linked issues), or the user's description. The stage reads it there and needs no Jira access.
+3. **Dispatch the Spec stage** ([stage-prompts.md](stage-prompts.md), mode `new`) with the `Spec stage` row of `## Models` (default `opus`, `xhigh`). It researches (code, history, the running system, read-only by [evidence.md](evidence.md)), records the baseline, drafts the approaches, rules where the confidence test passes, and writes the spec with each open choice marked `[pending Q<n>: …]`.
+4. **Meanwhile, check the environment** for the later ship-plan run yourself: the Prerequisites (can they run in the chosen checkout?), auth (`gh auth status`; `atlassianUserInfo` when Jira is configured; any auth check a Prerequisites row or `## Evidence` names), and **the base branch's last CI runs**: `gh run list --branch <base> --workflow <config Workflow> --limit 3`. A red base branch from someone else's work will fail this PR's checks too; it goes in the spec (step 5) and ship-plan section 5, step 2 says how the run handles it. A command that would write to a shared environment goes in the batch instead.
+5. **Take the report in.** `Status:` other than `done`: a wrong checkout is a bug in this run (fix the path and dispatch again); `blocked` goes in the batch. Otherwise copy its `Ruling:`, `Parked:` and `Lesson:` lines into the ledger, its `Q<n>` lines into the I3 batch, and the step 4 findings into the spec. Check the file it names exists, then commit the spec on the branch. Never re-check its research yourself: that would load into this session the context the stage exists to keep out of it.
 
 ## I3. The one question batch
 
 Collect every question the rest of the run could need, then ask them together.
 
-1. **Design decisions.** Draft the 2–3 approaches the way brainstorming does, with a recommendation. Then apply ship-plan's confidence test (section 3) to each open choice. A choice that passes becomes a `Ruling:`. A choice that fails goes into the batch. Fails are: it widens access, it changes money, nothing quotable points one way, it cannot be undone by a follow-up commit, or it is on the "does not authorize" list.
-2. **What ship-plan's pre-flight would ask** (ship-plan section 0, steps 1, 6 and 7, and its authorization section): a draft config; the exact allow lines (`Bash(<command>)`) for every gate and Prerequisites command, in a permission mode that prompts; hosted sign-ins for `## UI testing`; a drafted `## Jira` section; **the Slack channel when neither the config nor `.claude/ship-plan.local.md` has `## Slack`** (ship-plan section 0, step 6: same options; write the local file when the answer comes, and commit `## Slack` to the config on the branch with the next commit I4 makes); and anything on the "does not authorize" list. Ask them now, so ship-plan's pre-flight has nothing left.
+1. **Design decisions:** the Spec stage's `Q<n>` lines, as it wrote them. It already applied ship-plan's confidence test (section 3); don't re-rule them here.
+2. **What ship-plan's pre-flight would ask** (ship-plan section 0, steps 1, 6 and 7, and its authorization section): a draft config; the exact allow lines (`Bash(<command>)`) for every gate and Prerequisites command, in a permission mode that prompts; hosted sign-ins for `## UI testing`; a drafted `## Jira` section; **the Slack channel when neither the config nor `.claude/ship-plan.local.md` has `## Slack`** (ship-plan section 0, step 6: same options; write the local file when the answer comes, and commit `## Slack` to the config on the branch with the next commit this run makes); and anything on the "does not authorize" list. Ask them now, so ship-plan's pre-flight has nothing left.
 3. **Environment decisions** (section W) that could not be settled.
 4. **Standing answers** remove questions. Apply them first.
 
@@ -169,7 +173,9 @@ one numbered message. End it with: **"Answer with `/ship-issue <KEY-n>
 That form restarts the skill, renews its pre-approval (a plain reply clears
 it), and resumes from the ledger. Carry on meanwhile with everything the
 answers don't block. **Empty batch: ask nothing.** Each answer becomes a
-`Ruling: user <date>` line and is written into the spec.
+`Ruling: user <date>` line. Answers to `Q<n>` lines go into the spec through
+the Spec stage in mode `revise` (same `## Models` row), never by editing the
+spec here; commit its result.
 
 **A question found after the batch** is itself a lesson. Rule on it if the
 confidence test passes. Otherwise, if it blocks the spec or plan, ask it
@@ -177,14 +183,13 @@ alone, with the same answer line. If it doesn't block, carry it into ship-plan
 as `[needs a decision]` in the plan. Either way, write a `Lesson:` naming the
 research step that would have caught it.
 
-## I4. Spec and plan
+## I4. Plan: the Plan stage
 
-1. **Branch,** once the issue key is known: `git switch -c <branch> origin/<base>` in the checkout chosen in section W (in a new worktree, from its detached `origin/<base>`), named by the config's `Branch:` pattern: `<type>/<KEY-n>-<slug>`, the key upper case so GitHub for Jira links it. Never a username prefix, and never the local base branch.
-2. **REQUIRED SUB-SKILL:** superpowers:brainstorming, for its design sections, spec format and self-review. Always write a spec, even when brainstorming classifies the change as bounded, because ship-plan needs a plan and the plan argues from the spec. The classification sets the length: a bounded change gets a page, not a design document. Its "no spec file" and its approval gates are overridden by this skill, and each is recorded as a `Ruling:`. The spec includes the **evidence**, the **decisions and who made them**, what is **out of scope**, and **acceptance**, with the baseline from I2.3. Save it to `docs/superpowers/specs/<yyyy-mm-dd>-<KEY-n>-<slug>-design.md` and commit it on the branch.
-3. **REQUIRED SUB-SKILL:** superpowers:writing-plans. Save to `docs/superpowers/plans/<yyyy-mm-dd>-<KEY-n>-<slug>.md`. Commit it on the branch unless `git check-ignore -q <plan path>` says it is ignored: ship-plan's pre-flight parks a dirty tree it did not make. Next to the skill's required header, the plan also needs:
-   - a **Scenarios** table for verify-and-fix: unit, local, and (with `## Evidence`) deployed-environment rows, with the check from I2.3;
-   - **Close-out notes for ship-plan**: `Pre-flight questions: none` (or the few that remain), the follow-ups (the deploy), a PR title with ` (<KEY-n>)`, and a **`From ship-issue`** block holding every `Ruling:`, `Parked:`, `Asked:` and `Lesson:` line from this skill's ledger, verbatim;
-   - never a PR number in text written before the PR exists. Cite the issue key.
+Starts once the spec holds no `[pending Q<n>` marker.
+
+1. **Dispatch the Plan stage** ([stage-prompts.md](stage-prompts.md)) with the `Plan stage` row of `## Models` (default `opus`, `high`). It gets the spec path, not this conversation: a gap it finds is a gap in the spec. It writes `docs/superpowers/plans/<yyyy-mm-dd>-<KEY-n>-<slug>.md` with the **Scenarios** table for verify-and-fix and the **Close-out notes for ship-plan**, and leaves the `From ship-issue` block empty.
+2. **Take the report in** as in I2 step 5. Its `Parked:` lines are ship-plan's to ask at close-out; they stay `[needs a decision]` in the plan.
+3. **Fill the `From ship-issue` block** with every `Ruling:`, `Parked:`, `Asked:` and `Lesson:` line from this skill's ledger, verbatim. Commit the plan on the branch unless `git check-ignore -q <plan path>` says it is ignored: ship-plan's pre-flight parks a dirty tree it did not make.
 
 ## I5. Jira
 
@@ -243,7 +248,7 @@ is refused. `cat <main>/.git/HEAD` shows its branch but not whether it is dirty.
 0. **Git must run unmodified.** Run plain `git status` once. If a hook refuses it, that goes in the batch with the hook's message. Until it is fixed, the run falls back to the full git path (`/usr/bin/git`), and step 5 applies.
 1. **Create it from `origin/<base>`.** `git fetch origin <base> --quiet`. `git rev-parse --path-format=absolute --git-common-dir` prints `<main>/.git`; `<main>` is its parent. Then, with that path written out literally (a relative path would nest it inside the current worktree):
    `git worktree add --detach <main>/.claude/worktrees/<KEY-n> origin/<base>`
-   Then call `EnterWorktree` with that `path`. The worktree starts detached on `origin/<base>`; I4 step 1 creates the branch once the key is known, so nothing needs renaming.
+   Then call `EnterWorktree` with that `path`. The worktree starts detached on `origin/<base>`; I2 step 1 creates the branch once the key is known, so nothing needs renaming.
 2. **Dependencies:** the config's Prerequisites rows with `Background: no`, in order. In a permission mode that prompts, their allow lines are in the I3 batch, so run them once the answers arrive; research needs only the code. Otherwise run them now.
 3. **Untracked files:** `cp <main>/<file> <file>` for each file in `## Worktree` `Copy:`. They are git-ignored, so they never travel with the branch. Copy them, never print them.
 4. **Shared resources:** before a gate or a Background Prerequisite, check each item in `## Worktree` `Shared:` (fixed container names, ports). If another checkout holds one, wait until it is free. Two checkouts running the same containerised suite can kill each other's run.
@@ -270,4 +275,7 @@ is refused. `cat <main>/.git/HEAD` shows its branch but not whether it is dirty.
 | "The main checkout is on another branch, I'll switch it" | Someone is working there. Use the worktree recipe. |
 | "Worktree ready, run the tests" | Did you run the Prerequisites, copy the `Copy:` files, and check `Shared:`? |
 | "The spec exists, but I'd design it differently" | Existing work counts as approved. Route per I0. |
+| "It's quicker to write the spec or plan here" | The stages run as subagents so this session stays small and keeps one effort level. Dispatch them. |
+| "Raise this session's effort for the spec" | That invalidates its prompt cache. The Spec stage sets its own effort. |
+| "Let me double-check the stage's research" | That loads into this session what the stage kept out. Take its report; a gap goes back as a `revise` dispatch. |
 | "No `## Evidence`, so I'll query production to be sure" | Only read-only sources the config names. Without them, the baseline is a reproduction. |

@@ -251,12 +251,13 @@ for this plan, stay on it; if its name does not start with one of the five types
 
 ## 2. Implement
 
-**REQUIRED SUB-SKILL:** superpowers:subagent-driven-development, on the branch from section 1. Four adjustments:
+**REQUIRED SUB-SKILL:** superpowers:subagent-driven-development, on the branch from section 1. Five adjustments:
 
 - **Its pre-flight concerns and rulings** follow its own "Rulings, not stalls" rule. Anything it would stop for goes into `questions.md` (section 3). The run goes on with the tasks that don't depend on it.
 - **Before it deletes its workspace,** copy every `Ruling:` line from its `progress.md` into this ledger. They go to the user in the report and the closing comment.
 - **Skip its last step,** `finishing-a-development-branch`. Its menu is the question this skill already answered. Go to section 4.
 - **Every implementer dispatch carries the commit trailers verbatim,** with the words "copy them exactly; do not substitute your own model name". Implementers given the lines without that sentence have written their own trailer, and fixing it needs a force-push, which this skill never does.
+- **Every dispatch passes `model` and `effort`,** from the config's `## Models` ([config-format.md](config-format.md)): `Implementer` for each task's implementer, `Task review` for its spec and quality reviewers, `Escalation` for fix rounds 4–5 and any re-dispatch of a stuck implementer, `Final review` for the whole-branch review. These replace its Model Selection tiers. Never leave either out: an omitted model inherits this session's.
 
 ## 3. Questions
 

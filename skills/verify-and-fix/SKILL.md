@@ -117,7 +117,11 @@ click through.
 
 ## 4. Review round
 
-Scope: `git diff origin/<base>...HEAD`. Launch these in parallel, each on the whole diff:
+Scope: `git diff origin/<base>...HEAD`. Launch these in parallel, each on the
+whole diff, each with the `model` and `effort` of the config's `## Models`
+`Review round` row ([format](../ship-plan/config-format.md); default `opus`,
+`high`) passed explicitly. Agents whose definition says `model: inherit` would
+otherwise take whatever model the session runs on.
 
 - Always: `pr-review-toolkit:code-reviewer` and `pr-review-toolkit:silent-failure-hunter`.
 - When tests changed: `pr-review-toolkit:pr-test-analyzer`. When comments or docs changed: `pr-review-toolkit:comment-analyzer`. When types were added: `pr-review-toolkit:type-design-analyzer`.
