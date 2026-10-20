@@ -189,6 +189,11 @@ research step that would have caught it.
 ## I5. Jira
 
 1. Append to the description as ship-plan's templates.md "Jira: plan appended" says (read as HTML, append, write back as HTML; never as markdown, never overwriting what the user wrote). Add the `## Plan` section from "Jira: new issue", then `## Done when`, then `## Full plan` with the plan text.
+   **Too big for Jira.** A description or a comment holds at most 32,767 characters. When the existing description plus the three sections would exceed it (count the text you would write; leave 2,000 characters of headroom for Jira's own markup), the fallback is fixed:
+   - The description gets `## Plan` and `## Done when` only, then one line: `Full plan: in the comments "Full plan (1/<n>)" … "(<n>/<n>)"; the local file <plan path> is authoritative.`
+   - The plan text goes in `addOrEditJiraIssueComment` comments headed `Full plan (<i>/<n>)`, each under 30,000 characters. Split only between top-level sections or `### Task` headings, never inside a code block; a single section that is still too long is split between its steps.
+   - If even `## Plan` and `## Done when` do not fit, post them as a comment too, and leave the description as it is.
+   - **Never attach the plan as a file.** Attaching needs an `executeWrite` operation (`uploadAttachmentToJiraIssue`) that neither skill authorizes; the `executeWrite` pre-approval is for `createJiraIssueLink` only. Record the fallback as a `Ruling:` with the character counts.
 2. `addOrEditJiraIssueComment`: the rulings made so far, and the batch answers.
 3. **The local plan file is authoritative.** Jira's conversion of markdown can reflow lists, code and links. ship-plan always gets the file, never the issue text.
 

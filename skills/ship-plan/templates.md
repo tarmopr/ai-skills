@@ -174,6 +174,10 @@ and `contentFormat: "html"`. Never write it back as markdown: that drops media,
 mentions and panels. If the HTML format is rejected, post the Plan section as a
 comment instead. Never replace the user's text.
 
+A description or a comment holds at most 32,767 characters. When the appended
+text would exceed it, follow ship-issue's I5 "Too big for Jira": comments headed
+`Full plan (<i>/<n>)`, never a file attachment.
+
 ## Jira comment: merged
 
 ```markdown
