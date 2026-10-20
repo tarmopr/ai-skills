@@ -177,7 +177,9 @@ start runs on Opus at high effort.
 |---|---|---|
 | `Spec stage` | `ship-issue` I2: research, design, spec | `opus`, `xhigh` |
 | `Plan stage` | `ship-issue` I4: the plan, from the spec alone | `opus`, `high` |
-| `Implementer` | `ship-plan` section 2: each task's implementer | `sonnet`, `high` |
+| `Implementer (mechanical)` | `ship-plan` section 2: a task tagged `Tier: mechanical` | `haiku`, `high` |
+| `Implementer` | `ship-plan` section 2: a task tagged `Tier: standard`, or untagged | `sonnet`, `high` |
+| `Implementer (complex)` | `ship-plan` section 2: a task tagged `Tier: complex` | `opus`, `high` |
 | `Escalation` | `ship-plan` section 2: fix rounds 4–5, a stuck implementer | `opus`, `high` |
 | `Task review` | `ship-plan` section 2: each task's spec and quality reviewers | `sonnet`, `high` |
 | `Final review` | `ship-plan` section 2: the whole-branch review | `opus`, `xhigh` |
@@ -186,6 +188,17 @@ start runs on Opus at high effort.
 Model: `sonnet`, `opus`, `haiku`, `fable`, or a full model ID. Effort: `low`,
 `medium`, `high`, `xhigh` or `max`. A role left out takes its default; a row
 with only a model keeps the default effort.
+
+**Task tiers.** Each plan task may carry a `Tier:` line, which picks its
+implementer row:
+
+- `mechanical`: the plan gives the exact code or rename, in 1–2 files, with no design choice left (a rename, a file move, a field the plan spells out);
+- `standard`: the usual case, several files following patterns that already exist;
+- `complex`: concurrency, security or authorization, a data migration, a change across layers, or a judgment call the plan leaves to the implementer.
+
+When in doubt, `standard`. Mechanical tasks save money only when they pass
+first time: cheap models often need more turns, and every fix round adds a
+review. If they need fix rounds, set `Implementer (mechanical)` to `sonnet`.
 
 ```markdown
 ## Models

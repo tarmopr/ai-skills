@@ -109,6 +109,10 @@ Next to the skill's required header, the plan needs:
   the few that remain), the follow-ups (the deploy), a PR title ending in
   ` (<KEY-n>)`, and an empty `From ship-issue` block. The run fills that
   block; leave it empty;
+- under each task heading, a line `Tier: <mechanical | standard | complex> —
+  <one-line reason>`, by the "Task tiers" rules under `## Models` in
+  <skill dir>/../ship-plan/config-format.md. It picks the model that
+  implements the task. When in doubt, standard;
 - never a PR number in text: none exists yet. Cite the issue key.
 
 A gap in the spec that the confidence test lets you rule on is a Ruling:. One
