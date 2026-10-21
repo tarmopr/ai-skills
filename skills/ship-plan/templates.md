@@ -29,6 +29,8 @@ Source: `<plan path>` · Spec: `<spec path, or "none">`
 
 Scenarios (<n> run, <n> passed): <one line each, or "None: no UI testing configured">
 
+Simplify pass: <`<short sha>`, <n> edits | no changes>
+
 ## Decisions made without the user
 - <Ruling> — cost if wrong: <…>
 
@@ -195,7 +197,7 @@ Automated: <new or changed tests, with file paths>.
 Gates: <from verify's gate table: all pass / exceptions>.
 
 ### Review
-<n> review rounds. Fixed: <count and one line each, with commits>. Rulings: <list or "None">.
+Simplify pass: <`<short sha>`, <n> edits | no changes>. <n> review rounds. Fixed: <count and one line each, with commits>. Rulings: <list or "None">.
 ```
 
 ## Jira comment: done

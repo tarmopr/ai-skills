@@ -143,6 +143,7 @@ digraph ship {
   "0 Pre-flight" [shape=box];
   "1 Tracker (Jira issue if any) and branch" [shape=box];
   "2 Implement: subagent-driven-development" [shape=box];
+  "2b Simplify: the whole diff, own commit" [shape=box];
   "3 Verify: verify until clean" [shape=box];
   "4 Push, PR, link PR" [shape=box];
   "PR checks green?" [shape=diamond];
@@ -157,7 +158,8 @@ digraph ship {
 
   "0 Pre-flight" -> "1 Tracker (Jira issue if any) and branch";
   "1 Tracker (Jira issue if any) and branch" -> "2 Implement: subagent-driven-development";
-  "2 Implement: subagent-driven-development" -> "3 Verify: verify until clean";
+  "2 Implement: subagent-driven-development" -> "2b Simplify: the whole diff, own commit";
+  "2b Simplify: the whole diff, own commit" -> "3 Verify: verify until clean";
   "3 Verify: verify until clean" -> "4 Push, PR, link PR" [label="clean"];
   "3 Verify: verify until clean" -> "7 Close out: tracker or PR comment, lessons, report, one question batch" [label="not clean: park, no PR"];
   "4 Push, PR, link PR" -> "PR checks green?";
@@ -255,9 +257,51 @@ for this plan, stay on it; if its name does not start with one of the five types
 
 - **Its pre-flight concerns and rulings** follow its own "Rulings, not stalls" rule. Anything it would stop for goes into `questions.md` (section 3). The run goes on with the tasks that don't depend on it.
 - **Before it deletes its workspace,** copy every `Ruling:` line from its `progress.md` into this ledger. They go to the user in the report and the closing comment.
-- **Skip its last step,** `finishing-a-development-branch`. Its menu is the question this skill already answered. Go to section 4.
+- **Skip its last step,** `finishing-a-development-branch`. Its menu is the question this skill already answered. Go to section 2b.
 - **Every implementer dispatch carries the commit trailers verbatim,** with the words "copy them exactly; do not substitute your own model name". Implementers given the lines without that sentence have written their own trailer, and fixing it needs a force-push, which this skill never does.
 - **Every dispatch passes `model` and `effort`,** from the config's `## Models` ([config-format.md](config-format.md)): the implementer row the task's `Tier:` line picks (`Implementer (mechanical)`, `Implementer`, `Implementer (complex)`; untagged is `Implementer`), `Task review` for its spec and quality reviewers, `Escalation` for fix rounds 4–5 and any re-dispatch of a stuck implementer, `Final review` for the whole-branch review. These replace its Model Selection tiers. Never leave either out: an omitted model inherits this session's. **A tier may be raised, never lowered:** when a task turns out harder than its tag (a mechanical task that touches an authorization check), dispatch it a tier up and record a `Ruling:` with the reason. **A batch** (its "Batch small same-shape work") takes the highest tier among its tasks.
+
+## 2b. Simplify
+
+One pass over the whole branch, after the last task and its final review, and
+before `verify-and-fix`. The per-task reviewers each see one task, so code
+duplicated across tasks only shows here. It runs before verification, not in
+the review round: it edits code, and the review agents read the code in
+parallel. Nothing runs it on its own: an agent description that says
+"triggered automatically" is a hint to the model, and under this skill only
+the steps below dispatch it.
+
+1. Rewrite the ledger's first line to `Phase: 2b`. The tree is clean after section 2; if `git status --short` shows anything, section 2 is not finished: finish it first.
+2. Dispatch `pr-review-toolkit:code-simplifier` with the `Simplify` row of `## Models` (default `sonnet`, `high`) and this prompt, every `<…>` filled in:
+
+   ```
+   Simplify the code this branch adds or changes, without changing what it does.
+
+   Scope: the files in `git diff --name-only origin/<base>...HEAD`, and in
+   them only the lines that diff adds or changes. You were dispatched fresh:
+   "recently modified" and "the current session" mean this diff.
+
+   Standards: the repo's agent instructions (<paths of CLAUDE.md / AGENTS.md
+   that apply>) and the code around each change. They replace the JavaScript
+   and React list in your own instructions wherever the two differ.
+
+   Settled, do not undo: the plan <plan path> and these rulings:
+   <every Ruling: line in this ledger>
+
+   Edit only what keeps behaviour: names, nesting, a duplicate helper merged,
+   dead code removed. Never change a public signature, a test's assertions,
+   or a log or error message text, and never delete a test. Anything larger
+   is a finding, not an edit. Do not commit, push or switch branches.
+
+   End with: one line per edit (file:line, what, why), then `Findings:` with
+   one line each (file:line, what you would change), or `none`.
+   ```
+3. **Commit its edits on their own**, in the repo's commit format (for example `refactor: simplify <area>`), with the commit trailers. Write `Simplify: <short sha> — <n> edits` in the ledger. No edits: `Simplify: no changes`, and a `Ruling: simplify pass made no edits — <its report's first line> — none`. Each of its `Findings:` lines goes in the ledger as `Simplify finding: <line>`. They are not fixed here: one the review round also raises is fixed there, and the rest go under Follow-ups in the closing comment.
+4. **If the agent is unavailable,** dispatch `general-purpose` with the same prompt and row, and write a `Ruling:` saying so.
+
+**Resuming at `Phase: 2b`** with no `Simplify:` line: a dirty tree holds the
+simplifier's edits (the tasks are all committed); commit them as step 3 says.
+A clean tree: dispatch again.
 
 ## 3. Questions
 
@@ -361,7 +405,7 @@ half-updated. Say so in the closing comment until it is green.
 4. **Report,** concise, in this order:
    1. **Needs you:** the batch.
    2. Status: base branch green or red (or "no CI"), PR, merge SHA, the issue link if any.
-   3. Gate and scenario tables (from `verify-and-fix`), and every unknown config section.
+   3. Gate and scenario tables (from `verify-and-fix`), the `Simplify:` line, and every unknown config section.
    4. **Decisions made for you:** every `Ruling:`, each with what it costs if wrong.
    5. **Not tested:** what, and why.
    6. The lessons recorded, and any proposed skill change.

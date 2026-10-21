@@ -183,6 +183,7 @@ start runs on Opus at high effort.
 | `Escalation` | `ship-plan` section 2: fix rounds 4–5, a stuck implementer | `opus`, `high` |
 | `Task review` | `ship-plan` section 2: each task's spec and quality reviewers | `sonnet`, `high` |
 | `Final review` | `ship-plan` section 2: the whole-branch review | `opus`, `xhigh` |
+| `Simplify` | `ship-plan` section 2b: the simplify pass over the whole diff | `sonnet`, `high` |
 | `Review round` | `verify-and-fix` section 4: every review agent | `opus`, `high` |
 
 Model: `sonnet`, `opus`, `haiku`, `fable`, or a full model ID. Effort: `low`,
