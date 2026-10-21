@@ -151,8 +151,8 @@ Then choose the checkout (section W) before writing anything.
 
 ## I2. Research and spec: the Spec stage
 
-1. **Branch,** once the issue key is known: `git switch -c <branch> origin/<base>` in the checkout chosen in section W (in a new worktree, from its detached `origin/<base>`), named by the config's `Branch:` pattern: `<type>/<KEY-n>-<slug>`, the key upper case so GitHub for Jira links it. Never a username prefix, and never the local base branch.
-2. **Hand the issue over on disk.** Write `<ledger dir>/issue.md`: the issue as I1 read it (description, comments, linked issues), or the user's description. The stage reads it there and needs no Jira access.
+1. **Branch,** once the issue key is known: `git switch -c <branch> origin/<base>` in the checkout chosen in section W (in a new worktree, from its detached `origin/<base>`), named by the config's `Branch:` pattern: `<type>/<KEY-n>-<slug>`, the key upper case so GitHub for Jira links it. `<type>` is one of ship-plan's five (`feature`, `fix`, `docs`, `chore`, `refactor`), even when the config's pattern lists others such as `test`: ship-plan's pre-approved push patterns match only those five, and any other type makes every push prompt. Never a username prefix, and never the local base branch.
+2. **Hand the issue over on disk.** Write `<ledger dir>/issue.md`: the issue as I1 read it (description, comments, linked issues), or the user's description. The stage reads it there and needs no Jira access. **For every open PR the issue names or links,** fetch its state now (`gh pr view <n> --json state,mergedAt,headRefOid`, then `git fetch origin <its head branch>` and `git log --oneline origin/<base>..origin/<its head branch>`) and add it to `issue.md`: its head commit and the commits not yet on `<base>`. An issue written minutes earlier can already be stale: ORIG-8305's described #99 without the retry #99 had added eight minutes before. The same applies when this run creates the issue (I1): fetch the related PR's head right before writing its Context, and describe what the head holds, not what the PR's title says.
 3. **Dispatch the Spec stage** ([stage-prompts.md](stage-prompts.md), mode `new`) with the `Spec stage` row of `## Models` (default `opus`, `xhigh`). It researches (code, history, the running system, read-only by [evidence.md](evidence.md)), records the baseline, drafts the approaches, rules where the confidence test passes, and writes the spec with each open choice marked `[pending Q<n>: …]`.
 4. **Meanwhile, check the environment** for the later ship-plan run yourself: the Prerequisites (can they run in the chosen checkout?), auth (`gh auth status`; `atlassianUserInfo` when Jira is configured; any auth check a Prerequisites row or `## Evidence` names), and **the base branch's last CI runs**: `gh run list --branch <base> --workflow <config Workflow> --limit 3`. A red base branch from someone else's work will fail this PR's checks too; it goes in the spec (step 5) and ship-plan section 5, step 2 says how the run handles it. A command that would write to a shared environment goes in the batch instead.
 5. **Take the report in.** `Status:` other than `done`: a wrong checkout is a bug in this run (fix the path and dispatch again); `blocked` goes in the batch. Otherwise copy its `Ruling:`, `Parked:` and `Lesson:` lines into the ledger, its `Q<n>` lines into the I3 batch, and the step 4 findings into the spec. Check the file it names exists, then commit the spec on the branch. Never re-check its research yourself: that would load into this session the context the stage exists to keep out of it.
@@ -176,6 +176,15 @@ answers don't block. **Empty batch: ask nothing.** Each answer becomes a
 `Ruling: user <date>` line. Answers to `Q<n>` lines go into the spec through
 the Spec stage in mode `revise` (same `## Models` row), never by editing the
 spec here; commit its result.
+
+**As soon as the answers arrive, before the revise stage,** update Jira; I5
+adds only the plan:
+
+- `addOrEditJiraIssueComment`: the questions and the answers, one line each.
+- **An answer that makes this issue wait for another issue or PR** ("wait for #99", "after ORIG-8101 merges"): create the Jira link at once with `executeWrite` `createJiraIssueLink` (pre-approved), type `Blocks`, the other issue as the blocker. A PR without its own issue: link the issue its branch or title names. Say in the comment what this issue waits for.
+
+The user reads the issue to see where the run stands; a dependency that is
+only in the ledger is invisible to them.
 
 **A question found after the batch** is itself a lesson. Rule on it if the
 confidence test passes. Otherwise, if it blocks the spec or plan, ask it

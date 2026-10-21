@@ -28,6 +28,12 @@ Read first, in full: the issue <ledger dir>/issue.md; the repo config
 <ledger dir>/ledger.md (its Ruling: and Asked: lines are settled: never reopen
 them).
 
+Then, in either mode, re-check every PR the issue, the spec or the ledger
+depends on: `gh pr view <n> --json state,mergedAt,headRefOid`, and fetch
+`origin/<base>`. A PR can merge or move while the run waits on the batch. If
+one has changed since the ledger last recorded it, say so as a Lesson: and
+write the spec for the state you see now, not the state the ledger describes.
+
 ## Research (mode new)
 Before designing, confirm the problem is real and find its edges. Every claim
 in the spec quotes its evidence: code with file:line, a log count, a measured
@@ -50,6 +56,26 @@ that would write to one is a question.
    sign-in. If it can't, or `## Evidence` is absent, it is a reproduction
    (input, observed output, expected output). The failing test that captures
    it is the plan's first task, not research.
+4. Claims the design rests on, proved before they go in the spec:
+   - A concurrency claim (writes do not interleave, a lock is enough, an
+     append is atomic): run a two-writer probe in a scratch directory outside
+     <checkout> and quote its result. ORIG-8305's first spec said concurrent
+     appends do not interleave; in .NET, FileMode.Append seeks to the end once,
+     at open, and a second writer overwrote the first line.
+   - A source generator or analyzer the design relies on (`[LoggerMessage]`,
+     `[GeneratedRegex]`, a JSON source generator): check it reaches the new
+     project. Read the .nuspec of every package the project references for
+     `exclude="Analyzers"` on the dependency that carries the generator.
+     Testcontainers excludes it from Microsoft.Extensions.Logging.Abstractions.
+
+## Acceptance checks
+Every acceptance command the spec lists (a grep, `git merge-tree`, a test
+filter, a curl) is run on today's tree before it is written down. Write what it
+prints today, and what it must print once the change lands, and reason about
+whether the finished code would still match it. ORIG-8305's first spec
+required "merge-tree reports none" against a PR that already conflicted on the
+base, and a `\.StartAsync\(` grep that matched the very helper calls the spec
+meant to allow.
 
 ## Design and spec
 REQUIRED SUB-SKILL: superpowers:brainstorming, for its approaches, design
@@ -74,6 +100,13 @@ The spec exists at <spec path>. The user answered: <answers, numbered as the
 Q<n> markers>. Replace each answered marker with the decision, follow its
 consequences through the whole spec, and re-run brainstorming's self-review.
 Research again only where an answer opens new ground.
+
+Then compare the spec's facts about the branch and its dependencies (the base
+commit, which PRs it contains, merges it plans) with the ledger's Ruling:
+lines and with `git log --oneline origin/<base>..HEAD`. A ruling made after
+the spec was written (the branch was reset to `<base>` instead of merged, a
+dependency merged) changes those facts: update every place that states them,
+and list each change as a Ruling: in the report.
 
 ## Report
 End with exactly the stage report format in <skill dir>/stage-prompts.md,
