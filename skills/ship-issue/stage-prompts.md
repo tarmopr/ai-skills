@@ -167,6 +167,7 @@ formats, and only these headings:
 ## Stage report: <spec | plan>
 File: <absolute path written, or "none">
 Status: <done | wrong checkout: … | blocked: <what, and the exact error>>
+Skills: <every skill you called with the Skill tool, comma-separated, or "none">
 ### Rulings
 Ruling: <decision> — <evidence quoted> — <cost if wrong>
 ### Questions
