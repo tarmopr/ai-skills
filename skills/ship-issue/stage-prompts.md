@@ -92,8 +92,10 @@ on it `[pending Q<n>: <question>]`, and return the question.
 
 Always write a spec, even for a bounded change; the classification only sets
 its length. It holds the evidence, the decisions and who made them, what is
-out of scope, and acceptance with the baseline. Save it to
-<checkout>/docs/superpowers/specs/<yyyy-mm-dd>-<KEY-n>-<slug>-design.md.
+out of scope, and acceptance with the baseline. Save it to <spec path>.
+When <spec path> is under <ledger dir> (held for a docs PR), the spec's
+location line says so, and its delivery section lists what the docs PR
+carries besides the spec (rows in the agent instructions, an ADR).
 
 ## Mode revise
 The spec exists at <spec path>. The user answered: <answers, numbered as the

@@ -97,6 +97,7 @@ Invoking the skill is the user's standing authorization, for this run, to:
 - open, push and merge follow-up branches that fix a red base branch caused by this run, including a revert PR;
 - post a review request for each PR it opens to the Slack channel recorded in `## Slack` (section 0, step 6; section 4R, step 2), and never to any other channel;
 - read and write the run's Jira issue — the one found or chosen in pre-flight (section 0, step 5): create it in the project and epic the user chose, link it to the related issue the user chose, assign it, transition it, append to its description, add comments;
+- open, push and merge the docs branch that a `Docs PR:` line names (section 7, step 3): the spec `ship-issue` kept out of the code PR, and the docs changes the spec lists;
 - open, push and merge the docs-only lessons branch (section 8).
 
 It does **not** authorize the following. Each goes into the question batch (section 3), never done on your own:
@@ -154,23 +155,23 @@ digraph ship {
   "Transient failure in blockers.md?" [shape=diamond];
   "Rerun the failed jobs" [shape=box];
   "Fix-forward branch: debug, test, fix" [shape=box];
-  "7 Close out: tracker or PR comment, lessons, report, one question batch" [shape=doublecircle];
+  "7 Close out: tracker or PR comment, docs PR, lessons, report, one question batch" [shape=doublecircle];
 
   "0 Pre-flight" -> "1 Tracker (Jira issue if any) and branch";
   "1 Tracker (Jira issue if any) and branch" -> "2 Implement: subagent-driven-development";
   "2 Implement: subagent-driven-development" -> "2b Simplify: the whole diff, own commit";
   "2b Simplify: the whole diff, own commit" -> "3 Verify: verify until clean";
   "3 Verify: verify until clean" -> "4 Push, PR, link PR" [label="clean"];
-  "3 Verify: verify until clean" -> "7 Close out: tracker or PR comment, lessons, report, one question batch" [label="not clean: park, no PR"];
+  "3 Verify: verify until clean" -> "7 Close out: tracker or PR comment, docs PR, lessons, report, one question batch" [label="not clean: park, no PR"];
   "4 Push, PR, link PR" -> "PR checks green?";
   "PR checks green?" -> "3 Verify: verify until clean" [label="no: red job is a gate failure"];
   "PR checks green?" -> "4R Review: request, poll, triage, fix, reply" [label="yes, or CI None"];
   "4R Review: request, poll, triage, fix, reply" -> "PR checks green?" [label="fixes pushed"];
   "4R Review: request, poll, triage, fix, reply" -> "Review rules met?";
   "Review rules met?" -> "5 Merge, comment" [label="yes"];
-  "Review rules met?" -> "7 Close out: tracker or PR comment, lessons, report, one question batch" [label="not within Review wait: hand off"];
+  "Review rules met?" -> "7 Close out: tracker or PR comment, docs PR, lessons, report, one question batch" [label="not within Review wait: hand off"];
   "5 Merge, comment" -> "base-branch CI green?";
-  "base-branch CI green?" -> "7 Close out: tracker or PR comment, lessons, report, one question batch" [label="yes, or CI None"];
+  "base-branch CI green?" -> "7 Close out: tracker or PR comment, docs PR, lessons, report, one question batch" [label="yes, or CI None"];
   "base-branch CI green?" -> "Transient failure in blockers.md?" [label="no"];
   "Transient failure in blockers.md?" -> "Rerun the failed jobs" [label="yes"];
   "Rerun the failed jobs" -> "base-branch CI green?";
@@ -201,7 +202,7 @@ cheapest moment to ask anything, and the last one until the end.
 
 1. **Config.** No `.claude/ship-plan.md`: draft it ([config-format.md](config-format.md), "Drafting a missing config"). The draft goes at the top of the batch. Implementation proceeds; `verify-and-fix` runs no gate until the user confirms the draft. An existing config is read by its reading rules: every unknown config section goes at the top of the batch, and a near-miss of `Never do`, `Fix rules` or `Security extras` is applied anyway and flagged.
 2. **Resume or start.** List `.superpowers/ship-plan/*/ledger.md`. A ledger whose first line is not `Phase: done` is an open run. If the argument is not a plan path or an issue key that starts a new run, and an open run exists, this is a resumed run and the argument (if any) is answers: apply them to the parked questions, record each, switch to that ledger's branch if the checkout is on the base branch and clean (otherwise put it in the batch; and if its PR is already merged, the branch is gone: stay on the base branch), and continue from its first line. Several open runs: ask which one. **A run that is done is never resumed, and its plan is never shipped again**: step 3 skips any plan named in a `Phase: done` ledger.
-3. **Resolve the plan.** A path; or a Jira issue key (the issue description may be the plan; with Jira unavailable there is no plan, so park it and ask now). No argument and no open run: stop with "Nothing to resume. Name the plan to ship." Never pick a plan on your own: a `/loop` left running after a run finished would start shipping something nobody asked for. **A plan written by `ship-issue`** has a `From ship-issue` block in its close-out notes: copy its `Ruling:`, `Parked:`, `Asked:` and `Lesson:` lines into the ledger now, so they reach the PR body, the questions and section 8.
+3. **Resolve the plan.** A path; or a Jira issue key (the issue description may be the plan; with Jira unavailable there is no plan, so park it and ask now). No argument and no open run: stop with "Nothing to resume. Name the plan to ship." Never pick a plan on your own: a `/loop` left running after a run finished would start shipping something nobody asked for. **A plan written by `ship-issue`** has a `From ship-issue` block in its close-out notes: copy its `Ruling:`, `Parked:`, `Asked:`, `Lesson:` and `Docs PR:` lines into the ledger now, so they reach the PR body, the questions, the docs PR (section 7, step 3) and section 8.
 4. **Check tools and auth, in parallel:** `gh auth status`; `atlassianUserInfo` (its `account_id` is the assignee for every Jira call); `git fetch origin <base> --quiet`, then `git status --porcelain`. A dirty working tree that is not yours goes in the batch; never stash or discard it. **Jira unavailable** (not connected, or the call fails): park "Jira unavailable: <exact error>" in the batch, continue with no Jira issue (the PR body carries the plan), and say so in the report. Never retry it through another route. **A Jira call that fails later in the run** gets the same rule; if the PR already exists, post its Plan section as a `gh pr comment`.
 5. **The Jira issue.** Take the key, stopping at the first hit: the argument; the plan's header, "Source:" line or `From ship-issue` block; the current branch name, if this run started that branch. No key: ask templates.md's "Jira: issue question" **now, and wait for the answer** before anything that depends on it (the branch name does). It offers "No Jira issue": that answer is accepted, recorded as a `Ruling: user <date>`, and the run continues with no tracker (section 1).
 6. **Slack channel.** Read `## Slack` from the config, else from `.claude/ship-plan.local.md` (a git-ignored file on this machine). Either says where review requests go: a channel, or `none`. **Neither has it:** ask now, before the run goes on, in this step's own `AskUserQuestion` call (its answer comes back in the same turn, so no answer line is needed): "Post a review request to Slack when the PR is created?"
@@ -370,7 +371,7 @@ are met. It ends in one of three ways: merge (section 5), hand off (section 7,
 ## 5. Merge
 
 1. `gh pr view <n> --json mergeable,mergeStateStatus,statusCheckRollup,reviewDecision`. Every check must be `SUCCESS` or `SKIPPED`. CI None, or no PR CI for this diff: there are no checks to read; `verify-and-fix` clean is the gate. **`reviewDecision` is `REVIEW_REQUIRED` or `CHANGES_REQUESTED`, or `mergeStateStatus` is `BLOCKED` with every check green:** the review rules are not met after all (a code owner, an unresolved thread, a rule section 4R could not read). Never use `--admin`, and never approve. Record what blocks the merge, then back to section 4R's wait (`sleep 300` first, never straight back); if its window has run out, hand off.
-2. **Behind the base branch or conflicting:** fetch the PR branch first (`git fetch origin <branch>`): the user may already have pressed GitHub's "Update branch". Then `git fetch origin <base>`, and as a separate command `git merge origin/<base>` (a merge, not a rebase, so no force-push). Resolve conflicts. If the merge brought in changes to files this branch touches, rerun the gates whose paths the merge touched. `git push origin <branch>`, and go back to 4.6. If the push is refused as non-fast-forward and `git diff HEAD origin/<branch>` is empty, `git reset --keep origin/<branch>` adopts their merge; anything else is someone's work, so stop and look.
+2. **Behind the base branch or conflicting:** fetch the PR branch first (`git fetch origin <branch>`): the user may already have pressed GitHub's "Update branch". Then `git fetch origin <base>`, and as a separate command `git merge origin/<base>` (a merge, not a rebase, so no force-push). Resolve conflicts. If the merge brought in changes to files this branch touches, rerun the gates whose paths the merge touched. If this branch copies code, run `verify-and-fix`'s "other copies of the same source" check again: a PR that merged first may have brought its own copy. `git push origin <branch>`, and go back to 4.6. Then read `reviews` again: when the push dismissed an approval (that reviewer's latest review is now `DISMISSED`; resolving a conflict can change the diff), re-request them with `gh pr edit <n> --add-reviewer <login>` (authorized above). The push can also start a new Copilot review; section 4R waits for it. If the push is refused as non-fast-forward and `git diff HEAD origin/<branch>` is empty, `git reset --keep origin/<branch>` adopts their merge; anything else is someone's work, so stop and look.
    **A check red only because the base branch is red** (the same test fails on the base branch's own run, from someone else's change): never merge red and never fix that here. Poll the base branch's runs in the background; once one is green, merge `origin/<base>` as above. Still red when nothing else is left: park it and close out with the PR open.
 3. Merge with the configured method: `gh pr merge <n> --squash --delete-branch` (or `--merge`). Record the merge SHA: `gh pr view <n> --json mergeCommit --jq .mergeCommit.oid`. `--delete-branch` also switches the local checkout to the base branch and deletes the local feature branch; continue from there (sections 6–8 branch from `origin/<base>`), and read this run's ledger by its path, since the branch it is named after is gone.
 4. **The merge is refused** by the permission system, or by GitHub (a disallowed merge method, a branch policy): do not retry it, and do not try another route. It is now blocking, so ask the whole batch now. For a permission refusal, record it as a `Lesson:` proposing the exact `allowed-tools` line; section 8 writes the `interruptions.md` entry, so the next run is not refused.
@@ -401,16 +402,23 @@ half-updated. Say so in the closing comment until it is green.
    - **Base branch red:** merged, and the base branch still red. "Jira comment: base branch red" or "PR comment: base branch red"; the issue stays in the start status.
    - **Awaiting review:** the PR is open, green, and every comment so far is handled, but it waits on reviewers (section 4R, step 5). "Jira comment: awaiting review"; without Jira, the report only (the PR shows its own state). The issue stays in its status. The report says how to resume.
    - **Not merged:** the PR is still open for another reason (verify not clean, checks never registered, the base branch red before merge, a refused merge, 5 review rounds), or no PR exists. "Jira comment: not merged" or "PR comment: not merged"; with no PR and no Jira, the report is the only record.
-3. **Lessons** (section 8), except under "Awaiting review": they wait for the run's final close-out.
-4. **Report,** concise, in this order:
+3. **Docs PR,** when the ledger has a `Docs PR:` line (`ship-issue` held the spec out of the code PR, because the repo keeps docs and code in separate PRs) and the code PR has merged. Under "Awaiting review" and "Not merged" it waits: the docs describe code that is not on the base branch yet. Nothing else opens it: without this step the spec stays git-ignored in the ledger directory and never reaches the repository.
+   1. In the same checkout, never a second worktree (a worktree-isolated session cannot write to one): `git fetch origin <base>`, then `git switch -c docs/<ID>-<slug> origin/<base>`, with the feature branch's `<slug>`.
+   2. Copy the held spec to the path the line names (`docs/superpowers/specs/…`), and rewrite only the spec's own line about where it lives. Make the other changes the line lists: rows in the agent instructions, an ADR the spec asks for, a pointer in an ADR it supersedes (only a proposed one; an accepted ADR is append-only).
+   3. Check every name, path and test the new text cites against `origin/<base>` with `git grep`. Fix the text, never the code.
+   4. Commit (`docs: <what> (<ID>)`), `git push -u origin <branch>`, and `gh pr create --base <base>`. The body names the code PR and its merge SHA, and ends with the attribution line.
+   5. Request Copilot, and post the Slack review request (section 4R, step 2) when the review rule needs an approval. If the review rule needs no approval, merge it through sections 5–6. Otherwise leave it open and link it in the report as "docs PR, needs approval"; it never holds the run open.
+   6. Write `Docs PR: #<n> <url>` in the ledger. With a Jira issue, name it in the Done comment's follow-ups.
+4. **Lessons** (section 8), except under "Awaiting review": they wait for the run's final close-out.
+5. **Report,** concise, in this order:
    1. **Needs you:** the batch.
-   2. Status: base branch green or red (or "no CI"), PR, merge SHA, the issue link if any.
+   2. Status: base branch green or red (or "no CI"), PR, merge SHA, the docs PR, the issue link if any.
    3. Gate and scenario tables (from `verify-and-fix`), the `Simplify:` line, and every unknown config section.
    4. **Decisions made for you:** every `Ruling:`, each with what it costs if wrong.
    5. **Not tested:** what, and why.
    6. The lessons recorded, and any proposed skill change.
-5. **Mark the ledger** `Phase: done` when the outcome is Done, and if this run was started by `/loop`, end the report with "Done: stop the `/loop`." Every other outcome keeps the run open, so a later `/ship-plan` resumes it.
-6. **Ask the batch once,** after the report, with `AskUserQuestion` when the answers are choices. When the user answers, carry on: run the pending scenarios once they have signed in, add a new tracker or PR comment, and record each answer in `interruptions.md`.
+6. **Mark the ledger** `Phase: done` when the outcome is Done, and if this run was started by `/loop`, end the report with "Done: stop the `/loop`." Every other outcome keeps the run open, so a later `/ship-plan` resumes it.
+7. **Ask the batch once,** after the report, with `AskUserQuestion` when the answers are choices. When the user answers, carry on: run the pending scenarios once they have signed in, add a new tracker or PR comment, and record each answer in `interruptions.md`.
 
 ## 8. Lessons
 
@@ -446,7 +454,8 @@ log files on the feature branch mixes them into the product PR.
 | "The reviewer is wrong, I'll ignore it" | Reply with the quoted evidence. Every thread gets an answer. |
 | "Approved, and Copilot has one more suggestion: I'll push it" | If stale reviews are dismissed, that push throws the approval away. Reply "follow-up" instead. |
 | "Jira already says done, fine" | Done means the config's `Done means:`. Check the base-branch run first. |
-| "The PR is merged, so I'm done" | The run ends when the base branch is green, the closing comment is written, and lessons are recorded. |
+| "The PR is merged, so I'm done" | The run ends when the base branch is green, the closing comment is written, the docs PR is open (when the ledger has a `Docs PR:` line), and lessons are recorded. |
+| "The spec can go in with some later docs change" | A held spec reaches the repository only through section 7, step 3. Open the docs PR at close-out. |
 | "The base branch failed, probably flaky, rerun until it passes" | Only a failure listed as transient gets a rerun, and at most 3. Anything else gets a root cause. |
 | "Push the fix straight to the base branch, it's one line" | Never push to the base branch. A fix branch goes through the same loop. |
 | "The ruling is obvious, no need to write it down" | An unrecorded ruling is a decision made in secret. Write the ledger line. |

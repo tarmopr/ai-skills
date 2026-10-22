@@ -73,7 +73,7 @@ that question's "Site" rule finds the site and drafts the section.
 Everything ship-plan's "What invoking this skill authorizes" lists, plus:
 
 - creating the Jira issue when none was given, and writing to it;
-- creating the feature branch and committing the spec, the plan and a confirmed draft config on it;
+- creating the feature branch and committing the spec (unless it is held for a docs PR, I2 step 3), the plan and a confirmed draft config on it;
 - creating and preparing a worktree (section W) when the current checkout is busy. ship-plan's "do not create a worktree on your own" is about ship-plan's own run; this skill creates one only with W's setup steps, which are what that rule protects;
 - **skipping the approval stops** in superpowers:brainstorming (design sections, written spec) and superpowers:writing-plans (plan review, execution-method choice). Invoking this skill is the user's explicit instruction to skip them. Each skipped stop becomes a `Ruling:` line. The execution method is always ship-plan, which uses subagent-driven-development.
 
@@ -133,7 +133,8 @@ With a key, take the first matching row:
 | Anything less | I1 |
 
 A spec or plan "for the issue" is a file under `docs/superpowers/specs/` or
-`docs/superpowers/plans/` whose name contains the key. Do not redo approved work. An existing spec or plan counts as approved.
+`docs/superpowers/plans/` whose name contains the key, or a spec held for a
+docs PR: the `Spec:` path on the ledger's first line (I2 step 3). Do not redo approved work. An existing spec or plan counts as approved.
 
 ## I1. The issue
 
@@ -153,9 +154,13 @@ Then choose the checkout (section W) before writing anything.
 
 1. **Branch,** once the issue key is known: `git switch -c <branch> origin/<base>` in the checkout chosen in section W (in a new worktree, from its detached `origin/<base>`), named by the config's `Branch:` pattern: `<type>/<KEY-n>-<slug>`, the key upper case so GitHub for Jira links it. `<type>` is one of ship-plan's five (`feature`, `fix`, `docs`, `chore`, `refactor`), even when the config's pattern lists others such as `test`: ship-plan's pre-approved push patterns match only those five, and any other type makes every push prompt. Never a username prefix, and never the local base branch.
 2. **Hand the issue over on disk.** Write `<ledger dir>/issue.md`: the issue as I1 read it (description, comments, linked issues), or the user's description. The stage reads it there and needs no Jira access. **For every open PR the issue names or links,** fetch its state now (`gh pr view <n> --json state,mergedAt,headRefOid`, then `git fetch origin <its head branch>` and `git log --oneline origin/<base>..origin/<its head branch>`) and add it to `issue.md`: its head commit and the commits not yet on `<base>`. An issue written minutes earlier can already be stale: ORIG-8305's described #99 without the retry #99 had added eight minutes before. The same applies when this run creates the issue (I1): fetch the related PR's head right before writing its Context, and describe what the head holds, not what the PR's title says.
-3. **Dispatch the Spec stage** ([stage-prompts.md](stage-prompts.md), mode `new`) with the `Spec stage` row of `## Models` (default `opus`, `xhigh`). It researches (code, history, the running system, read-only by [evidence.md](evidence.md)), records the baseline, drafts the approaches, rules where the confidence test passes, and writes the spec with each open choice marked `[pending Q<n>: …]`.
-4. **Meanwhile, check the environment** for the later ship-plan run yourself: the Prerequisites (can they run in the chosen checkout?), auth (`gh auth status`; `atlassianUserInfo` when Jira is configured; any auth check a Prerequisites row or `## Evidence` names), and **the base branch's last CI runs**: `gh run list --branch <base> --workflow <config Workflow> --limit 3`. A red base branch from someone else's work will fail this PR's checks too; it goes in the spec (step 5) and ship-plan section 5, step 2 says how the run handles it. A command that would write to a shared environment goes in the batch instead.
-5. **Take the report in.** `Status:` other than `done`: a wrong checkout is a bug in this run (fix the path and dispatch again); `blocked` goes in the batch. Otherwise check its `Skills:` line names the stage's required sub-skill (`superpowers:brainstorming` for the Spec stage in mode `new`, `superpowers:writing-plans` for the Plan stage); if it does not, write `Lesson: <stage> stage did not call <skill> — the stage prompt's REQUIRED SUB-SKILL line`. Then copy its `Ruling:`, `Parked:` and `Lesson:` lines into the ledger, its `Q<n>` lines into the I3 batch, and the step 4 findings into the spec. Check the file it names exists, then commit the spec on the branch. Never re-check its research yourself: that would load into this session the context the stage exists to keep out of it.
+3. **Where the spec lives,** decided before the dispatch and written into the ledger's first line as `Spec: <path>`:
+   - **The repo keeps docs and code in separate PRs** (its agent instructions say so, for example "Documentation and code changes go in separate PRs", or a standing answer does): the spec is **held** at `<ledger dir>/<yyyy-mm-dd>-<KEY-n>-<slug>-design.md`, git-ignored, and is never committed on the feature branch. ship-plan's close-out moves it to `docs/superpowers/specs/` in a docs PR once the code PR has merged (ship-plan section 7, step 3). Write `Ruling: spec held for a docs PR — <the quoted rule> — cost if wrong: one file move`.
+   - **Otherwise:** `<checkout>/docs/superpowers/specs/<yyyy-mm-dd>-<KEY-n>-<slug>-design.md`, committed on the feature branch.
+   - **Never a second worktree for the spec or the docs.** A worktree-isolated session's stage cannot write to one or enter it (ORIG-8202), and a docs PR opened before the code PR merges falls behind the base branch and loses its approval (ORIG-8119). The docs branch is made later, in this same checkout.
+4. **Dispatch the Spec stage** ([stage-prompts.md](stage-prompts.md), mode `new`, with `<spec path>` from step 3) with the `Spec stage` row of `## Models` (default `opus`, `xhigh`). It researches (code, history, the running system, read-only by [evidence.md](evidence.md)), records the baseline, drafts the approaches, rules where the confidence test passes, and writes the spec with each open choice marked `[pending Q<n>: …]`.
+5. **Meanwhile, check the environment** for the later ship-plan run yourself: the Prerequisites (can they run in the chosen checkout?), auth (`gh auth status`; `atlassianUserInfo` when Jira is configured; any auth check a Prerequisites row or `## Evidence` names), and **the base branch's last CI runs**: `gh run list --branch <base> --workflow <config Workflow> --limit 3`. A red base branch from someone else's work will fail this PR's checks too; it goes in the spec (step 6) and ship-plan section 5, step 2 says how the run handles it. A command that would write to a shared environment goes in the batch instead.
+6. **Take the report in.** `Status:` other than `done`: a wrong checkout is a bug in this run (fix the path and dispatch again); `blocked` goes in the batch. Otherwise check its `Skills:` line names the stage's required sub-skill (`superpowers:brainstorming` for the Spec stage in mode `new`, `superpowers:writing-plans` for the Plan stage); if it does not, write `Lesson: <stage> stage did not call <skill> — the stage prompt's REQUIRED SUB-SKILL line`. Then copy its `Ruling:`, `Parked:` and `Lesson:` lines into the ledger, its `Q<n>` lines into the I3 batch, and the step 5 findings into the spec. Check the file it names exists, then commit the spec on the branch, unless step 3 held it for a docs PR. Never re-check its research yourself: that would load into this session the context the stage exists to keep out of it.
 
 ## I3. The one question batch
 
@@ -175,7 +180,7 @@ it), and resumes from the ledger. Carry on meanwhile with everything the
 answers don't block. **Empty batch: ask nothing.** Each answer becomes a
 `Ruling: user <date>` line. Answers to `Q<n>` lines go into the spec through
 the Spec stage in mode `revise` (same `## Models` row), never by editing the
-spec here; commit its result.
+spec here; commit its result, unless the spec is held for a docs PR (I2 step 3).
 
 **As soon as the answers arrive, before the revise stage,** update Jira; I5
 adds only the plan:
@@ -197,8 +202,8 @@ research step that would have caught it.
 Starts once the spec holds no `[pending Q<n>` marker.
 
 1. **Dispatch the Plan stage** ([stage-prompts.md](stage-prompts.md)) with the `Plan stage` row of `## Models` (default `opus`, `high`). It gets the spec path, not this conversation: a gap it finds is a gap in the spec. It writes `docs/superpowers/plans/<yyyy-mm-dd>-<KEY-n>-<slug>.md` with the **Scenarios** table for verify-and-fix and the **Close-out notes for ship-plan**, and leaves the `From ship-issue` block empty.
-2. **Take the report in** as in I2 step 5. Its `Parked:` lines are ship-plan's to ask at close-out; they stay `[needs a decision]` in the plan.
-3. **Fill the `From ship-issue` block** with every `Ruling:`, `Parked:`, `Asked:` and `Lesson:` line from this skill's ledger, verbatim. Commit the plan on the branch unless `git check-ignore -q <plan path>` says it is ignored: ship-plan's pre-flight parks a dirty tree it did not make.
+2. **Take the report in** as in I2 step 6. Its `Parked:` lines are ship-plan's to ask at close-out; they stay `[needs a decision]` in the plan.
+3. **Fill the `From ship-issue` block** with every `Ruling:`, `Parked:`, `Asked:` and `Lesson:` line from this skill's ledger, verbatim. **When the spec is held for a docs PR** (I2 step 3), add one line for ship-plan's close-out (its section 7, step 3): `Docs PR: <held spec path> → docs/superpowers/specs/<file name>; also <each other docs change the spec's delivery section lists, or "nothing else">`. Commit the plan on the branch unless `git check-ignore -q <plan path>` says it is ignored: ship-plan's pre-flight parks a dirty tree it did not make.
 
 ## I5. Jira
 
@@ -282,6 +287,7 @@ is refused. `cat <main>/.git/HEAD` shows its branch but not whether it is dirty.
 | "I'll start ship-plan's ledger for it" | Never. An existing ship-plan ledger means "resume", and the plan path would be read as answers. |
 | "I'll assign the issue and move it to In Progress now" | ship-plan's section 1 does that when work starts. |
 | "The main checkout is on another branch, I'll switch it" | Someone is working there. Use the worktree recipe. |
+| "I'll open a docs worktree for the spec beside the code" | A stage cannot write there, and an early docs PR loses its approval. Hold the spec in the ledger directory (I2 step 3); ship-plan opens the docs PR after the merge, in this checkout. |
 | "Worktree ready, run the tests" | Did you run the Prerequisites, copy the `Copy:` files, and check `Shared:`? |
 | "The spec exists, but I'd design it differently" | Existing work counts as approved. Route per I0. |
 | "It's quicker to write the spec or plan here" | The stages run as subagents so this session stays small and keeps one effort level. Dispatch them. |

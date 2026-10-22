@@ -145,6 +145,21 @@ block of more than about 30 lines is an Important finding: extract it the way
 the repo's agent instructions say, or, when the plan copies on purpose, put it
 in the question batch with the extraction as the recommended option.
 
+**Then look for other copies of the same source.** Another branch may have
+copied it into the same place under another name: on ORIG-8202, #124 and #126
+each added a Serilog capture sink to Onboarding's tests (`CapturingSink.cs` and
+`SerilogCapture.cs`), and neither saw the other. For each copied source, take
+two or three names only it declares (types, members, configuration keys), then:
+
+- `git grep -n -e <name> … origin/<base> -- <the folder the copy goes in>`: a hit outside this diff is a copy already on the base branch. Reuse it instead of adding a second one, or merge the two in this PR.
+- `gh pr list --state open --json number,files --jq '.[] | select(any(.files[]; .path | startswith("<that folder>/"))) | .number'`, then `gh pr diff <n> | grep -n -e <name>` for each PR it lists: a hit is a copy in flight. Name it in the report, with both paths, so whichever PR merges second reuses the other's copy. Commenting on the other PR is outward-facing: it goes in the question batch, never done on your own.
+
+Run this again each time the base branch is merged into this branch: the
+merge is where a copy from a PR that merged first arrives. A second copy is a
+Suggestion (Important when it crosses the duplication gate's threshold), fixed
+in this PR when it keeps behaviour, and otherwise a follow-up named in the
+report.
+
 Give each reviewer the ledger's `Ruling:` lines, so settled questions are not
 raised again as new findings.
 
