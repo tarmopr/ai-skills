@@ -11,6 +11,7 @@ Claude Code skills by Tarmo Protsin.
 | `verify-and-fix` | Variant of `verify` for `ship-plan` repos: also answers the PR's review comments, from people and Copilot |
 | `handoff` | Writes session state to a handoff file so work can continue in a fresh context |
 | `continue-handoff` | Picks up the newest pending handoff in a new session |
+| `retro` | Turns the current session's learnings into proposed changes to skills, CLAUDE.md/AGENTS.md, hooks, run logs and memory, and applies the ones you pick |
 
 The Linear set (`ship`, `verify`) and the Jira set (`ship-issue`, `ship-plan`, `verify-and-fix`) are
 independent: each reads its own config (`.claude/ship.md` or `.claude/ship-plan.md`). Use the set that
