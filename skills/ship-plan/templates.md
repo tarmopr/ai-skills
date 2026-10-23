@@ -247,10 +247,10 @@ Resume with `/ship-plan` in the checkout that holds the branch, or `/loop 30m /s
 
 ## Slack: review request
 
-Short; Slack unfurls the PR and Jira links.
+Short; Slack unfurls the PR and Jira links. Take `Size` from `gh pr view <n> --json changedFiles,additions,deletions` right before the post, never from memory: the message cannot be edited.
 
 ```markdown
-**Review request:** <PR title> <pr url>
+:github-pr: **Review request:** <PR title> <pr url>
 <1–2 sentences: what changes for a user.> <Jira: <issue url> | no Jira issue>
 Size: <files> files, +<added> −<removed>. Needs: <n approvals | code owner approval | no approval, review welcome>.
 ```
