@@ -15,6 +15,7 @@ allowed-tools:
   - Bash(mkdir -p .superpowers/*)
   - Bash(gh repo view *)
   - Bash(gh api user --jq .login)
+  - Bash(gh api user --jq .login --hostname *)
   - Bash(gh pr view *)
   - Bash(gh pr checks *)
   - Bash(gh pr comment *)
@@ -182,11 +183,11 @@ Copilot's threads, and re-requesting a review (below). Never approve, dismiss a
 review, resolve a person's thread, merge, or request a new reviewer.
 
 `<o>/<r>` is `gh repo view --json nameWithOwner --jq .nameWithOwner`; your
-login is `gh api user --jq .login`. Run each once.
+login is `gh api user --jq .login --hostname <host>`. Run each once. `<host>` is the host of `gh repo view --json url --jq .url` (`github.com`, or a GitHub Enterprise host). Append `--hostname <host>` to every `gh api` call, after its other arguments: `gh api` does not read the host from the git remote the way `gh pr` does, so on GitHub Enterprise it asks `github.com` and answers 404, or another account's login.
 
 **Fetch.**
 
-- Threads: `gh api graphql -f query='query ReviewThreads($owner:String!,$name:String!,$n:Int!){repository(owner:$owner,name:$name){pullRequest(number:$n){reviewThreads(first:100){nodes{id isResolved isOutdated path line comments(first:50){nodes{id author{login} body createdAt}}}}}}}' -F owner=<owner> -F name=<repo> -F n=<n>`
+- Threads: `gh api graphql -f query='query ReviewThreads($owner:String!,$name:String!,$n:Int!){repository(owner:$owner,name:$name){pullRequest(number:$n){reviewThreads(first:100){nodes{id isResolved isOutdated path line comments(first:50){nodes{id author{login} body createdAt}}}}}}}' -F owner=<owner> -F name=<repo> -F n=<n> --hostname <host>`
 - Review bodies and conversation comments: `gh pr view <n> --json reviews,comments`.
 
 **What counts as new.** Every item is keyed by GraphQL node ids (the `id`
@@ -209,9 +210,9 @@ not by who wrote it.
 [templates.md](../ship-plan/templates.md), "Review reply"; write the body to a
 file in the ledger directory and pass it with `-F body=@<file>`):
 
-- an inline thread: `gh api graphql -f query='mutation ReplyToThread($id:ID!,$body:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$id,body:$body}){comment{id}}}' -f id=<thread id> -F body=@<file>`;
+- an inline thread: `gh api graphql -f query='mutation ReplyToThread($id:ID!,$body:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$id,body:$body}){comment{id}}}' -f id=<thread id> -F body=@<file> --hostname <host>`;
 - a review body or a conversation comment: `gh pr comment <n> --body-file <file>`, quoting the start of what you answer;
-- **resolve** a Copilot thread once it has a reply of any kind (fixed, answered, follow-up, not valid): `gh api graphql -f query='mutation ResolveThread($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -f id=<thread id>`. A person's thread is theirs to resolve.
+- **resolve** a Copilot thread once it has a reply of any kind (fixed, answered, follow-up, not valid): `gh api graphql -f query='mutation ResolveThread($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -f id=<thread id> --hostname <host>`. A person's thread is theirs to resolve.
 - **Re-request** a person with `gh pr edit <n> --add-reviewer <login>` when every change they requested is addressed, or when your push dismissed their approval (their latest review turned `DISMISSED`). Never re-request Copilot: a ruleset that wants it re-reviews on push by itself.
 
 Record each reply as `Replied: <key> — <fixed in <sha> | answered | follow-up | not valid | needs a decision>`.

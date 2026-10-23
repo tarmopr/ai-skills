@@ -30,8 +30,10 @@ allowed-tools:
   - Bash(gh pr edit * --add-reviewer *)
   - Bash(gh repo view *)
   - Bash(gh api user --jq .login)
+  - Bash(gh api user --jq .login --hostname *)
   - Bash(gh api repos/*/rules/branches/*)
   - Bash(gh api repos/*/branches/*/protection/required_pull_request_reviews)
+  - Bash(gh api repos/*/branches/*/protection/required_pull_request_reviews --hostname *)
   - Bash(gh api graphql -f query='query ReviewThreads*)
   - Bash(gh api graphql -f query='mutation ReplyToThread*)
   - Bash(gh api graphql -f query='mutation ResolveThread*)
@@ -351,16 +353,16 @@ handle every comment, and goes to section 5 only when the repo's review rules
 are met. It ends in one of three ways: merge (section 5), hand off (section 7,
 "awaiting review"), or not merged.
 
-`<o>/<r>` is `gh repo view --json nameWithOwner --jq .nameWithOwner`.
+`<o>/<r>` is `gh repo view --json nameWithOwner --jq .nameWithOwner`. `<host>` is the host of `gh repo view --json url --jq .url` (`github.com`, or a GitHub Enterprise host). Append `--hostname <host>` to every `gh api` call, after its other arguments: `gh api` does not read the host from the git remote the way `gh pr` does, so on GitHub Enterprise it asks `github.com` and answers 404, or another account's login.
 
 1. **What the repo requires,** once per run. Record
    `Review rule: approvals <n> | code owners <yes/no> | stale dismissed <yes/no> | threads must be resolved <yes/no> | source <config/ruleset/protection/unknown>`:
-   - **The rulesets:** `gh api repos/<o>/<r>/rules/branches/<base>`. Every rule with `"type": "pull_request"` counts; take the strictest of each of `required_approving_review_count`, `require_code_owner_review`, `dismiss_stale_reviews_on_push` and `required_review_thread_resolution` from its `parameters`.
-   - **Else classic branch protection:** `gh api repos/<o>/<r>/branches/<base>/protection/required_pull_request_reviews`. A 403 or 404 means unknown, not none.
+   - **The rulesets:** `gh api repos/<o>/<r>/rules/branches/<base> --hostname <host>`. Every rule with `"type": "pull_request"` counts; take the strictest of each of `required_approving_review_count`, `require_code_owner_review`, `dismiss_stale_reviews_on_push` and `required_review_thread_resolution` from its `parameters`.
+   - **Else classic branch protection:** `gh api repos/<o>/<r>/branches/<base>/protection/required_pull_request_reviews --hostname <host>`. A 403 or 404 means unknown, not none.
    - **The config's `Approvals:`** (`## Repo`: `none` for POCs and internal tools, or a number) applies when neither could be read, and can raise what they say, never lower it: GitHub enforces its own rules whatever the config says.
    - **Nothing readable and no `Approvals:`:** assume 1.
 2. **Request reviews,** right after the PR opens. Code owners are requested by GitHub; request nobody else. **Copilot,** unless the config says `Copilot review: no`, `blockers.md` records that Copilot review is unavailable here, or `gh pr view <n> --json reviewRequests,reviews` already shows it (a ruleset can request it automatically): `gh pr edit <n> --add-reviewer @copilot`. If that is refused, go on without it, record a `Lesson:` for `blockers.md` ("Copilot review unavailable: <error>"), and propose `Copilot review: no` as a config change. Never try another route.
-   **Slack,** when `## Slack` (config, else `.claude/ship-plan.local.md`) names a channel: `slack_send_message` with its `channel_id`, the "Slack: review request" text (templates.md) and `unfurl_app_links: true`. Once per PR: record `Slack: posted <ts>` in the ledger and never post again for that PR, also not on a resume. Fix-forward, revert and lessons PRs are posted only when the review rule needs an approval. A failed post is a `Lesson:`, never retried another way, and never a reason to stop.
+   **Slack,** when `## Slack` (config, else `.claude/ship-plan.local.md`) names a channel: `slack_send_message` with its `channel_id`, the "Slack: review request" text (templates.md) and `unfurl_app_links: true`, unless a standing answer in `interruptions.md` says otherwise (it outranks this default, as every standing answer does). Read it before the post: the message cannot be edited or deleted afterwards. Once per PR: record `Slack: posted <ts>` in the ledger and never post again for that PR, also not on a resume. Fix-forward, revert and lessons PRs are posted only when the review rule needs an approval. A failed post is a `Lesson:`, never retried another way, and never a reason to stop.
 3. **Poll:** `gh pr view <n> --json reviewDecision,reviews,reviewRequests,mergeStateStatus,statusCheckRollup`, and the threads and comments the way `verify-and-fix` section 4b fetches them.
    - **New feedback** (as `verify-and-fix` 4b defines it): run `verify-and-fix --comments`. It grades, fixes, runs the gates, pushes, replies, resolves Copilot's threads and re-requests reviewers, without a full review round of code the reviewers already saw. Then, with a Jira issue, post "Jira comment: review round" from its review-item table, wait for the checks (section 4, step 6), and poll again. Count the round.
    - **The review rules are met:** section 5. Met means all of: **approvals**: in `reviews`, take each reviewer's latest review, leave out yours and Copilot's, and count those in state `APPROVED`; the count reaches the rule's number, no latest review is `CHANGES_REQUESTED`, and `reviewDecision` is `APPROVED` or empty (GitHub leaves it empty when no rule requires review; when a rule does, `APPROVED` also covers code owners); no review pending from Copilot in `reviewRequests` (a push can re-request it: wait for it, at most 20 minutes when nothing else is pending, then go on and record a `Lesson:`); no item without a reply; no item graded "needs the user" still undecided (it blocks the merge even though it has a reply); and, when threads must be resolved, every thread resolved.
@@ -399,7 +401,7 @@ half-updated. Say so in the closing comment until it is green.
 1. **The config's `## After merge` checks,** read-only.
 2. **Closing comment.**
    Four outcomes, one template each (templates.md):
-   - **Done:** merged, and the base branch green, or no CI (CI None, no base-branch run for the merge). With a Jira issue: "Jira comment: done", then `transitionJiraIssue` with `transitionName: <Done transition>`, **only when `Done means:` is met** (with CI None, Done means is "merged"). Not configured: `gh pr comment <n>` with "PR comment: done".
+   - **Done:** merged, and the base branch green, or no CI (CI None, no base-branch run for the merge). With a Jira issue: "Jira comment: done", then `transitionJiraIssue` with `transitionName: <Done transition>`, **only when `Done means:` is met** (with CI None, Done means is "merged"). Not configured: `gh pr comment <n>` with "PR comment: done". Before writing it, read the `blockers.md` entries about what the base branch's workflows do after a merge (for example a chart bump PR their bot opens and merges), check each one, and report its real state in the comment.
    - **Base branch red:** merged, and the base branch still red. "Jira comment: base branch red" or "PR comment: base branch red"; the issue stays in the start status.
    - **Awaiting review:** the PR is open, green, and every comment so far is handled, but it waits on reviewers (section 4R, step 5). "Jira comment: awaiting review"; without Jira, the report only (the PR shows its own state). The issue stays in its status. The report says how to resume.
    - **Not merged:** the PR is still open for another reason (verify not clean, checks never registered, the base branch red before merge, a refused merge, 5 review rounds), or no PR exists. "Jira comment: not merged" or "PR comment: not merged"; with no PR and no Jira, the report is the only record.
