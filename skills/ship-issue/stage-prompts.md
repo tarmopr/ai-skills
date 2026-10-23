@@ -70,9 +70,11 @@ that would write to one is a question.
      at open, and a second writer overwrote the first line.
    - A source generator or analyzer the design relies on (`[LoggerMessage]`,
      `[GeneratedRegex]`, a JSON source generator): check it reaches the new
-     project. Read the .nuspec of every package the project references for
-     `exclude="Analyzers"` on the dependency that carries the generator.
-     Testcontainers excludes it from Microsoft.Extensions.Logging.Abstractions.
+     project. Prove it with a build: add one use of the generator to the
+     project, run `dotnet build` on it, quote the result, and remove the
+     probe. A .nuspec's `exclude="Analyzers"` is not proof: ORIG-8339's
+     prompt said Testcontainers keeps `[LoggerMessage]` out of
+     Platform.Testing, and on SDK 10.0.402 it did not.
    - A schema claim (what a migration does, a column's type, what a schema
      test will find): apply the migration to a scratch database and run there
      every query the spec's tests will run, quoting what each returns.

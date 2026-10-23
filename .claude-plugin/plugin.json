@@ -1,7 +1,7 @@
 {
   "name": "ai-skills",
   "description": "Ship a plan or a Jira issue to a merged PR, verify a branch to merge-ready, and hand off work between sessions.",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "author": {
     "name": "Tarmo Protsin"
   },
