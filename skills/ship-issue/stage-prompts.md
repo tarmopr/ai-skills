@@ -47,6 +47,12 @@ that would write to one is a question.
    migrations, model snapshots, scaffolded clients. Generated code breaks
    rules too (a generated `public` class in a project that allows one public
    type), and finding it here costs a spec line instead of a plan rewrite.
+   When the change removes a copied value (a literal, a limit, a rule),
+   `git grep` the value itself, not only its name, across every module and
+   service. A match in another module's domain is a copy across a boundary,
+   which the design treats differently from a literal in the same module.
+   ORIG-8343's first draft took `AttributionRules`' 2048 and 512 for Sign-up's
+   own rules; they copy two limits of the Leads module.
 2. History: `git log -S'<string>' --format='%h %ad %s' --date=short -- <file>`
    shows when and why the code arrived.
 3. The running system, read-only, following evidence.md and the config's
@@ -67,6 +73,15 @@ that would write to one is a question.
      project. Read the .nuspec of every package the project references for
      `exclude="Analyzers"` on the dependency that carries the generator.
      Testcontainers excludes it from Microsoft.Extensions.Logging.Abstractions.
+   - A schema claim (what a migration does, a column's type, what a schema
+     test will find): apply the migration to a scratch database and run there
+     every query the spec's tests will run, quoting what each returns.
+     ORIG-8343's column-classification query was written but never run; it
+     would also have matched EF Core's `__ef_migrations_history`, which the
+     module keeps in the same schema. Run each probe command on its own: a
+     worktree-isolated session refuses a `docker exec … psql` joined to
+     another command. Start a session that must hold a lock while another
+     runs with `run_in_background`.
 
 ## Acceptance checks
 Every acceptance command the spec lists (a grep, `git merge-tree`, a test
@@ -96,6 +111,11 @@ out of scope, and acceptance with the baseline. Save it to <spec path>.
 When <spec path> is under <ledger dir> (held for a docs PR), the spec's
 location line says so, and its delivery section lists what the docs PR
 carries besides the spec (rows in the agent instructions, an ADR).
+
+When the spec suggests a commit order, check that each commit builds from what
+it and the commits before it add. Do this check yourself; the builder check
+does not. ORIG-8343's spec put `Country.Length` after the commit whose test
+reads it.
 
 ## Mode revise
 The spec exists at <spec path>. The user answered: <answers, numbered as the
