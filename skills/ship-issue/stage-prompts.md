@@ -53,6 +53,13 @@ that would write to one is a question.
    which the design treats differently from a literal in the same module.
    ORIG-8343's first draft took `AttributionRules`' 2048 and 512 for Sign-up's
    own rules; they copy two limits of the Leads module.
+   When the issue is about personal data (logs, events, masking), count as
+   personal data every stored text a person can be identified by: a name, a
+   display name, an email, an identity provider's subject. That holds whether
+   or not any code writes it yet: a mapped column with no writer today is
+   still exposed once one exists. ORIG-8340's spec said User Account maps no
+   plaintext personal data; its review found `login_method.DisplayName` and
+   `Subject`.
 2. History: `git log -S'<string>' --format='%h %ad %s' --date=short -- <file>`
    shows when and why the code arrived.
 3. The running system, read-only, following evidence.md and the config's
@@ -106,6 +113,13 @@ it cannot be undone by a follow-up commit, or it is on ship-plan's "does not
 authorize" list. A choice that passes is a Ruling:. A choice that fails is a
 question: write the spec on your recommendation, mark each place that depends
 on it `[pending Q<n>: <question>]`, and return the question.
+
+Leave nothing as "the builder's call": each task's implementer sees only its
+own task, so a choice the spec leaves open is ruled on in the Plan stage
+without your research. Rule on each such choice (a name, the form of a test,
+a doc comment's text, a test's setup) with the same confidence test, or return
+it as a question. ORIG-8340's spec left four, and the Plan stage had to rule
+on every one.
 
 Always write a spec, even for a bounded change; the classification only sets
 its length. It holds the evidence, the decisions and who made them, what is

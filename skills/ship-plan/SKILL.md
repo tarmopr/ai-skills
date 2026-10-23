@@ -423,6 +423,7 @@ half-updated. Say so in the closing comment until it is green.
    6. The lessons recorded, and any proposed skill change.
 6. **Mark the ledger** `Phase: done` when the outcome is Done, and if this run was started by `/loop`, end the report with "Done: stop the `/loop`." Every other outcome keeps the run open, so a later `/ship-plan` resumes it.
 7. **Ask the batch once,** after the report, with `AskUserQuestion` when the answers are choices. When the user answers, carry on: run the pending scenarios once they have signed in, add a new tracker or PR comment, and record each answer in `interruptions.md`.
+   **Before creating a follow-up issue,** whether this batch approved it or an earlier answer did (a `Ruling: user` line copied from `ship-issue`'s I3 batch), check that a reviewer has not filed it already. Read the PR's review bodies and comments (`gh pr view <n> --json reviews,comments`), and search the project with `searchJiraIssuesUsingJql` (`project = <key> AND text ~ "<the follow-up's subject>" AND created >= -14d`). When an issue already covers it, create nothing: name that issue in the Done comment's follow-ups, and record a `Ruling:` that quotes the line of it that covers the follow-up. ORIG-8340's approver filed ORIG-8361, which covered both follow-ups the I3 batch had approved; creating them as well would have split the work in two.
 
 ## 8. Lessons
 
