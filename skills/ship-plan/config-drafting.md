@@ -12,7 +12,7 @@ Read only when the config is missing or a section must be drafted. The format is
 3. **`## CI`:** `Workflow:` the workflow that runs on `push` to the base branch (on Azure DevOps, the pipeline definition id). No CI at all, by the host's *Has CI*: `None`. Workflows on PRs only: leave `Workflow:` out and note "no push workflow" in the batch.
    **`## Repo`:** set `Merge:` from the host's *Allowed merge methods*: `squash` when allowed, else `merge`.
 4. **Never invent** `## Jira` and `## Linear` (the issue question drafts them), `## Slack` (pre-flight asks for it), `## Never do`, `## UI testing` sign-ins, `## Evidence`, `## Worktree`, `## Models`, or reviewers. List them in the batch as "consider adding".
-5. **Write the draft** to `.claude/ship-plan.md` and put it at the top of the question batch, with each gate's source (`ci.yml: job test, step 3`). Until the user confirms it, `verify-and-fix` runs no gate. Once confirmed: under `ship-plan`, it is committed on the feature branch; `verify-and-fix` run on its own leaves it uncommitted and says so.
+5. **Write the draft** to `.claude/ship-plan.md` (commit message `chore: add ship-plan config`) and put it at the top of the question batch, with each gate's source (`ci.yml: job test, step 3`). Until the user confirms it, `verify-and-fix` runs no gate. Once confirmed: under `ship-plan`, it is committed on the feature branch; `verify-and-fix` run on its own leaves it uncommitted and says so.
 
 ## Examples
 

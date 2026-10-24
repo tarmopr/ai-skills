@@ -15,6 +15,7 @@ allowed-tools:
   - Bash(git hook run pre-commit)
   - Bash(git status)
   - Bash(git worktree list)
+  - Bash(git remote get-url origin)
   - Bash(git rev-parse *)
   - Bash(git check-ignore *)
   - Bash(gh auth status)
@@ -65,7 +66,7 @@ log is created from [log-formats.md](log-formats.md) at close-out. A question
 with a standing answer in any of them is not asked again.
 
 - **A repo set up for `ship`:** if `.claude/ship.md` exists and `.claude/ship-plan.md` does not, stop with one line: "This repo is set up for the removed `ship` skill: move `.claude/ship.md` to `.claude/ship-plan.md` and `.claude/ship/` to `.claude/ship-plan/`."
-- **Host and tracker:** resolve `Host:` and `Tracker:` as [config-format.md](../ship-plan/config-format.md) says (`Host:` from the `origin` remote when absent; `Tracker:` from `## Jira` or `## Linear` when absent, else undecided until I1). Then read `../ship-plan/hosts/<host>.md` and, unless the tracker is `none` or undecided, `../ship-plan/trackers/<tracker>.md`. A reference below to an operation of the host or the tracker names the section of that name in those files. **When `Tracker:` is not `none`, or the tracker question is asked, read [templates-issue.md](../ship-plan/templates-issue.md).**
+- **Host and tracker:** resolve `Host:` and `Tracker:` as [config-format.md](../ship-plan/config-format.md) says (`Host:` from the `origin` remote when absent; `Tracker:` from `## Jira` or `## Linear` when absent, else undecided until I1). Then read `../ship-plan/hosts/<host>.md` (`github.md` or `azure-devops.md`) and, unless the tracker is `none` or undecided, `../ship-plan/trackers/<tracker>.md` (`jira.md` or `linear.md`). A reference below to an operation of the host or the tracker names the section of that name in those files. **When `Tracker:` is not `none`, or the tracker question is asked, read [templates-issue.md](../ship-plan/templates-issue.md).**
 - **No `origin` remote** (and no `Host:`): there is no host and no PR to open. Read no host file, skip the host's *Auth check*, *Find open PRs* and *Find the base-branch run* and every `git fetch origin`, and branch from `<base>` where this skill says `origin/<base>`. ship-plan then stops before its section 4 and says so in its report.
 
 From the config, this skill reads: `## Repo` (`<base>`, branch pattern, `Host:`, `Tracker:`),

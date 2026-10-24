@@ -23,7 +23,7 @@ added by the tool and takes any key.
 
 | # | Header | Question | Options |
 |---|---|---|---|
-| 1 | Issue | Which issue tracks this work? | "Create a new issue"; the candidates as `<KEY>: <summary>`; under ship-plan only, "No issue (the PR is the record)". Fill the 4 slots in that order: under ship-plan, at most 2 candidates. Recommend a candidate only if it clearly matches, else "Create a new issue". |
+| 1 | Issue | Which issue tracks this work? | "Create a new issue"; the candidates as `<KEY>: <summary>`; under ship-plan only, "No issue (the PR is the record)". Fill the 4 slots in that order: under ship-plan, at most 2 candidates. With no candidates, the second option is "Type an issue key in Other". Recommend a candidate only if it clearly matches, else "Create a new issue". |
 | 2–3 | Where it goes | If a new issue: where should it go? | The places the tracker's *Where a new issue goes* defines, one question per place, in its order. A tracker with no places to choose (Linear) asks none. The **default** comes first: the config's value, else that of the most relevant candidate, else the first listed. |
 | 4 | Related | If a new issue: relate it to an existing issue? (optional) | "No related issue", then the issue candidates (an issue can be related to the new one without being the one that tracks the work). With none found, the second option is "Type an issue key in Other". |
 
@@ -66,7 +66,7 @@ Source: `<plan path>` · Spec: `<spec path, or "none">`
 
 ## Plan appended
 
-Add the Plan section above at the end of the issue's text, as the tracker's *Append the plan* says. Never replace the user's text.
+Add the Plan section above at the end of the issue's text, as the tracker's *Append the plan* says. ship-plan appends `## Plan` only; ship-issue appends `## Plan`, `## Done when` and `## Full plan`. Never replace the user's text.
 
 ## Issue comment: merged
 

@@ -51,6 +51,7 @@ allowed-tools:
   - Bash(git switch chore/*)
   - Bash(git switch refactor/*)
   - Bash(git remote set-head origin --auto)
+  - Bash(git remote get-url origin)
   - Bash(mkdir -p .superpowers/*)
   - mcp__plugin_atlassian_atlassian__discover
   - mcp__plugin_engineering_slack__slack_search_channels
@@ -123,7 +124,7 @@ runs. A question that has a standing answer is not asked again. Missing log
 files are created from [log-formats.md](log-formats.md) at close-out.
 
 - **A repo set up for `ship`:** if `.claude/ship.md` exists and `.claude/ship-plan.md` does not, stop with one line: "This repo is set up for the removed `ship` skill: move `.claude/ship.md` to `.claude/ship-plan.md` and `.claude/ship/` to `.claude/ship-plan/`."
-- **Host and tracker:** resolve `Host:` and `Tracker:` as [config-format.md](config-format.md) says (`Host:` from the `origin` remote when absent; `Tracker:` from `## Jira` or `## Linear` when absent, else undecided until pre-flight step 5). Then read `hosts/<host>.md` and, unless the tracker is `none` or undecided, `trackers/<tracker>.md`. A reference below to an operation of the host, the tracker or the notifier names the section of that name in those files and in `notifiers/slack.md`.
+- **Host and tracker:** resolve `Host:` and `Tracker:` as [config-format.md](config-format.md) says (`Host:` from the `origin` remote when absent; `Tracker:` from `## Jira` or `## Linear` when absent, else undecided until pre-flight step 5). Then read `hosts/<host>.md` (`github.md` or `azure-devops.md`) and, unless the tracker is `none` or undecided, `trackers/<tracker>.md` (`jira.md` or `linear.md`). A reference below to an operation of the host, the tracker or the notifier names the section of that name in those files and in `notifiers/slack.md`.
 - **No `origin` remote** (and no `Host:`): there is no host and no PR to open. Read no host file, skip the host's *Auth check* and the `git fetch origin` in pre-flight step 4, and stop before section 4, saying so in the report.
 
 ## What invoking this skill authorizes

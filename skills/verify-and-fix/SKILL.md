@@ -12,6 +12,7 @@ allowed-tools:
   - Bash(git rev-parse *)
   - Bash(git log *)
   - Bash(git remote set-head origin --auto)
+  - Bash(git remote get-url origin)
   - Bash(mkdir -p .superpowers/*)
   - Bash(gh repo view *)
   - Bash(gh api user --jq .login)
@@ -98,7 +99,7 @@ regressions: a later round often finds bugs an earlier round's fixes introduced.
 
 ## 1. Setup
 
-- **Host and tracker:** resolve `Host:` and `Tracker:` as [config-format.md](../ship-plan/config-format.md) says (`Host:` from the `origin` remote when absent; `Tracker:` from `## Jira` or `## Linear` when absent). Then read `../ship-plan/hosts/<host>.md` and, unless the tracker is `none`, `../ship-plan/trackers/<tracker>.md`. A reference below to an operation of the host or of the tracker names the section of that name in those files.
+- **Host and tracker:** resolve `Host:` and `Tracker:` as [config-format.md](../ship-plan/config-format.md) says (`Host:` from the `origin` remote when absent; `Tracker:` from `## Jira` or `## Linear` when absent). Then read `../ship-plan/hosts/<host>.md` (`github.md` or `azure-devops.md`). A reference below to an operation of the host names the section of that name in that file; one of the tracker names the section of that name in `../ship-plan/trackers/<tracker>.md` (`jira.md` or `linear.md`), read where the reference says.
 - **Ledger:** `mkdir -p .superpowers/verify-and-fix/<branch>`, then `ledger.md` there. If `.superpowers/` is not listed in `.git/info/exclude`, append it there; never edit the repo's `.gitignore`. One line per round: the gate results, the findings with their grades, the fixes with their commits, and every `Ruling:` you made. After a context compaction, trust the ledger and `git log` over memory.
 - **Base:** `<base>` is a branch name: `$ARGUMENTS`, else the config's `Base branch:`, else the repo's default branch from the host's *Default branch*. Run `git fetch origin <base> --quiet` first; every diff below compares `origin/<base>...HEAD`. If `git rev-parse --verify --quiet origin/HEAD` prints nothing (common in a fresh clone), run `git remote set-head origin --auto`: the `security-review` skill diffs against `origin/HEAD` and fails without it. It changes local git metadata only.
 - **Config:**

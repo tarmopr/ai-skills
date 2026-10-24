@@ -42,10 +42,9 @@ Do not assume an integration closes the issue. You apply the done transition, on
 
 ## Where a new issue goes
 
-Asked when a run has no Jira issue key: none in the argument, the plan, or a
-branch this run started. Ask it **before continuing**, on its own, with one
-`AskUserQuestion` call: the answer comes back in the same turn, so the skill's
-pre-approval holds. Never create an issue in a project the user did not choose.
+Asked when a run has no Jira issue key, as templates-issue.md's "Issue question"
+says: it holds the question table, the option rules and how answers are kept.
+Here, the question's two places are the **Project** and the **Epic**.
 
 **Site first.** `cloudId` is the config's `Site:`. With no `## Jira` in the
 config, call `getAccessibleAtlassianResources`. One Jira site: use its URL.
@@ -58,21 +57,10 @@ it and use the name it returns.
 - **Projects:** the config's `Project:`, then `executeRead` with `listJiraProjects` and `action: "create"`, preferring the candidates' projects. Up to 4 in total.
 - **Epics:** `searchJiraIssuesUsingJql` with `issuetype = Epic AND statusCategory != Done AND text ~ "<title words>"`, scoped to the default project (below) when there is one. Up to 3.
 
-**The question.** Every question has 2 to 4 options, the recommended one first
-and marked "(Recommended)", then the rest in the order given. "Other" is always
-added by the tool and takes any key.
+**The places.**
 
-| # | Header | Question | Options |
-|---|---|---|---|
-| 1 | Issue | Which Jira issue tracks this work? | "Create a new issue"; the candidates as `<KEY>: <summary>`; under ship-plan only, "No Jira issue (the PR is the record)". Fill the 4 slots in that order: under ship-plan, at most 2 candidates. Recommend a candidate only if it clearly matches, else "Create a new issue". |
-| 2 | Project | If a new issue: which project should it go in? | The **default project**: the config's `Project:`, else the project of the most relevant candidate, else the first listed. Then the other listed projects. |
-| 3 | Epic | If a new issue: add it to an epic? (optional) | "No epic", then the epic candidates. With none found, the second option is "Type an epic key in Other". Recommend an epic only if it clearly matches. |
-| 4 | Related | If a new issue: relate it to an existing issue? (optional) | "No related issue", then the issue candidates (an issue can be related to the new one without being the one that tracks the work). With none found, the second option is "Type an issue key in Other". |
-
-Questions 2–4 begin "If a new issue" because they are ignored when 1 picks an
-existing issue or "No Jira issue". Keep every question and answer in the
-conversation until the run's ledger exists (ship-plan creates its ledger with
-the branch), then write each as an `Asked:` line and a `Ruling: user <date>`.
+- **Project** (question 2: "If a new issue: which project should it go in?"): the **default project** is the config's `Project:`, else the project of the most relevant candidate, else the first listed. Then the other listed projects.
+- **Epic** (question 3: "If a new issue: add it to an epic? (optional)"): "No epic", then the epic candidates. With none found, the second option is "Type an epic key in Other". Recommend an epic only if it clearly matches.
 
 **After the answer, for a new issue:**
 
@@ -129,7 +117,7 @@ and `contentFormat: "html"`. Never write it back as markdown: that drops media,
 mentions and panels. If the HTML format is rejected, post the Plan section as a
 comment instead. Never replace the user's text.
 
-Add the `## Plan` section from "Create an issue", then `## Done when`, then `## Full plan` with the plan text.
+**What is appended.** ship-plan appends the `## Plan` section from "Create an issue" only. ship-issue appends `## Plan`, then `## Done when`, then `## Full plan` with the plan text.
 
 **Too big for Jira.** A description or a comment holds at most 32,767 characters. When the existing description plus the three sections would exceed it (count the text you would write; leave 2,000 characters of headroom for Jira's own markup), the fallback is fixed:
 
