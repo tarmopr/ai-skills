@@ -1,6 +1,6 @@
 # Docs PR
 
-Read only when the ledger has a `Docs PR:` line and the code PR merged (section 7, step 3 of [SKILL.md](SKILL.md)).
+Read only when the ledger has a `Docs PR:` line and the code PR merged (section 7, step 2 of [SKILL.md](SKILL.md)).
 
 **Docs PR,** when the ledger has a `Docs PR:` line (`ship-issue` held the spec out of the code PR, because the repo keeps docs and code in separate PRs) and the code PR has merged. Under "Awaiting review" and "Not merged" it waits: the docs describe code that is not on the base branch yet. Nothing else opens it: without this step the spec stays git-ignored in the ledger directory and never reaches the repository.
 

@@ -159,4 +159,4 @@ None. The key in the branch name and the PR title links it on `github`; see Inte
 
 ## Find an existing follow-up
 
-Search the project with `searchJiraIssuesUsingJql` (`project = <key> AND text ~ "<the follow-up's subject>" AND created >= -14d`). Reading the PR's review bodies and grepping the logs are ship-plan's own steps (section 7, step 7).
+Search the project with `searchJiraIssuesUsingJql` (`project = <key> AND text ~ "<the follow-up's subject>" AND created >= -14d`). Reading the PR's review bodies and grepping the logs are ship-plan's own steps (section 7, step 6).
