@@ -18,20 +18,22 @@ claude plugin marketplace add tarmopr/ai-skills
 claude plugin install ai-skills@tarmopr
 ```
 
+From a clone of this repo, `./scripts/install-plugin.sh` does both, skipping whichever is already done.
+
 Skills are then available as `/ai-skills:ship-plan`, `/ai-skills:verify-and-fix` and so on. Get updates with
 `claude plugin marketplace update tarmopr`.
 
 ## Maintaining (author workflow)
 
-This repo is the source of truth. Each skill in `~/.claude/skills/` is a symlink to `skills/<name>/`
-here, so editing either path edits the same file, and changes show up in Claude Code at the next session.
+This repo is the source of truth. Every machine, the author's included, uses the skills through the
+marketplace plugin (see Install), not through symlinks in `~/.claude/skills/`. Edit the skills here only:
+the installed copy under `~/.claude/plugins/cache/` is replaced on every update.
 
-- **New machine:** clone the repo and run `./scripts/link-skills.sh` to link every skill, or pass names
-  to link only some, e.g. `./scripts/link-skills.sh ship-issue ship-plan verify-and-fix`.
-- **New skill:** create `skills/<name>/SKILL.md` in this repo, then run `./scripts/link-skills.sh`.
-  If you created it in `~/.claude/skills/` first, move it here, then run the script.
-- **Publish a change:** commit and push. Bump `version` in `.claude-plugin/plugin.json` so installed
-  copies get the update.
+- **New machine:** run the two Install commands, or `./scripts/install-plugin.sh` from a clone.
+  Cloning the repo is only needed to edit it.
+- **New skill:** create `skills/<name>/SKILL.md` in this repo. Never add a copy or a symlink to
+  `~/.claude/skills/`: with the plugin installed, every skill would load twice.
+- **Publish a change:** commit on a branch, open a PR, and bump `version` in
+  `.claude-plugin/plugin.json` so installed copies get the update. Once it is merged, run
+  `./scripts/update-plugin.sh` (marketplace update, then plugin update) and restart Claude Code.
 - **Check before pushing:** `claude plugin validate .`
-
-Don't install the plugin on the machine where the symlinks are, or every skill loads twice.
