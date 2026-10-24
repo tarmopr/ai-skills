@@ -299,7 +299,14 @@ otherwise. `partiallySucceeded`, `failed` and `canceled` are red. Still
 **Never rerun a pipeline that deploys.** Park the failure instead. A pipeline deploys when:
 
 - the config's `## Never do` names it; or
-- its definition deploys. Read it with `az pipelines show --id <pipeline> --query "{name:name,type:process.type,yaml:process.yamlFilename,steps:process.phases[].steps[?enabled].displayName}" -o json`. A YAML pipeline (`type` 2) deploys when its file (`git show origin/<base>:<yaml>`) has a `deployment:` job or an `environment:`. A classic pipeline (`type` 1) deploys when an enabled step deploys or publishes (its name says Deploy, Publish, Release or App Service), or its name does. Unsure: it deploys.
+- its definition deploys. Read it with `az pipelines show --id <pipeline> --query "{name:name,type:process.type,yaml:process.yamlFilename,steps:process.phases[].steps[?enabled].displayName}" -o json`. A YAML pipeline (`type` 2) deploys when its file (`git show origin/<base>:<yaml>`) has any of these:
+  - a `deployment:` job or an `environment:`;
+  - a deploy task in any job, an ordinary `job:` included: a task whose name says Deploy, Publish, Release or App Service, or an Azure or Kubernetes deploy task (`AzureWebApp`, `AzureRmWebAppDeployment`, `AzureFunctionApp`, `AzureCLI`, `AzurePowerShell`, `AzureResourceManagerTemplateDeployment`, `KubernetesManifest`, `HelmDeploy`, and the like);
+  - a `template:` or `extends:`. Read each file it names (`git show origin/<base>:<path>`) and apply this same test to it. A template from another repo (`@<alias>`), or one that cannot be read: the pipeline deploys.
+
+  A classic pipeline (`type` 1) deploys when an enabled step deploys or publishes (its name says Deploy, Publish, Release or App Service), or its name does.
+
+  Unsure, for either kind: it deploys.
 
 `process.stages` is empty for both kinds of pipeline, so it cannot tell.
 
