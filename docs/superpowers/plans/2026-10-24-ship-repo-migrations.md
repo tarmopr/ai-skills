@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Move the five repos that use `ship` or their own copies of the ship skills onto the shared, tool-neutral `ship-issue`, `ship-plan` and `verify-and-fix`. Then link those skills on this machine.
+**Goal:** Move the five repos that use `ship` or their own copies of the ship skills onto the shared, tool-neutral `ship-issue`, `ship-plan` and `verify-and-fix`. Then check that this machine's installed `ai-skills` plugin carries them.
 
-**Architecture:** One PR per repo, in that repo, each opened only after the user approves it. Each PR moves the config and logs to the `ship-plan` names and adds `Host:` and `Tracker:`. forest-planner also turns its project skills into config. The symlinks in `~/.claude/skills` change last.
+**Architecture:** One PR per repo, in that repo, each opened only after the user approves it. Each PR moves the config and logs to the `ship-plan` names and adds `Host:` and `Tracker:`. forest-planner also turns its project skills into config. The skills reach this machine through the `ai-skills@tarmopr` marketplace plugin, installed on 2026-10-24; the symlinks in `~/.claude/skills` were removed that day.
 
 **Tech Stack:** git and the repo's own host CLI (`az` for Azure DevOps, `gh` for GitHub).
 
@@ -26,7 +26,7 @@
 1. **A repo whose config prose still tells the agent to translate `gh` to `az`.** After the move it would contradict the host file, so the prose must be gone. Task 1 checks for it.
 2. **A deploy pipeline named as `Workflow:`** (`fis-geoserver-container-app`). The skill would watch it, which is fine, but it must never rerun it. Task 2 adds it to `## Never do`.
 3. **forest-planner's project skills deleted while repo rules still live only in them.** Task 5 checks that every repo-specific line ends up in the config, or in the report as a proposed skill change.
-4. **Linking the shared skills while forest-planner's own copies still exist** would silently switch forest-planner to them. Task 6 waits for its PR to merge.
+4. **forest-planner's own copies next to the plugin's.** Until its PR merges, forest-planner has both its project skills (`/ship-plan`) and the plugin's (`/ai-skills:ship-plan`). A run there must use the one the user named. Task 6 checks after the merge that only the plugin's remain.
 5. **`azure-subscription` has no `origin` remote.** A run there must stop before opening a PR. Task 4 runs scenario S9's check by hand.
 
 ---
@@ -93,13 +93,12 @@
 - [ ] **Step 7:** Commit with `chore: use the shared ship skills; repo config in .claude/ship-plan.md`. Then ask the user to approve the push and PR.
 - [ ] **Step 8:** Report the workflow pile as "proposed changes to the shared skills", with the exact text. These are follow-ups for `ai-skills`, not part of this PR.
 
-### Task 6: Link the skills on this machine
+### Task 6: Check the installed plugin on this machine
 
-Runs only after forest-planner's PR (Task 5) is merged.
+Runs only after forest-planner's PR (Task 5) is merged. Nothing is linked: the skills come from the `ai-skills@tarmopr` plugin.
 
-- [ ] **Step 1:** Remove the dangling symlinks: `rm ~/.claude/skills/ship ~/.claude/skills/verify`. They are links into this repo, and the targets are already deleted on `main`.
-- [ ] **Step 2:** In `/Users/tarmoprotsin/Development/ai-skills`, run `./scripts/link-skills.sh ship-issue ship-plan verify-and-fix`.
-  - Expected: `ls -la ~/.claude/skills` shows the three new links, plus `handoff` and `continue-handoff`.
+- [ ] **Step 1:** Run `./scripts/update-plugin.sh` in `/Users/tarmoprotsin/Development/ai-skills`. Then `claude plugin list`. Expected: `ai-skills@tarmopr` enabled, at the `version` in `main`'s `.claude-plugin/plugin.json`.
+- [ ] **Step 2:** Run `find ~/.claude/skills -maxdepth 1 -type l`. Expected: no link into this repo, and no `ship-issue`, `ship-plan`, `verify-and-fix`, `handoff` or `continue-handoff` folder in `~/.claude/skills`, so no skill loads twice.
 - [ ] **Step 3:** Run `node ~/.claude/skills/_specs/check-skills.mjs`. Expected: `ok`.
-- [ ] **Step 4:** Update the memory note `skills-symlink-sync.md` and its `MEMORY.md` line: the linked skills are now `ship-issue`, `ship-plan`, `verify-and-fix`, `handoff` and `continue-handoff`, and `ship` and `verify` are gone.
-- [ ] **Step 5: Report** what was moved, each PR's state, and the dropped `ship` runs. Offer a live `ship-plan` run, either on `ship-skill-sandbox` or on FIS.
+- [ ] **Step 4:** In forest-planner, `ls .claude/skills`. Expected: no `ship-plan`, `ship-issue` or `verify-and-fix` folder.
+- [ ] **Step 5: Report** what was moved, each PR's state, and the dropped `ship` runs. Offer a live `/ai-skills:ship-plan` run, either on `ship-skill-sandbox` or on FIS.
