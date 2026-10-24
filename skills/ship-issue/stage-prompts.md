@@ -19,7 +19,7 @@ rule, or you return the question.
 Working directory: <checkout>. First run `pwd` and
 `git rev-parse --show-toplevel`; if either is not <checkout>, write nothing
 and report "wrong checkout: <what you saw>". Work only there. Branch
-<branch> is checked out. Do not commit, push, switch branches or write to Jira.
+<branch> is checked out. Do not commit, push, switch branches or write to the tracker.
 
 Mode: <new | revise>.
 
@@ -29,10 +29,12 @@ Read first, in full: the issue <ledger dir>/issue.md; the repo config
 them).
 
 Then, in either mode, re-check every PR the issue, the spec or the ledger
-depends on: `gh pr view <n> --json state,mergedAt,headRefOid`, and fetch
-`origin/<base>`. A PR can merge or move while the run waits on the batch. If
-one has changed since the ledger last recorded it, say so as a Lesson: and
-write the spec for the state you see now, not the state the ledger describes.
+depends on, as the host's *Find open PRs* reads a named PR's state
+(<skill dir>/../ship-plan/hosts/<host>.md), and fetch `origin/<base>` when the
+repo has an `origin` remote. A PR can merge or move while the run waits on the
+batch. If one has changed since the ledger last recorded it, say so as a
+Lesson: and write the spec for the state you see now, not the state the ledger
+describes.
 
 ## Research (mode new)
 Before designing, confirm the problem is real and find its edges. Every claim
@@ -161,7 +163,7 @@ the plan needs, that is a gap in the spec, not something to remember.
 Working directory: <checkout>. First run `pwd` and
 `git rev-parse --show-toplevel`; if either is not <checkout>, write nothing
 and report "wrong checkout: <what you saw>". Work only there. Do not commit,
-push, switch branches or write to Jira.
+push, switch branches or write to the tracker.
 
 Read first, in full: the spec <spec path>; the repo config
 <checkout>/.claude/ship-plan.md; the Ruling: and Asked: lines of

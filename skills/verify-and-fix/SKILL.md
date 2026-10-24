@@ -1,6 +1,6 @@
 ---
 name: verify-and-fix
-description: Use when a branch or PR must be brought to merge-ready without supervision, or when asked to "verify", "review and fix", "get CI green", "triage the PR comments" or "address the Copilot / reviewer comments" — for repos configured for ship-plan (.claude/ship-plan.md), runs the repo's own gates from .claude/ship-plan.md, UI scenarios, review rounds and the PR's review comments until clean. Also use to resume such a loop after a context compaction.
+description: Use when a branch or PR on GitHub, GitHub Enterprise or Azure DevOps must be brought to merge-ready without supervision, or when asked to "verify", "review and fix", "get CI green", "triage the PR comments" or "address the reviewer comments", in a repo configured for ship-plan (.claude/ship-plan.md). Also use to resume such a loop after a context compaction.
 argument-hint: '[base branch name, default the config''s Base branch] [--comments]'
 allowed-tools:
   - Bash(git fetch origin *)
@@ -12,6 +12,7 @@ allowed-tools:
   - Bash(git rev-parse *)
   - Bash(git log *)
   - Bash(git remote set-head origin --auto)
+  - Bash(git remote get-url origin)
   - Bash(mkdir -p .superpowers/*)
   - Bash(gh repo view *)
   - Bash(gh api user --jq .login)
@@ -27,6 +28,22 @@ allowed-tools:
   - Bash(gh api graphql -f query='mutation ResolveThread*)
   - mcp__plugin_atlassian_atlassian__getJiraIssue
   - mcp__plugin_atlassian_atlassian__addOrEditJiraIssueComment
+  - Bash(az repos pr show *)
+  - Bash(az repos pr list *)
+  - Bash(az repos pr policy list *)
+  - Bash(az repos show *)
+  - Bash(az pipelines runs show *)
+  - Bash(az devops invoke --area build --resource timeline *)
+  - Bash(az devops invoke --area build --resource logs *)
+  - Bash(az devops invoke --area git --resource pullRequestThreads *)
+  - Bash(az devops invoke --area git --resource pullRequestThreadComments *)
+  - Bash(az account show)
+  - Bash(az devops configure --list)
+  - Bash(az repos policy list *)
+  - Bash(gh pr list *)
+  - Bash(gh pr diff *)
+  - mcp__plugin_engineering_linear__get_issue
+  - mcp__plugin_engineering_linear__save_comment
 ---
 
 # Verify and fix
@@ -39,6 +56,8 @@ between them to ask whether to go on.
 
 **Before round 1, read the repo's `.claude/ship-plan.md`
 ([format](../ship-plan/config-format.md)) and `.claude/ship-plan/blockers.md` in full.**
+If `.claude/ship.md` exists and `.claude/ship-plan.md` does not, stop with one
+line: "This repo is set up for the removed `ship` skill: move `.claude/ship.md` to `.claude/ship-plan.md` and `.claude/ship/` to `.claude/ship-plan/`."
 The config is the only source of commands. The blockers file is the list of
 things that stopped earlier runs, and the fix for each. Reading it costs a
 minute; rediscovering an entry costs an hour.
@@ -66,9 +85,9 @@ digraph loop {
   "UI scenarios: drive them in Chrome" -> "All scenarios pass?";
   "All scenarios pass?" -> "Triage, fix each with a failing test, commit the round" [label="no"];
   "All scenarios pass?" -> "Review round: agents on the whole diff" [label="yes"];
-  "PR review comments: fetch new ones (section 4b)" [shape=box];
-  "Review round: agents on the whole diff" -> "PR review comments: fetch new ones (section 4b)";
-  "PR review comments: fetch new ones (section 4b)" -> "Critical or Important found?";
+  "PR review comments: fetch new ones (review-comments.md)" [shape=box];
+  "Review round: agents on the whole diff" -> "PR review comments: fetch new ones (review-comments.md)";
+  "PR review comments: fetch new ones (review-comments.md)" -> "Critical or Important found?";
   "Critical or Important found?" -> "Triage, fix each with a failing test, commit the round" [label="yes"];
   "Triage, fix each with a failing test, commit the round" -> "Gates: run all, read every tail";
   "Critical or Important found?" -> "Report" [label="no"];
@@ -80,11 +99,12 @@ regressions: a later round often finds bugs an earlier round's fixes introduced.
 
 ## 1. Setup
 
+- **Host and tracker:** resolve `Host:` and `Tracker:` as [config-format.md](../ship-plan/config-format.md) says (`Host:` from the `origin` remote when absent; `Tracker:` from `## Jira` or `## Linear` when absent). Then read `../ship-plan/hosts/<host>.md` (`github.md` or `azure-devops.md`). A reference below to an operation of the host names the section of that name in that file; one of the tracker names the section of that name in `../ship-plan/trackers/<tracker>.md` (`jira.md` or `linear.md`), read where the reference says.
 - **Ledger:** `mkdir -p .superpowers/verify-and-fix/<branch>`, then `ledger.md` there. If `.superpowers/` is not listed in `.git/info/exclude`, append it there; never edit the repo's `.gitignore`. One line per round: the gate results, the findings with their grades, the fixes with their commits, and every `Ruling:` you made. After a context compaction, trust the ledger and `git log` over memory.
-- **Base:** `<base>` is a branch name: `$ARGUMENTS`, else the config's `Base branch:`, else the repo's default branch from `gh repo view`. Run `git fetch origin <base> --quiet` first; every diff below compares `origin/<base>...HEAD`. If `git rev-parse --verify --quiet origin/HEAD` prints nothing (common in a fresh clone), run `git remote set-head origin --auto`: the `security-review` skill diffs against `origin/HEAD` and fails without it. It changes local git metadata only.
+- **Base:** `<base>` is a branch name: `$ARGUMENTS`, else the config's `Base branch:`, else the repo's default branch from the host's *Default branch*. Run `git fetch origin <base> --quiet` first; every diff below compares `origin/<base>...HEAD`. If `git rev-parse --verify --quiet origin/HEAD` prints nothing (common in a fresh clone), run `git remote set-head origin --auto`: the `security-review` skill diffs against `origin/HEAD` and fails without it. It changes local git metadata only.
 - **Config:**
   - Read `.claude/ship-plan.md` by its reading rules: headings match case-insensitively; a heading that matches no known section is **unknown**. Its rows never run, and the report names it.
-  - **No config:** draft one ([config-format.md](../ship-plan/config-format.md), "Drafting a missing config") and write it to `.claude/ship-plan.md`. Put it at the top of the question batch with each gate's source. **Run no gate until the user confirms it.** Do the review round meanwhile. A draft lives in the repo, not in a scratch note: it is what the next run reads. Run on its own, leave the draft uncommitted and say so; under `ship-plan`, ship-plan commits it once confirmed.
+  - **No config:** draft one ([config-drafting.md](../ship-plan/config-drafting.md)) and write it to `.claude/ship-plan.md`. Put it at the top of the question batch with each gate's source. **Run no gate until the user confirms it.** Do the review round meanwhile. A draft lives in the repo, not in a scratch note: it is what the next run reads. Run on its own, leave the draft uncommitted and say so; under `ship-plan`, ship-plan commits it once confirmed.
   - The config is the single list of gates. If the repo's agent instructions or a Makefile name a check the config lacks, do not run it: propose adding it to the config.
 - **Ask for everything only the user can provide, in one message, now:** hosted sign-ins, secrets the config names, the draft config. Then carry on with everything that does not wait on them. Asking in the middle of the loop costs the user a second interruption.
 - **Prerequisites:** run the config's `## Prerequisites` rows in order, wait for each one's "Ready when", and start background rows with `run_in_background`. Stop them with TaskStop when the loop ends.
@@ -99,10 +119,10 @@ regressions: a later round often finds bugs an earlier round's fixes introduced.
 - **No gates configured:** the loop cannot end as clean. Say so in the question batch.
 
 **CI, read-only.** When the branch has an open PR, its checks are a gate too:
-`gh pr checks <n>`, then `gh run view <run-id> --log-failed | tail -150` for any
-red job. A red job is a gate failure: fix it locally with a test first, and
+the host's *Wait for the PR's checks* (read once, without waiting), then the
+host's *Read a failed run* for any red job. A red job is a gate failure: fix it locally with a test first, and
 propose the job's check as a config gate if the config lacks it. Pushing the
-fix to the PR's branch is authorized (section 4b).
+fix to the PR's branch is authorized (review-comments.md).
 
 **UI scenarios are a gate too** whenever the diff touches the config's
 `User-visible paths:`. **REQUIRED: read [ui-testing.md](ui-testing.md)** and
@@ -153,7 +173,7 @@ each added a Serilog capture sink to Onboarding's tests (`CapturingSink.cs` and
 two or three names only it declares (types, members, configuration keys), then:
 
 - `git grep -n -e <name> … origin/<base> -- <the folder the copy goes in>`: a hit outside this diff is a copy already on the base branch. Reuse it instead of adding a second one, or merge the two in this PR.
-- `gh pr list --state open --json number,files --jq '.[] | select(any(.files[]; .path | startswith("<that folder>/"))) | .number'`, then `gh pr diff <n> | grep -n -e <name>` for each PR it lists: a hit is a copy in flight. Name it in the report, with both paths, so whichever PR merges second reuses the other's copy. Commenting on the other PR is outward-facing: it goes in the question batch, never done on your own.
+- the host's *Find open PRs*, by changed files under that folder: a hit is a copy in flight. Name it in the report, with both paths, so whichever PR merges second reuses the other's copy. Commenting on the other PR is outward-facing: it goes in the question batch, never done on your own.
 
 Run this again each time the base branch is merged into this branch: the
 merge is where a copy from a PR that merged first arrives. A second copy is a
@@ -173,63 +193,8 @@ round. The round count is what the round-5 limit in section 6 counts.
 
 ## 4b. PR review comments
 
-When the branch has an open PR (`gh pr view --json number,url,reviewDecision`),
-its review comments are findings too, from people and from Copilot. Every
-round, after the agents, fetch the ones not handled yet. Invoking this skill on
-a branch with an open PR authorizes, for that PR only: committing, `git push
-origin HEAD` while the PR's head branch is checked out (never `--force`, never
-on the base branch), replying in its threads, resolving
-Copilot's threads, and re-requesting a review (below). Never approve, dismiss a
-review, resolve a person's thread, merge, or request a new reviewer.
-
-`<o>/<r>` is `gh repo view --json nameWithOwner --jq .nameWithOwner`; your
-login is `gh api user --jq .login --hostname <host>`. Run each once. `<host>` is the host of `gh repo view --json url --jq .url` (`github.com`, or a GitHub Enterprise host). Append `--hostname <host>` to every `gh api` call, after its other arguments: `gh api` does not read the host from the git remote the way `gh pr` does, so on GitHub Enterprise it asks `github.com` and answers 404, or another account's login.
-
-**Fetch.**
-
-- Threads: `gh api graphql -f query='query ReviewThreads($owner:String!,$name:String!,$n:Int!){repository(owner:$owner,name:$name){pullRequest(number:$n){reviewThreads(first:100){nodes{id isResolved isOutdated path line comments(first:50){nodes{id author{login} body createdAt}}}}}}}' -F owner=<owner> -F name=<repo> -F n=<n> --hostname <host>`
-- Review bodies and conversation comments: `gh pr view <n> --json reviews,comments`.
-
-**What counts as new.** Every item is keyed by GraphQL node ids (the `id`
-fields above, which `gh pr view` also returns); the ledger records
-`Review: <key> <author> <grade> — <one line> — <action>`.
-
-| Item | Key | New when |
-|---|---|---|
-| Inline thread | `thread <thread id> @ <last comment id>` | Unresolved, its last comment is not yours, and the ledger has no line for this key. A reviewer's reply in a handled thread changes the last comment, so it is new. |
-| Review body | `review <review id>` | Its body is not empty, whatever its state (an approval can carry a request), and the ledger has no line for this key. **Not** Copilot's summary review: its findings arrive as threads. |
-| Conversation comment | `comment <comment id>` | Not yours, not from a bot other than Copilot (CI, coverage and the Jira integration are not reviewers), and the ledger has no line for this key. |
-
-Copilot's login shows as `Copilot` or `copilot-pull-request-reviewer`, with or
-without `[bot]`. Read each item with the code it points at, at `HEAD`: an
-outdated thread may already be fixed. Then grade it in section 5 with the
-agents' findings, by the same rules: a comment is right or wrong on its merits,
-not by who wrote it.
-
-**Reply** to every item once its fix is pushed (templates in ship-plan's
-[templates.md](../ship-plan/templates.md), "Review reply"; write the body to a
-file in the ledger directory and pass it with `-F body=@<file>`):
-
-- an inline thread: `gh api graphql -f query='mutation ReplyToThread($id:ID!,$body:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$id,body:$body}){comment{id}}}' -f id=<thread id> -F body=@<file> --hostname <host>`;
-- a review body or a conversation comment: `gh pr comment <n> --body-file <file>`, quoting the start of what you answer;
-- **resolve** a Copilot thread once it has a reply of any kind (fixed, answered, follow-up, not valid): `gh api graphql -f query='mutation ResolveThread($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -f id=<thread id> --hostname <host>`. A person's thread is theirs to resolve.
-- **Re-request** a person with `gh pr edit <n> --add-reviewer <login>` when every change they requested is addressed, or when your push dismissed their approval (their latest review turned `DISMISSED`). Never re-request Copilot: a ruleset that wants it re-reviews on push by itself.
-
-Record each reply as `Replied: <key> — <fixed in <sha> | answered | follow-up | not valid | needs a decision>`.
-
-**Jira.** When the branch name carries a Jira issue key and the config has
-`## Jira`, post ship-plan's "Jira comment: review round" after the replies
-(`cloudId` is its `Site:`). Under `ship-plan`, skip it: ship-plan posts it.
-
-**`--comments` mode** (how `ship-plan` calls this skill while a PR waits for
-review): the PR's comments are the only new findings. Run 4b and section 5 on
-them, then the gates. Run a review round only when a fix changes behaviour, and
-then only on the fix commits (`git diff <commit before the fixes>..HEAD`), not
-the whole branch: reviewers already saw the rest. A red PR check is a finding
-in this mode too. The round count starts at 1 on each call. **Clean in this
-mode:** every gate passed, every comment has a reply and none graded "needs
-the user" is undecided, and the fix-diff round, if one ran, found no Critical
-or Important issue.
+**When the branch has an open PR (the host's *Find open PRs*, the branch's own PR) or the run is in `--comments` mode, read [review-comments.md](review-comments.md).**
+Without a PR there are no review comments, and this section does nothing.
 
 ## 5. Triage and fix
 
@@ -255,7 +220,7 @@ comment** for review fixes (`fix(review): <what>`), so each reply can name its
 commit. Stage only the files you fixed, by name (never `git add -A`, which
 sweeps in logs and drafts), and let the repo's hooks run (never
 `--no-verify`). With an open PR, push once the round's gates pass, then reply
-(section 4b).
+(review-comments.md).
 
 ## 6. When to stop and ask
 
@@ -265,7 +230,7 @@ Only these stop the loop:
 - **An action that is outward-facing or destructive:** a push without an open
   PR, opening a PR, merge, any write to a shared environment or production,
   deleting anything you did not create. (Pushing and replying on an open PR are
-  covered by section 4b.) Hand the user the exact command in one copyable block, then continue
+  covered by review-comments.md.) Hand the user the exact command in one copyable block, then continue
   once it is done. (Under `ship-plan`, its authorization list covers push, PR and merge.)
 - **Anything under the config's `## Never do`.** Same handling as above.
 - **A finding that needs a product decision**, where two reasonable behaviours
@@ -338,7 +303,7 @@ A blocker you got past but did not write down will stop the next run too.
 | "The reviewer called it minor" | Re-grade it by what the user gets. |
 | "Copilot is a bot, its comments don't matter" | Grade every comment on its merits. A bot can be right. |
 | "The reviewer is wrong, I'll ignore it" | Reply with the quoted evidence. Every comment gets an answer. |
-| "I'll resolve their thread so the PR can merge" | Only Copilot's threads. A person resolves their own. |
+| "I'll resolve their thread so the PR can merge" | Only a bot reviewer's threads, as the host names them. A person resolves their own. |
 | "It's approved, one more suggestion won't hurt" | A push can dismiss the approval. Reply "follow-up" instead, unless the suggestion is an approver's own request: that one you fix. |
 | "That was fixed last round" | A fix gets a fresh review. Fixes cause regressions. |
 | "I'll note the blocker later" | Write the blockers entry now, or it is lost. |

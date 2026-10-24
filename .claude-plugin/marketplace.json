@@ -8,7 +8,7 @@
     {
       "name": "ai-skills",
       "source": ".",
-      "description": "Ship a plan or a Jira issue to a merged PR, verify a branch to merge-ready, and hand off work between sessions."
+      "description": "Ship a plan or an issue to a merged PR on GitHub or Azure DevOps with Jira, Linear or no tracker, verify a branch to merge-ready, and hand off work between sessions."
     }
   ]
 }
