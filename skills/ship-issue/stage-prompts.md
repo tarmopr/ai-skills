@@ -184,6 +184,8 @@ Next to the skill's required header, the plan needs:
   <one-line reason>`, by the "Task tiers" rules under `## Models` in
   <skill dir>/../ship-plan/config-format.md. It picks the model that
   implements the task. When in doubt, standard;
+- every commit subject the plan names ends in ` (<KEY-n>)`, as the PR title
+  does (ORIG-8125's spec gave four of five without it);
 - never a PR number in text: none exists yet. Cite the issue key.
 
 A gap in the spec that the confidence test lets you rule on is a Ruling:. One
