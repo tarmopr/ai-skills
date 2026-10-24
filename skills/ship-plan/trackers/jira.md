@@ -38,6 +38,8 @@ Do not assume an integration closes the issue. You apply the done transition, on
 
 `getJiraIssue` with `view: "evidence"` (it includes linked issues), and its comments (`executeRead` with `listJiraIssueComments`; `discover` "list comments on a Jira issue" if that name is refused). Read the linked issues too.
 
+**When the issue has a parent story** (ship-issue, I2 step 2), also list the parent's sub-tasks created since the base commit (`searchJiraIssuesUsingJql`: `parent = <story> AND created >= "<base commit date>"`) into `issue.md`: a sibling filed minutes earlier can already cover part of this issue (ORIG-8363 was created after ORIG-8125's first spec and covered its stored-value conversion).
+
 ## Where a new issue goes
 
 Asked when a run has no Jira issue key: none in the argument, the plan, or a
