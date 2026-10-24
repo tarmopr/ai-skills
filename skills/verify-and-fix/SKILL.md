@@ -1,6 +1,6 @@
 ---
 name: verify-and-fix
-description: Use when a branch or PR on GitHub, GitHub Enterprise or Azure DevOps must be brought to merge-ready without supervision, or when asked to "verify", "review and fix", "get CI green", "triage the PR comments" or "address the reviewer comments" — for repos configured for ship-plan (.claude/ship-plan.md), runs the repo's own gates from .claude/ship-plan.md, UI scenarios, review rounds and the PR's review comments until clean. Also use to resume such a loop after a context compaction.
+description: Use when a branch or PR on GitHub, GitHub Enterprise or Azure DevOps must be brought to merge-ready without supervision, or when asked to "verify", "review and fix", "get CI green", "triage the PR comments" or "address the reviewer comments", in a repo configured for ship-plan (.claude/ship-plan.md). Also use to resume such a loop after a context compaction.
 argument-hint: '[base branch name, default the config''s Base branch] [--comments]'
 allowed-tools:
   - Bash(git fetch origin *)
@@ -37,6 +37,10 @@ allowed-tools:
   - Bash(az devops invoke --area git --resource pullRequestThreads *)
   - Bash(az devops invoke --area git --resource pullRequestThreadComments *)
   - Bash(az account show)
+  - Bash(az devops configure --list)
+  - Bash(az repos policy list *)
+  - Bash(gh pr list *)
+  - Bash(gh pr diff *)
   - mcp__plugin_engineering_linear__get_issue
   - mcp__plugin_engineering_linear__save_comment
 ---
@@ -94,12 +98,12 @@ regressions: a later round often finds bugs an earlier round's fixes introduced.
 
 ## 1. Setup
 
+- **Host and tracker:** resolve `Host:` and `Tracker:` as [config-format.md](../ship-plan/config-format.md) says (`Host:` from the `origin` remote when absent; `Tracker:` from `## Jira` or `## Linear` when absent). Then read `../ship-plan/hosts/<host>.md` and, unless the tracker is `none`, `../ship-plan/trackers/<tracker>.md`. A reference below to an operation of the host or of the tracker names the section of that name in those files.
 - **Ledger:** `mkdir -p .superpowers/verify-and-fix/<branch>`, then `ledger.md` there. If `.superpowers/` is not listed in `.git/info/exclude`, append it there; never edit the repo's `.gitignore`. One line per round: the gate results, the findings with their grades, the fixes with their commits, and every `Ruling:` you made. After a context compaction, trust the ledger and `git log` over memory.
 - **Base:** `<base>` is a branch name: `$ARGUMENTS`, else the config's `Base branch:`, else the repo's default branch from the host's *Default branch*. Run `git fetch origin <base> --quiet` first; every diff below compares `origin/<base>...HEAD`. If `git rev-parse --verify --quiet origin/HEAD` prints nothing (common in a fresh clone), run `git remote set-head origin --auto`: the `security-review` skill diffs against `origin/HEAD` and fails without it. It changes local git metadata only.
 - **Config:**
   - Read `.claude/ship-plan.md` by its reading rules: headings match case-insensitively; a heading that matches no known section is **unknown**. Its rows never run, and the report names it.
   - **No config:** draft one ([config-format.md](../ship-plan/config-format.md), "Drafting a missing config") and write it to `.claude/ship-plan.md`. Put it at the top of the question batch with each gate's source. **Run no gate until the user confirms it.** Do the review round meanwhile. A draft lives in the repo, not in a scratch note: it is what the next run reads. Run on its own, leave the draft uncommitted and say so; under `ship-plan`, ship-plan commits it once confirmed.
-  - **Host and tracker:** resolve `Host:` and `Tracker:` as [config-format.md](../ship-plan/config-format.md) says (`Host:` from the `origin` remote when absent; `Tracker:` from `## Jira` or `## Linear` when absent). Then read `../ship-plan/hosts/<host>.md` and, unless the tracker is `none`, `../ship-plan/trackers/<tracker>.md`. A reference below to an operation of the host or of the tracker names the section of that name in those files.
   - The config is the single list of gates. If the repo's agent instructions or a Makefile name a check the config lacks, do not run it: propose adding it to the config.
 - **Ask for everything only the user can provide, in one message, now:** hosted sign-ins, secrets the config names, the draft config. Then carry on with everything that does not wait on them. Asking in the middle of the loop costs the user a second interruption.
 - **Prerequisites:** run the config's `## Prerequisites` rows in order, wait for each one's "Ready when", and start background rows with `run_in_background`. Stop them with TaskStop when the loop ends.
@@ -188,7 +192,7 @@ round. The round count is what the round-5 limit in section 6 counts.
 
 ## 4b. PR review comments
 
-**When the branch has an open PR (the host's *Find open PRs*) or the run is in `--comments` mode, read [review-comments.md](review-comments.md).**
+**When the branch has an open PR (the host's *Find open PRs*, the branch's own PR) or the run is in `--comments` mode, read [review-comments.md](review-comments.md).**
 Without a PR there are no review comments, and this section does nothing.
 
 ## 5. Triage and fix
@@ -298,7 +302,7 @@ A blocker you got past but did not write down will stop the next run too.
 | "The reviewer called it minor" | Re-grade it by what the user gets. |
 | "Copilot is a bot, its comments don't matter" | Grade every comment on its merits. A bot can be right. |
 | "The reviewer is wrong, I'll ignore it" | Reply with the quoted evidence. Every comment gets an answer. |
-| "I'll resolve their thread so the PR can merge" | Only a bot's threads. A person resolves their own. |
+| "I'll resolve their thread so the PR can merge" | Only a bot reviewer's threads, as the host names them. A person resolves their own. |
 | "It's approved, one more suggestion won't hurt" | A push can dismiss the approval. Reply "follow-up" instead, unless the suggestion is an approver's own request: that one you fix. |
 | "That was fixed last round" | A fix gets a fresh review. Fixes cause regressions. |
 | "I'll note the blocker later" | Write the blockers entry now, or it is lost. |
