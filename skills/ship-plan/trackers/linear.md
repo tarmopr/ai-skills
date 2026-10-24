@@ -32,18 +32,9 @@ Do not assume an integration closes the issue. You attach the PR and you set the
 
 ## Find an issue
 
-Stopping at the first hit:
+An id in the argument, the team key followed by `-<n>` in the plan's header or "Source:" line, or the same in the current branch name is used directly: that is a given key, not a search.
 
-1. an id in the argument;
-2. the team key followed by `-<n>` in the plan's header or "Source:" line;
-3. the same in the current branch name;
-4. `list_issues` with the configured team and a `query` built from the plan's title words. Consider only issues that are not in a done, canceled or duplicate state.
-
-| Search result | Action |
-|---|---|
-| Exactly one issue that clearly matches | Use it. |
-| Several plausible matches | Use the one whose description matches the plan's goal best. Record a `Ruling:`, and list the others in the report as possibly related. |
-| None | Create one in the configured team and project ("Create an issue"). |
+Otherwise return candidates only: `list_issues` with the configured team and a `query` built from the plan's title words, leaving out issues in a done, canceled or duplicate state. Up to 3, most relevant first. The choice is the user's, through templates-issue.md's "Issue question": nothing is picked or created here.
 
 ## Read an issue
 

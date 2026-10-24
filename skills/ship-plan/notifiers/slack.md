@@ -36,7 +36,7 @@ When a review round has addressed comments from people, and a review request was
 - **Who:** only people. Bots (Copilot, CI) and the PR's author are left out. A person whose only items were answered "not valid" or "follow-up" is still named: their comment got a reply they should read.
 - **Mentions:** a person is @-mentioned when their Slack user is known (see People); otherwise their plain name.
 - **Azure DevOps** has no "re-request a reviewer" action: this thread reply is the re-request.
-- **Ledger:** record `Slack: re-review <ts> <names>`, so a resume never posts it twice. Skip a round whose line is already there.
+- **Ledger:** record `Slack: re-review round <r> <ts> <names>` (`<r>` is the review round, `<ts>` the reply just posted), so a resume never posts it twice. Skip round `<r>` when its line is already there.
 
 ```markdown
 <@mentions or names>: I've addressed your comments on the review request above. <What changed, in one line.> Please look again: <pr url>

@@ -354,7 +354,7 @@ posted for this PR (the ledger's `Slack: posted <ts>`):
   table is repo-wide because reviewers belong to the team, like the channel.)
 - **On Azure DevOps,** which has no "re-request a reviewer" action, this
   thread reply is the re-request.
-- Recorded in the ledger as `Slack: re-review <ts> <names>`, so a resume
+- Recorded in the ledger as `Slack: re-review round <r> <ts> <names>`, so a resume
   never posts it twice.
 
 **`:pr-merged:` on merge (the user's request).** Right after the merge

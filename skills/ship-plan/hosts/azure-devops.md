@@ -15,7 +15,7 @@ and `<repo>` and `<project>` the names in the remote URL
 (`https://dev.azure.com/<org>/<project>/_git/<repo>`).
 
 Every command here was run read-only against a real Azure DevOps repo on
-2026-10-24, except the writes (`pr create`, `pr update`, `pr policy queue`,
+2026-10-24, except the writes (`pr update`, `pr policy queue`,
 `pipelines run`, and `az devops invoke` with `POST` or `PATCH`), which were
 never run.
 
@@ -58,23 +58,29 @@ These two field names were not seen in a real policy: the repo checked has no me
 
 ## Open the PR
 
-The description is capped at 4000 characters. Write the body to two files in the ledger folder, with the Write tool:
+The description is capped at 4000 characters. Write the files to the ledger folder with the Write tool:
 
-1. The full body is 3,900 characters or less: all of it goes in `pr-body.md`. There is no `pr-body-rest.md`.
-2. Longer: `pr-body.md` is the head, everything before `## What changed`, and `pr-body-rest.md` is the rest, from `## What changed` to the end.
+1. The full body is 3,900 characters or less: all of it is the description. There is no `pr-body-rest.md`.
+2. Longer: the description is the head, everything before `## What changed`, and `pr-body-rest.md` is the rest, from `## What changed` to the end.
 3. The head is still over 3,900 characters (a long `## Plan`): the head is the summary paragraph only, and `pr-body-rest.md` is everything after it.
 
-When the body is split, the head's last line is: "Full description in the first comment: what changed, how it was verified, and the decisions made without the user." The rulings are then in the first comment, and the closing comment's "Decisions" pointer names the first comment, not the description.
+When the body is split, the head's last line is: "Full description in the first comment: what changed, how it was verified, and the decisions made without the user." Count the head including that line: it stays under 4,000 characters, so the 3,900 limit is for the head without it. The rulings are then in the first comment, and the closing comment's "Decisions" pointer names the first comment, not the description.
+
+Write the request body to `pr-request.json` in the ledger folder, with the Write tool (JSON-escaped, so the body's backticks and quotes never reach the shell):
+
+```json
+{"sourceRefName": "refs/heads/<branch>", "targetRefName": "refs/heads/<base>", "title": "<title>", "description": "<the description>"}
+```
 
 Open it:
 
 ```bash
-az repos pr create --source-branch <branch> --target-branch <base> --title "<title>" --description "$(cat <ledger folder>/pr-body.md)" --query pullRequestId -o tsv
+az devops invoke --area git --resource pullRequests --http-method POST --route-parameters project=<project> repositoryId=<repo> --in-file <ledger folder>/pr-request.json --api-version 7.1 --query pullRequestId -o tsv
 ```
 
-The file keeps the body's backticks and quotes away from the shell. Right after creation, post `pr-body-rest.md` with *PR comment*, before anything else is posted, so it is the first comment.
+The id is `pullRequestId` in the response. Right after creation, post `pr-body-rest.md` with *PR comment*, before anything else is posted, so it is the first comment.
 
-`"$(cat <file>)"` in a pre-approved command was checked once, on 2026-10-24: `az repos pr list --top 1 --query "$(cat <file>)" -o tsv` ran in the test repo without a permission denial. So the PR is opened with `az repos pr create`, not with `az devops invoke --area git --resource pullRequests --http-method POST`.
+The command has no `$(...)` and no shell quoting of the body, so its pre-approval (`Bash(az devops invoke --area git --resource pullRequests --http-method POST *)`) matches in every permission mode. The earlier form, `--description "$(cat <file>)"`, was checked only in auto mode, where it showed nothing about prompting modes; do not use it.
 
 ## PR web URL
 

@@ -80,7 +80,7 @@ allowed-tools:
   - Bash(az repos policy list *)
   - Bash(az pipelines list *)
   - Bash(az pipelines show *)
-  - Bash(az repos pr create *)
+  - Bash(az devops invoke --area git --resource pullRequests --http-method POST *)
   - Bash(az repos pr show *)
   - Bash(az repos pr list *)
   - Bash(az repos pr policy list *)
