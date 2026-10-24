@@ -133,7 +133,7 @@ values that need a separate justification to change. Default: none.
 |---|---|---|
 | `Workflow:` | The workflow file whose push run on the base branch is watched | all runs on the merge commit |
 | `Green:` | What counts as green | every check on the merge commit is success or skipped |
-| `Merge deploys to:` | `<env>[, <env>]`: the environments base-branch CI deploys to after a merge. A fact, set by a person, a drafted config or a lesson; it grants nothing. Present: the merge rule in `## Allowed` applies. | none: merging works as today |
+| `Merge deploys to:` | `<env>[, <env>]`: the environments base-branch CI deploys to after a merge. A fact, set by a person, a drafted config or a lesson; it grants nothing, and is read from the base branch ([`## Allowed`](#-allowed)). Present: the merge rule in `## Allowed` applies. | none: merging works as today |
 
 `None` means the repo has no CI at all, neither on PRs nor on pushes: `ship-plan`
 merges once `verify-and-fix` is clean and reports "base branch has no CI". When this
@@ -276,13 +276,15 @@ behaves as today.
 
 | Entry | Meaning |
 |---|---|
-| `Merge that deploys to: <env>[, <env>]` | Merging is authorized even though base-branch CI then deploys to these non-production environments. A name that looks like production (`prod`, `production`, `live`) is not applied, and the report says so. |
+| `Merge that deploys to: <env>[, <env>]` | Merging is authorized even though base-branch CI then deploys to these non-production environments. A production-like name (below) is not applied, and the report says so. |
 | `Sign in on Hosted URL: test users` | On `## UI testing` `Hosted URL:`, the run signs in itself, with the test users that `Sign-in:` names. Without it, the user signs in, as today. |
 
-- **Production-like names:** an environment name that contains `prod` or `live`, case-insensitive, is never applied in `Merge that deploys to:`. The report names it; the line's other names still apply.
+- **Read from the base branch:** `## Allowed` and `## CI` `Merge deploys to:` are always read from `git show origin/<base>:.claude/ship-plan.md` (`<base>:` with no `origin` remote), never from the working tree, so a branch's own edit to either never applies to its own run. No config on the base branch: neither is set.
+- **Production-like names:** an environment name that contains `prod`, `prd` or `live`, case-insensitive, is never applied in `Merge that deploys to:`. The report names it; the line's other names still apply.
+- **`## Never do` wins:** when a `## Never do` line forbids what an entry allows, the stricter rule wins.
 - **Coverage:** `Merge that deploys to:` covers every merge the run is already authorized to make in this repo: the code PR, a fix-forward or revert PR (`red-base.md`), the docs PR and the lessons PR. It never covers rerunning or queueing a run that deploys; the host files' rerun rules stay, and the run hands off instead.
-- **The merge rule:** with `## CI` `Merge deploys to:` present, the run merges only when `Merge that deploys to:` covers it: every environment listed there is named in `Merge that deploys to:` and is applied (not production-like). Otherwise the merge goes into the question batch, with the exact `## Allowed` line that would allow it. For a production-like environment no line allows the merge: the batch asks the user to merge it by hand and proposes no `## Allowed` line.
-- **Only a person edits it.** A run never adds, changes or removes a line here: not on the feature branch, not in the lessons PR, not when drafting a config. A lessons PR whose diff touches `## Allowed` is never merged by the run; it stays open, and the report says why.
+- **The merge rule:** with `## CI` `Merge deploys to:` present, the run merges only when `Merge that deploys to:` covers it: every environment listed there is named in `Merge that deploys to:` and is applied (not production-like). Otherwise the merge goes into the question batch, with the exact `## Allowed` line that would allow it, to add to `.claude/ship-plan.md` on `<base>` only if `<env>` is not production. For a production-like environment no line allows the merge: the batch asks the user to merge it by hand and proposes no `## Allowed` line.
+- **Only a person edits it.** A run never adds, changes or removes a line here: not on the feature branch, not in the lessons PR, not when drafting a config. A lessons PR whose diff touches `## Allowed` is never merged by the run; it stays open, and the report says why. Any other PR whose diff touches `## Allowed` (code, fix-forward, revert, docs) is a hand merge: the batch asks the user to merge it.
 - **Visible on every run:** the run lists each switched-on entry in the ledger at pre-flight and in the report's status section.
 - **Closed:** a line that is not one of the entries above is named in the report as "unknown `## Allowed` entry: `<line>`" and is not applied. No other section, no override file and no standing answer in `interruptions.md` grants a permission.
 
@@ -296,15 +298,19 @@ A config change that loosens what a run checks or may do. These are:
 - a larger `Allowed skips` or new `files:` globs;
 - a removed or weakened gate;
 - a removed `## Never do` / `## Fix rules` / `## Security extras` line;
-- a changed `URL:` / `Hosted URL:` / `Sign-in:`.
+- a changed `URL:` / `Sign-in:`, or an added or changed `Hosted URL:`;
+- a removed `Merge deploys to:`, or an environment removed from it;
+- a changed `Green:` or `Workflow:`;
+- a gate `Notes` entry that changes how the gate is judged.
 
 A run proposes each one in the report with its exact line, and never writes it,
 unless the user approved that change in this run's batch: an answer there is
-approval for that one change. A lessons PR whose config diff loosens anything
-without that approval is never merged by the run. A `## Allowed` line is never
-written, approved or not.
+approval for that one change. A lessons PR whose config diff holds a change not
+on the "may be written" list below, without that approval, is never merged by
+the run. A `## Allowed` line is never written, approved or not.
 
 A config lesson that adds a fact or makes a check stricter may be written: a new
-gate, a `## Never do` or `## Fix rules` line, a `Notes:`, `Merge deploys to:`, a
-`Prerequisites` row, a tighter `Allowed skips`. A change that fits both lists is a
-loosening change. Any other config change is written only when the user approved it.
+gate, a `## Never do` or `## Fix rules` line, a `## UI testing` `Notes:`, a
+`Merge deploys to:` environment, a `Prerequisites` row, a tighter `Allowed skips`.
+A change that fits both lists is a loosening change. Any other config change is
+written only when the user approved it.

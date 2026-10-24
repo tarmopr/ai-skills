@@ -104,7 +104,7 @@ regressions: a later round often finds bugs an earlier round's fixes introduced.
 - **Base:** `<base>` is a branch name: `$ARGUMENTS`, else the config's `Base branch:`, else the repo's default branch from the host's *Default branch*. Run `git fetch origin <base> --quiet` first; every diff below compares `origin/<base>...HEAD`. If `git rev-parse --verify --quiet origin/HEAD` prints nothing (common in a fresh clone), run `git remote set-head origin --auto`: the `security-review` skill diffs against `origin/HEAD` and fails without it. It changes local git metadata only.
 - **Config:**
   - Read `.claude/ship-plan.md` by its reading rules: headings match case-insensitively; a heading that matches no known section is **unknown**. Its rows never run, and the report names it.
-  - Then read the repo override files for this skill, `.claude/ship-plan/verify-and-fix/<file>.md`, as each shared file is read ([config-format.md](../ship-plan/config-format.md#repo-override-files), Repo override files).
+  - Then read the repo override files for this skill, `.claude/ship-plan/verify-and-fix/<file>.md`, as each shared file is read ([Repo override files](../ship-plan/config-format.md#repo-override-files)).
   - **No config:** draft one ([config-drafting.md](../ship-plan/config-drafting.md)) and write it to `.claude/ship-plan.md`. Put it at the top of the question batch with each gate's source. **Run no gate until the user confirms it.** Do the review round meanwhile. A draft lives in the repo, not in a scratch note: it is what the next run reads. Run on its own, leave the draft uncommitted and say so; under `ship-plan`, ship-plan commits it once confirmed.
   - The config is the single list of gates. If the repo's agent instructions or a Makefile name a check the config lacks, do not run it: propose adding it to the config. Section 8 says where such a proposal goes.
 - **Ask for everything only the user can provide, in one message, now:** hosted sign-ins, secrets the config names, the draft config. Then carry on with everything that does not wait on them. Asking in the middle of the loop costs the user a second interruption.
@@ -235,7 +235,7 @@ sweeps in logs and drafts), and let the repo's hooks run (never
 
 Only these stop the loop:
 
-- **Signing in on a hosted URL:** ask once for every role you need. Local URLs you sign in to yourself, and `Hosted URL:` too when `## Allowed` has `Sign in on Hosted URL: test users` (ui-testing.md).
+- **Signing in on a hosted URL:** ask once for every role you need. Local URLs you sign in to yourself, and `Hosted URL:` too when `## Allowed`, read from the base branch, has `Sign in on Hosted URL: test users` (ui-testing.md).
 - **An action that is outward-facing or destructive:** a push without an open
   PR, opening a PR, merge, any write to a shared environment or production,
   deleting anything you did not create. (Pushing and replying on an open PR are
@@ -295,10 +295,10 @@ target file. ship-plan's section 8 writes them on its lessons branch at the end 
   value): write it into the matching override file,
   `.claude/ship-plan/verify-and-fix/<file>.md`, created if missing. It may only
   add or make a rule stricter ([Repo override files](../ship-plan/config-format.md#repo-override-files)).
-- **A config fact** (a missing gate, a reviewer by path, a `Notes:`): write it
-  into `.claude/ship-plan.md` under the narrowing rule. A loosening change is
-  proposed in the report with its exact line, not written, unless the user
-  approved it in this run ([Loosening changes](../ship-plan/config-format.md#loosening-changes)).
+- **A config fact** (a missing gate, a `## UI testing` `Notes:`): write it
+  into `.claude/ship-plan.md` under the narrowing rule. A reviewer by path or
+  a loosening change is proposed in the report with its exact line, not
+  written, unless the user approved it in this run ([Loosening changes](../ship-plan/config-format.md#loosening-changes)).
 - **A lesson for every repo** (a missing step, a step in the wrong order):
   propose it in the report as a "proposed shared-skill change", with the exact
   text and no repo, team or org names. Never edit this skill's files: every
