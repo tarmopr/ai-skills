@@ -4,7 +4,7 @@ Read when posting a comment on the PR. The PR body and the other templates are i
 
 ## PR comment: done
 
-Without Jira, at close-out once base-branch CI is green.
+Without an issue, at close-out once base-branch CI is green.
 
 ```markdown
 **Done.** <Base-branch CI run [<id>](<url>) is green. | Base branch has no CI; `verify-and-fix` was clean and is the gate. | No base-branch run for `<short sha>`; `verify-and-fix` was clean.> Merged as `<short sha>`.
@@ -17,7 +17,7 @@ Without Jira, at close-out once base-branch CI is green.
 
 ## PR comment: not merged
 
-Without Jira, when the run ends with the PR still open: `verify-and-fix` not clean,
+Without an issue, when the run ends with the PR still open: `verify-and-fix` not clean,
 checks never registered, the base branch still red, a merge refused, or 5
 review rounds. (Waiting on reviewers is "awaiting review": no PR comment.)
 
@@ -29,7 +29,7 @@ Needs: <the question from the batch>.
 
 ## PR comment: base branch red
 
-Without Jira, when the run ends with the base branch red.
+Without an issue, when the run ends with the base branch red.
 
 ```markdown
 **Merged, but the base branch is red.** Run [<id>](<url>) failed at `<job> → <step>`: `<error line>`.

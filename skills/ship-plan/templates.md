@@ -11,7 +11,7 @@ section: write "None".
 <2–3 sentences: what changes for a user, and why. With an issue: [<ID>](<url>)>
 
 ## Plan
-<!-- only when no Jira issue is tracked (not configured, or unavailable): the PR is the record -->
+<!-- only when no issue is tracked (not configured, or unavailable): the PR is the record -->
 Source: `<plan path>` · Spec: `<spec path, or "none">`
 
 <Architecture, 2–4 sentences>
