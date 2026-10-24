@@ -78,7 +78,7 @@ the branch), then write each as an `Asked:` line and a `Ruling: user <date>`.
 2. If 4 named an issue: link the two as "Link two issues" says, with `linkType: "Relates"`, `inwardIssue: <new key>`, `outwardIssue: <related key>`.
 
 **No `## Jira` in the config, and the run tracks an issue** (new or existing):
-draft the section (config-format.md) with the `Site:` above and the issue's
+draft the section (config-drafting.md) with the `Site:` above and the issue's
 project as `Project:`. Fill `Start transition:` and `Done transition:` from
 `executeRead` `listJiraIssueTransitions` on the issue: the transition into the
 first "indeterminate" status, and the one into a "done" status. This run uses

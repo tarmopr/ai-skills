@@ -121,7 +121,7 @@ version answers, a published artifact exists. Never a write. Default: none.
 ### `## Jira`
 
 Every run tracks its work in a Jira issue unless the user says otherwise:
-with no issue key, both skills ask templates.md's "Jira: issue question".
+with no issue key, both skills ask templates-issue.md's "Issue question".
 Absent: that question finds the site and drafts this section.
 
 | Field | Meaning | Default |
