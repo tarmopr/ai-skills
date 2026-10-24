@@ -106,7 +106,7 @@ regressions: a later round often finds bugs an earlier round's fixes introduced.
   - Read `.claude/ship-plan.md` by its reading rules: headings match case-insensitively; a heading that matches no known section is **unknown**. Its rows never run, and the report names it.
   - Then read the repo override files for this skill, `.claude/ship-plan/verify-and-fix/<file>.md`, as each shared file is read ([config-format.md](../ship-plan/config-format.md#repo-override-files), Repo override files).
   - **No config:** draft one ([config-drafting.md](../ship-plan/config-drafting.md)) and write it to `.claude/ship-plan.md`. Put it at the top of the question batch with each gate's source. **Run no gate until the user confirms it.** Do the review round meanwhile. A draft lives in the repo, not in a scratch note: it is what the next run reads. Run on its own, leave the draft uncommitted and say so; under `ship-plan`, ship-plan commits it once confirmed.
-  - The config is the single list of gates. If the repo's agent instructions or a Makefile name a check the config lacks, do not run it: propose adding it to the config.
+  - The config is the single list of gates. If the repo's agent instructions or a Makefile name a check the config lacks, do not run it: propose adding it to the config. Section 8 says where such a proposal goes.
 - **Ask for everything only the user can provide, in one message, now:** hosted sign-ins, secrets the config names, the draft config. Then carry on with everything that does not wait on them. Asking in the middle of the loop costs the user a second interruption.
 - **Prerequisites:** run the config's `## Prerequisites` rows in order, wait for each one's "Ready when", and start background rows with `run_in_background`. Stop them with TaskStop when the loop ends.
 
@@ -114,10 +114,10 @@ regressions: a later round often finds bugs an earlier round's fixes introduced.
 
 - Run every `## Gates` row whose `Only when changed` globs match `git diff --name-only origin/<base>...HEAD` (no globs: always). Run each with `CI=true` in its environment and its output sent to `.superpowers/verify-and-fix/<branch>/<gate>.log`, then read the tail. Long output left in context crowds out the rest of the loop.
 - Run the command **exactly as configured.** A variant you think is better (an extra flag, a one-shot form) is a proposed config change, not something you run as the gate.
-- Follow the row's `Notes` as part of the gate: a precondition, a second run under another setup, a known local-only failure. Empty: nothing extra.
+- Follow the row's `Notes` as part of the gate: a precondition, a second run under another setup, a known local-only failure. A note may change how the gate is judged; when it changes the result, the gate table names the note. A note never silently turns a fail or a skip into a pass. Empty: nothing extra.
 - Each gate has one result: **pass, fail, skipped, or could not run.** Read the tail for skip counts and the file each skip is in. The row's `Allowed skips` is a number or `files: <globs>`:
   - A number: any skipped test or suite beyond it makes the gate "skipped", never pass; skips within it are a pass, noted in the gate table.
-  - `files: <globs>`: a skip inside a matching file is allowed, noted in the gate table; a skip in any other file makes the gate "skipped".
+  - `files: <globs>`: search the gate's log for each skip's file. A skip inside a matching file is allowed, noted in the gate table; a skip in any other file, or one whose file the log does not name, makes the gate "skipped".
 - **Timeout:** the row's `Timeout`, else 20 minutes. Run the gate in the background and check it; at the limit, stop it. The result is "could not run: <reason>", for example "watch mode, never exits". Propose a one-shot command as a config change, and go on with the other gates.
 - **Could not run** (no prerequisite, timeout, missing tool): keep running the other gates and the review rounds, but the loop cannot end as clean. The report names the gate, why it could not run, and what the user has to do.
 - **No gates configured:** the loop cannot end as clean. Say so in the question batch.
@@ -188,10 +188,10 @@ report.
 Give each reviewer the ledger's `Ruling:` lines, so settled questions are not
 raised again as new findings.
 
-**Tell every reviewer, in its prompt: never run a gate or test command, and
-never edit the working tree.** Gates hold fixed resources, and a second run
+**Tell every reviewer, in its prompt: never run a gate or test command in this
+working tree, and never edit it.** Gates hold fixed resources, and a second run
 collides with the first. A reviewer that needs to prove a test fails does it in
-its own scratch worktree.
+its own scratch worktree, and removes that worktree afterwards.
 
 **If a reviewer agent or the `security-review` skill is unavailable,** do its
 review yourself against the same checklist, and mark it "self-review" in the
@@ -235,7 +235,7 @@ sweeps in logs and drafts), and let the repo's hooks run (never
 
 Only these stop the loop:
 
-- **Signing in on a hosted URL:** ask once for every role you need (ui-testing.md). Local URLs you sign in to yourself, and `Hosted URL:` too when `## Allowed` has `Sign in on Hosted URL: test users`.
+- **Signing in on a hosted URL:** ask once for every role you need. Local URLs you sign in to yourself, and `Hosted URL:` too when `## Allowed` has `Sign in on Hosted URL: test users` (ui-testing.md).
 - **An action that is outward-facing or destructive:** a push without an open
   PR, opening a PR, merge, any write to a shared environment or production,
   deleting anything you did not create. (Pushing and replying on an open PR are
@@ -275,16 +275,17 @@ reason), the scenario table from `scenarios.md` with the paths to the GIFs, how
 many rounds ran, the fixes with their commits, the PR review items (author,
 grade, result, reply) when there is a PR, every `Ruling:`, the suggestions
 listed rather than fixed, the blockers entries added this run, every unknown
-config section, every override line not applied, and every proposed config change.
+config section, every override line not applied, each `## Allowed` entry the run
+used (such as `Sign in on Hosted URL: test users`), and every proposed config change.
 
 ## 8. Self-improvement
 
 Whenever something blocks you (a command that will not run, a hook refusal, a
 tool that misbehaves, a gate that lies) and you get past it, **update
 `.claude/ship-plan/blockers.md` in the same session, before the report.** Create it
-from [log-formats.md](../ship-plan/log-formats.md) if it is missing. Under `ship-plan`, record it as a `Lesson:` line in
-ship-plan's ledger instead of editing the file: ship-plan's section 8 writes it on its
-lessons branch, so it never lands in the product PR.
+from [log-formats.md](../ship-plan/log-formats.md) if it is missing. **Under `ship-plan`, edit no file,** for this entry or any item below:
+record each one, whether it would be written or proposed, as a `Lesson:` line in ship-plan's ledger that names its
+target file. ship-plan's section 8 writes them on its lessons branch at the end of its run, so they never land in the product PR.
 
 - Add an entry: the symptom (exact error text), the cause, the fix (the exact
   command), and the date.
@@ -311,8 +312,7 @@ lessons branch, so it never lands in the product PR.
   a change to the repo's agent instructions file in the report. Do not edit it
   on your own.
 
-Run on its own, leave these edits uncommitted and say so. Under `ship-plan`, each
-one, written or proposed, is a `Lesson:` line for its lessons PR.
+Run on its own, leave these edits uncommitted and say so.
 
 A blocker you got past but did not write down will stop the next run too.
 
