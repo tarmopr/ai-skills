@@ -9,37 +9,37 @@
 ### Q1
 
 - **Step:** Read the skill itself.
-- **Command or tool call:** Read `file_path=/Users/tarmoprotsin/Development/ai-skills/skills/ship-issue/SKILL.md`
+- **Command or tool call:** Read `file_path=SKILLDIR/ship-issue/SKILL.md`
 - **Source:** ship-issue/SKILL.md, "Before anything else, read in full" and "Ship an issue".
 - **Told or worked out:** told
 - **Files read for this step:** ship-issue/SKILL.md
 
 - **Step:** Read the config format (the repo's `.claude/ship-plan.md` itself is given by the scenario). It resolves `Host:` from the `origin` remote (`git@github.com:acme/billing-api.git` -> github) and `Tracker:` from `## Jira` (-> jira).
-- **Command or tool call:** Read `file_path=/Users/tarmoprotsin/Development/ai-skills/skills/ship-plan/config-format.md`
+- **Command or tool call:** Read `file_path=SKILLDIR/ship-plan/config-format.md`
 - **Source:** ship-issue/SKILL.md, "Before anything else, read in full" and "Host and tracker"; ship-plan/config-format.md, "`## Repo`".
 - **Told or worked out:** told
 - **Files read for this step:** ship-plan/config-format.md
 
 - **Step:** Read the worktree file, because the main checkout is dirty and on another branch.
-- **Command or tool call:** Read `file_path=/Users/tarmoprotsin/Development/ai-skills/skills/ship-issue/worktree.md`
+- **Command or tool call:** Read `file_path=SKILLDIR/ship-issue/worktree.md`
 - **Source:** ship-issue/SKILL.md, "W. Which checkout" ("When the current checkout is dirty or on another branch, read worktree.md").
 - **Told or worked out:** told
 - **Files read for this step:** ship-issue/worktree.md
 
 - **Step:** Read the host file.
-- **Command or tool call:** Read `file_path=/Users/tarmoprotsin/Development/ai-skills/skills/ship-plan/hosts/github.md`
+- **Command or tool call:** Read `file_path=SKILLDIR/ship-plan/hosts/github.md`
 - **Source:** ship-issue/SKILL.md, "Host and tracker" (`../ship-plan/hosts/<host>.md`).
 - **Told or worked out:** told
 - **Files read for this step:** ship-plan/hosts/github.md
 
 - **Step:** Read the tracker file (tracker is not `none`).
-- **Command or tool call:** Read `file_path=/Users/tarmoprotsin/Development/ai-skills/skills/ship-plan/trackers/jira.md`
+- **Command or tool call:** Read `file_path=SKILLDIR/ship-plan/trackers/jira.md`
 - **Source:** ship-issue/SKILL.md, "Host and tracker" (`../ship-plan/trackers/<tracker>.md`).
 - **Told or worked out:** told
 - **Files read for this step:** ship-plan/trackers/jira.md
 
 - **Step:** Read the issue templates (tracker is not `none`).
-- **Command or tool call:** Read `file_path=/Users/tarmoprotsin/Development/ai-skills/skills/ship-plan/templates-issue.md`
+- **Command or tool call:** Read `file_path=SKILLDIR/ship-plan/templates-issue.md`
 - **Source:** ship-issue/SKILL.md, "Host and tracker" ("When `Tracker:` is not `none`, or the tracker question is asked, read templates-issue.md").
 - **Told or worked out:** told
 - **Files read for this step:** ship-plan/templates-issue.md

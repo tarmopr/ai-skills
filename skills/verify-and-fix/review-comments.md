@@ -64,5 +64,5 @@ words, quoting code where it settles the point. Fixed replies name the commit.
 | Needs the user | `This needs a decision from the author: <the question>. I've raised it with them.` |
 
 A reply that promises a change in another file or a later PR names a place you
-have grepped first. On #159 a reply promised a README line the README already
+have grepped first. A reply once promised a README line the README already
 had, and the correction took a second comment and an edit of the Done comment.

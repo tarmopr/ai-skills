@@ -31,7 +31,7 @@ files' shape. These scenarios pin behaviour.
 
 1. Pick `SKILLDIR`: the folder that holds the skill folders
    (`ship-plan/`, `ship-issue/`, `verify-and-fix/`). For the new layout it is
-   `/Users/tarmoprotsin/Development/ai-skills/skills`. For the S1 baseline it
+   `<this repo>/skills`. For the S1 baseline it
    is a copy of the `skills/` folder as it was before the change, in a scratch
    folder.
 2. Dispatch one fresh `general-purpose` subagent per prompt. Its prompt is

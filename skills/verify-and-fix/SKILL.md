@@ -167,9 +167,9 @@ the repo's agent instructions say, or, when the plan copies on purpose, put it
 in the question batch with the extraction as the recommended option.
 
 **Then look for other copies of the same source.** Another branch may have
-copied it into the same place under another name: on ORIG-8202, #124 and #126
-each added a Serilog capture sink to Onboarding's tests (`CapturingSink.cs` and
-`SerilogCapture.cs`), and neither saw the other. For each copied source, take
+copied it into the same place under another name: two PRs
+each added a log capture sink to the same module's tests under different names,
+and neither saw the other. For each copied source, take
 two or three names only it declares (types, members, configuration keys), then:
 
 - `git grep -n -e <name> … origin/<base> -- <the folder the copy goes in>`: a hit outside this diff is a copy already on the base branch. Reuse it instead of adding a second one, or merge the two in this PR.
