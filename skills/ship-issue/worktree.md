@@ -30,3 +30,4 @@ is refused. `cat <main>/.git/HEAD` shows its branch but not whether it is dirty.
 5. **ship-plan's pre-approved git commands** (`Bash(git push origin …)`, …) match only while step 0 holds. On the `/usr/bin/git` fallback they don't match: every push, merge and revert would prompt, and unattended the run stalls at the first one. The step 0 batch item says so.
 6. **Commit hooks:** `git hook run pre-commit` once, before the first commit. A hook that lints from the main checkout can fail on files under `.claude/worktrees/`. If it fails because of the worktree path, that goes in the batch, with the ignore line the linter needs.
 7. **Anything that cannot be done** goes in the I3 batch. Say what it blocks, and don't discover it later.
+8. **A worktree-isolated session's guard** can refuse a heredoc or inline script that mentions git, and a rewritten command whose text contains "git". Use the Edit tool for multi-line edits, and search for the pattern without the word.

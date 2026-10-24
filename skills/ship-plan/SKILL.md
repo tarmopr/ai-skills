@@ -123,6 +123,14 @@ earlier runs asked; the second holds the fixes for tooling that stopped earlier
 runs. A question that has a standing answer is not asked again. Missing log
 files are created from [log-formats.md](log-formats.md) at close-out.
 
+**Repo override files** ([format](config-format.md#repo-override-files)):
+whenever this skill reads one of its own files, read its counterpart under
+`.claude/ship-plan/ship-plan/` next, if it exists: `.claude/ship-plan/ship-plan/SKILL.md`
+right after this file, `.claude/ship-plan/ship-plan/hosts/github.md` after
+`hosts/github.md`. A file of another skill (`../verify-and-fix/…`) has its
+counterpart in that skill's folder. An override line that widens what the run
+may do, or removes a step, is not applied, and the report names it.
+
 - **A repo set up for `ship`:** if `.claude/ship.md` exists and `.claude/ship-plan.md` does not, stop with one line: "This repo is set up for the removed `ship` skill: move `.claude/ship.md` to `.claude/ship-plan.md` and `.claude/ship/` to `.claude/ship-plan/`."
 - **Host and tracker:** resolve `Host:` and `Tracker:` as [config-format.md](config-format.md) says (`Host:` from the `origin` remote when absent; `Tracker:` from `## Jira` or `## Linear` when absent, else undecided until pre-flight step 5). Then read `hosts/<host>.md` (`github.md` or `azure-devops.md`) and, unless the tracker is `none` or undecided, `trackers/<tracker>.md` (`jira.md` or `linear.md`). A reference below to an operation of the host, the tracker or the notifier names the section of that name in those files and in `notifiers/slack.md`.
 - **No `origin` remote** (and no `Host:`): there is no host and no PR to open. Read no host file, skip the host's *Auth check* and the `git fetch origin` in pre-flight step 4, and stop before section 4, saying so in the report.
@@ -242,6 +250,12 @@ its answer), questions parked, CI results, `Lesson:` lines.
 memory.** `questions.md` sits next to it (section 3). `verify-and-fix` keeps its own
 ledger in `.superpowers/verify-and-fix/<branch>/`; link to it rather than copying from it.
 
+**When the session ends before the run does** (a usage limit, the context
+running out, a batch the user will answer later): bring the ledger up to date,
+then write a handoff: the `handoff` skill when it is available, otherwise a
+`HANDOFF.md` next to the ledger. Its resume line is `/ship-plan`, with no
+argument: the ledger says where the run stands.
+
 ## 0. Pre-flight
 
 The user has just invoked the skill and is probably still there. This is the
@@ -297,8 +311,10 @@ for this plan, stay on it; if its name does not start with one of the five types
 
 ## 2. Implement
 
-**REQUIRED SUB-SKILL:** superpowers:subagent-driven-development, on the branch from section 1. Six adjustments:
+**REQUIRED SUB-SKILL:** superpowers:subagent-driven-development, on the branch from section 1. Eight adjustments:
 
+- **Prerequisites first:** run the config's `## Prerequisites` before the first implementer dispatch, as `verify-and-fix`'s setup runs them (in order, each one's `Ready when` awaited, background rows with `run_in_background`); not from a draft the user has not confirmed. When `verify-and-fix` reaches its setup, it does not start a row again whose `Ready when` already passes.
+- **Every implementer dispatch carries the repo's rules:** the config's `## Fix rules`, `## Never do` and `## Security extras`, verbatim, and the paths of the override files that apply to the task, always `.claude/ship-plan/ship-plan/SKILL.md` when it exists. An implementer sees only its own prompt.
 - **Its pre-flight concerns and rulings** follow its own "Rulings, not stalls" rule. Anything it would stop for goes into `questions.md` (section 3). The run goes on with the tasks that don't depend on it.
 - **Before it deletes its workspace,** copy every `Ruling:` line from its `progress.md` into this ledger. They go to the user in the report and the closing comment.
 - **Skip its last step,** `finishing-a-development-branch`. Its menu is the question this skill already answered. Go to section 2b.
@@ -410,7 +426,7 @@ are met. It ends in one of three ways: merge (section 5), hand off (section 7,
 ## 5. Merge
 
 1. The host's *Merge state*. Every check must pass. CI None, or no PR CI for this diff: there are no checks to read; `verify-and-fix` clean is the gate. **The review rules are not met after all** (a code owner, an unresolved thread, a rule section 4R could not read, as the host's *Merge state* shows it): never use `--admin`, and never approve. Record what blocks the merge, then back to section 4R's wait (`sleep 300` first, never straight back); if its window has run out, hand off.
-2. **Behind the base branch or conflicting** (the host's *Merge state*): fetch the PR branch first (`git fetch origin <branch>`): the user may already have updated it on the host. Then `git fetch origin <base>`, and as a separate command `git merge origin/<base>` (a merge, not a rebase, so no force-push). Resolve conflicts, then check that `git diff --name-only --diff-filter=U` prints nothing and `git diff --cached --check` reports no conflict markers. Never grep a file for `>>>>>>>`: a log or a doc can quote the markers in its prose. If the merge brought in changes to files this branch touches, rerun the gates whose paths the merge touched. If this branch copies code, run `verify-and-fix`'s "other copies of the same source" check again: a PR that merged first may have brought its own copy. `git push origin <branch>`, and go back to 4.6. Then read the host's *Review state* again: when the push dismissed an approval (resolving a conflict can change the diff), re-request them with the host's *Re-request a reviewer* (authorized above). The push can also start a new AI review; section 4R waits for it. If the push is refused as non-fast-forward and `git diff HEAD origin/<branch>` is empty, `git reset --keep origin/<branch>` adopts their merge; anything else is someone's work, so stop and look.
+2. **Behind the base branch or conflicting** (the host's *Merge state*): fetch the PR branch first (`git fetch origin <branch>`): the user may already have updated it on the host. Then `git fetch origin <base>`, and as a separate command `git merge origin/<base>` (a merge, not a rebase, so no force-push). Resolve conflicts, then check that `git diff --name-only --diff-filter=U` prints nothing and `git diff --cached --check` reports no conflict markers. Never grep a file for `>>>>>>>`: a log or a doc can quote the markers in its prose. If the merge brought in any change, rerun every gate with no `Only when changed`, and each gate whose globs match a file the merge changed (`git diff --name-only HEAD^1 HEAD`). If this branch copies code, run `verify-and-fix`'s "other copies of the same source" check again: a PR that merged first may have brought its own copy. `git push origin <branch>`, and go back to 4.6. Then read the host's *Review state* again: when the push dismissed an approval (resolving a conflict can change the diff), re-request them with the host's *Re-request a reviewer* (authorized above). The push can also start a new AI review; section 4R waits for it. If the push is refused as non-fast-forward and `git diff HEAD origin/<branch>` is empty, `git reset --keep origin/<branch>` adopts their merge; anything else is someone's work, so stop and look.
    **A check red only because the base branch is red** (the same test fails on the base branch's own run, from someone else's change): never merge red and never fix that here. Poll the base branch's runs in the background (the host's *Find the base-branch run*); once one is green, merge `origin/<base>` as above. Still red when nothing else is left: park it and close out with the PR open.
 3. **A merge that deploys.** When the config's `## CI` has `Merge deploys to:`, merge only when `## Allowed` `Merge that deploys to:` covers every environment it names ([config-format.md](config-format.md#-allowed)). Not covered: do not merge. When any environment it names is production-like, the whole merge is a hand merge: the batch asks the user to merge it and proposes no `## Allowed` line. Otherwise the batch carries one line, for the user to add, that covers every uncovered environment: `- Merge that deploys to: <env>[, <env>]`. The PR stays open and the run closes out. For the code PR the outcome is "Not merged", and the ledger's first line becomes `Phase: 5 awaiting merge`, so a resume re-enters here. The same check applies to every merge the run makes: fix-forward, revert, docs PR and lessons PR. No `Merge deploys to:`: merge as before.
 4. Merge with the configured method: the host's *Merge the PR*. Record the merge SHA it gives. It says where the local checkout ends up; sections 6–8 branch from `origin/<base>`, and read this run's ledger by its path, since the branch it is named after is gone.
@@ -446,37 +462,50 @@ After the code PR's merge and each fix-forward PR's, once section 6 is green or 
    - **Awaiting review:** the PR is open, green, and every comment so far is handled, but it waits on reviewers (section 4R, step 5). "Issue comment: awaiting review"; without an issue, the report only (the PR shows its own state). The issue stays in its status. The report says how to resume.
    - **Not merged:** the PR is still open for another reason (verify not clean, checks never registered, the base branch red before merge, a refused merge, a deploy `## Allowed` does not cover, 5 review rounds), or no PR exists. "Issue comment: not merged" or "PR comment: not merged"; with no PR and no issue, the report is the only record.
 2. **When the ledger has a `Docs PR:` line and the code PR merged, read [docs-pr.md](docs-pr.md).**
-3. **Lessons** (section 8), except under "Awaiting review": they wait for the run's final close-out.
-4. **Report,** concise, in this order:
+3. **A next part:** when the plan names a next part (a later plan or issue), write a handoff for it as the ledger section says. Its resume line starts that part: `/ship-plan <its plan path>`, or `/ship-issue <its key>` when it has no plan yet.
+4. **Lessons** (section 8), except under "Awaiting review": they wait for the run's final close-out.
+5. **Report,** concise, in this order:
    1. **Needs you:** the batch.
-   2. Status: base branch green or red (or "no CI"), PR, merge SHA, the docs PR, the issue link if any, and the ledger's `Allowed:` lines (section 0, step 7).
-   3. Gate and scenario tables (from `verify-and-fix`), the `Simplify:` line, and every unknown config section.
+   2. Status: base branch green or red (or "no CI"), PR, merge SHA, the docs PR, the lessons PR (and why it stays open, if it does), the issue link if any, and the ledger's `Allowed:` lines (section 0, step 7).
+   3. Gate and scenario tables (from `verify-and-fix`), the `Simplify:` line, every unknown config section, and every override line not applied.
    4. **Decisions made for you:** every `Ruling:`, each with what it costs if wrong.
    5. **Not tested:** what, and why.
-   6. The lessons recorded, and any proposed skill change.
-5. **Mark the ledger** `Phase: done` when the outcome is Done, and if this run was started by `/loop`, end the report with "Done: stop the `/loop`." Every other outcome keeps the run open, so a later `/ship-plan` resumes it.
-6. **Ask the batch once,** after the report, with `AskUserQuestion` when the answers are choices. When the user answers, carry on: run the pending scenarios once they have signed in, add a new tracker or PR comment, and record each answer in `interruptions.md`.
+   6. The lessons recorded, and what section 8 proposes: each proposed shared-skill change, `## Allowed` line and loosening config line, with its exact text.
+6. **Mark the ledger** `Phase: done` when the outcome is Done, and if this run was started by `/loop`, end the report with "Done: stop the `/loop`." Every other outcome keeps the run open, so a later `/ship-plan` resumes it.
+7. **Ask the batch once,** after the report, with `AskUserQuestion` when the answers are choices. When the user answers, carry on: run the pending scenarios once they have signed in, add a new tracker or PR comment, and record each answer in `interruptions.md`.
    **Before creating a follow-up issue,** whether this batch approved it or an earlier answer did (a `Ruling: user` line copied from `ship-issue`'s I3 batch), check that a reviewer has not filed it already. Read the PR's review bodies and comments (the host's *Fetch review items*), and search the tracker as the tracker's *Find an existing follow-up* says. When an issue already covers it, create nothing: name that issue in the Done comment's follow-ups, and record a `Ruling:` that quotes the line of it that covers the follow-up. An approver once filed an issue that covered both follow-ups the I3 batch had approved; creating them as well would have split the work in two. Also grep `.claude/ship-plan/*.md` and `.claude/ship-issue/*.md` for the follow-up's subject: a log entry can name the issue when a tracker text search misses it (a run once filed a duplicate of an issue that `interruptions.md` named, because that issue's summary said "fail once", not "flaky"). Create each issue as the tracker's *Create an issue* says, and link it to the run issue as the tracker's *Link two issues* says. With `Tracker: none` there is no follow-up issue: it stays under Follow-ups.
 
 ## 8. Lessons
 
-At close-out, before the report, on a branch from `origin/<base>`
-(`docs/ship-plan-lessons-<yyyy-mm-dd>`), never on the feature branch.
+Last, after everything else: the merge, base-branch CI, validation (section
+6b), the docs PR and the closing comment; then the report. On a branch from
+`origin/<base>` (`docs/ship-plan-lessons-<yyyy-mm-dd>`), never on the feature branch.
 Run `git fetch origin <base>` right before `git switch -c`: an earlier
 fetch is stale, and a lessons PR branched from it conflicts with every
 lessons PR that merged meanwhile. Then merge
 the branch of every open lessons PR
 (the host's *Find open PRs*, by search) into the new branch, so
-the logs build on them instead of conflicting:
+the logs build on them instead of conflicting. Each `Lesson:` line in the
+ledger, `verify-and-fix`'s included (they name their target file), goes where
+these rules say:
 
-- **Every question you asked this run** (pre-flight, mid-run, final) becomes an `.claude/ship-plan/interruptions.md` entry. When the user answers, fill in the answer and a **standing answer**: the rule that lets the next run decide on its own.
-- **Every ruling the user overturned** becomes an entry too. That is how the confidence test gets calibrated.
-- **Every tooling blocker** you got past goes into `.claude/ship-plan/blockers.md`, in its format.
-- Create either file from [log-formats.md](log-formats.md) if it is missing.
-- **Under `ship-issue`** (the plan has a `From ship-issue` block): its `Asked:` lines (questions from phases I0–I6) go into `.claude/ship-issue/interruptions.md` instead, created from [../ship-issue/log-formats.md](../ship-issue/log-formats.md) if missing.
-- **Config changes the user approved** go into `.claude/ship-plan.md` on the same branch. Exceptions, committed on the feature branch instead because the run needs them now: `## Slack` (section 0, step 6), `Tracker:` (section 0, step 5), and a drafted `## Jira` or `## Linear`.
-- **Lessons about the loop itself** (a missing step, a wrong order, a rule that misfired) go in the report as "proposed skill change", with the exact text. Never edit this skill's files on your own: every repo uses them, and they are published from their own git repository.
-- **Batch empty:** open a docs-only PR and wait for its checks. If the review rule (section 4R, step 1) needs no approval, merge it through sections 5–6. Otherwise request the AI review (the host's *Request an AI review*), leave it open for review, and link it in the report as "lessons PR, needs approval"; it never holds the run open.
+- **Repo learnings are written, not proposed:**
+  - **A procedure, fact, failure path or step only this repo needs** goes into the matching override file, `.claude/ship-plan/<skill>/<file>.md`, created if missing. It may only add or make a rule stricter ([Repo override files](config-format.md#repo-override-files)).
+  - **Every question you asked this run** (pre-flight, mid-run, final) becomes an `.claude/ship-plan/interruptions.md` entry. When the user answers, fill in the answer and a **standing answer**: the rule that lets the next run decide on its own. A standing answer never grants a permission: for a missing one it points to the proposed `## Allowed` line.
+  - **Every ruling the user overturned** becomes an entry too. That is how the confidence test gets calibrated.
+  - **Every tooling blocker** you got past goes into `.claude/ship-plan/blockers.md`, in its format.
+  - Create either log from [log-formats.md](log-formats.md) if it is missing.
+  - **Under `ship-issue`** (the plan has a `From ship-issue` block): its `Asked:` lines (questions from phases I0–I6) go into `.claude/ship-issue/interruptions.md` instead, created from [../ship-issue/log-formats.md](../ship-issue/log-formats.md) if missing.
+- **Config lessons follow the narrowing rule** ([Loosening changes](config-format.md#loosening-changes)), in `.claude/ship-plan.md` on the same branch:
+  - one that adds a fact or makes a check stricter (a new gate, a `## Never do` or `## Fix rules` line, a `Notes:`, `Merge deploys to:`, a `Prerequisites` row, a tighter `Allowed skips`) is written;
+  - a loosening change is proposed in the report with its exact line, and written only when the user approved that change in this run's batch;
+  - any other config change is written only when the user approved it;
+  - a `## Allowed` line is never written, approved or not;
+  - exceptions, committed on the feature branch instead because the run needs them now: `## Slack` (section 0, step 6), `Tracker:` (section 0, step 5), and a drafted `## Jira` or `## Linear`.
+- **Generic learnings are proposed:** a lesson that would help every repo (a missing step, a wrong order, a rule that misfired) goes in the report as "proposed shared-skill change", with the exact text, written generically: no repo, team or org name, issue key, URL or repo command. Never edit the shared skill files: every repo uses them, and they are published from their own git repository.
+- **Missing permissions are proposed:** when the run was held up by one (a refusal, a question the user had to answer to allow something, an action the user did by hand), the report proposes the exact `## Allowed` line and the reason, for the user to add ([`## Allowed`](config-format.md#-allowed)). When no entry on the closed list fits, propose it as a shared-skill change instead.
+- **The lessons-PR guard:** before merging a lessons PR, this run's or one an earlier session opened, read its diff (`git diff origin/<base>...origin/<lessons branch>`). When it touches `## Allowed`, or loosens the config without this run's approval, never merge it, even when it is green and mergeable, and leave its branch as it is: it stays open, without holding the run open, and the report names the line and says why (`## Allowed` is a section only a person edits; the loosening was not approved).
+- **Batch empty:** open a docs-only PR, record `Lessons PR: #<n>` in the ledger, and wait for its checks. If the review rule (section 4R, step 1) needs no approval and the guard allows it, merge it through sections 5–6. Otherwise request the AI review (the host's *Request an AI review*), leave it open for review, and link it in the report as "lessons PR, needs approval"; it never holds the run open.
 - **Batch not empty:** commit and push the branch with those entries marked `Answer: pending` *before* you ask, so the lessons survive if the session ends. When the answers come, fill them in, then open the PR and merge it the same way.
 
 During the run, write lessons in the ledger as `Lesson:` lines. Editing the

@@ -24,7 +24,8 @@ and report "wrong checkout: <what you saw>". Work only there. Branch
 Mode: <new | revise>.
 
 Read first, in full: the issue <ledger dir>/issue.md; the repo config
-<checkout>/.claude/ship-plan.md; <skill dir>/evidence.md; the ledger
+<checkout>/.claude/ship-plan.md; <skill dir>/evidence.md, then
+<checkout>/.claude/ship-plan/ship-issue/evidence.md if it exists; the ledger
 <ledger dir>/ledger.md (its Ruling: and Asked: lines are settled: never reopen
 them).
 
@@ -173,6 +174,8 @@ REQUIRED SUB-SKILL: superpowers:writing-plans. Its plan review and its
 execution-method choice are overridden by ship-issue: the method is always
 ship-plan (subagent-driven-development). Write one Ruling: line for each stop
 you skip. Save to <checkout>/docs/superpowers/plans/<yyyy-mm-dd>-<KEY-n>-<slug>.md.
+In that file name, write the key the way the config's `Branch:` pattern writes
+it; titles, commit subjects and text keep the tracker's form, <KEY-n>.
 
 Next to the skill's required header, the plan needs:
 - a Scenarios table for verify-and-fix: unit, local, and (when the config has

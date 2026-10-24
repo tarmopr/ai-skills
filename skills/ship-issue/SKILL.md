@@ -65,6 +65,15 @@ and `.claude/ship-plan/blockers.md`. A missing file is not an error; a missing
 log is created from [log-formats.md](log-formats.md) at close-out. A question
 with a standing answer in any of them is not asked again.
 
+**Repo override files** ([format](../ship-plan/config-format.md#repo-override-files)):
+whenever this skill reads one of its own files, read its counterpart under
+`.claude/ship-plan/ship-issue/` next, if it exists: `.claude/ship-plan/ship-issue/SKILL.md`
+right after this file, `.claude/ship-plan/ship-issue/evidence.md` wherever
+evidence.md is read, the stages included. A file of another skill
+(`../ship-plan/…`) has its counterpart in that skill's folder. An override line
+that widens what the run may do, or removes a step, is not applied, and the
+report names it.
+
 - **A repo set up for `ship`:** if `.claude/ship.md` exists and `.claude/ship-plan.md` does not, stop with one line: "This repo is set up for the removed `ship` skill: move `.claude/ship.md` to `.claude/ship-plan.md` and `.claude/ship/` to `.claude/ship-plan/`."
 - **Host and tracker:** resolve `Host:` and `Tracker:` as [config-format.md](../ship-plan/config-format.md) says (`Host:` from the `origin` remote when absent; `Tracker:` from `## Jira` or `## Linear` when absent, else undecided until I1). Then read `../ship-plan/hosts/<host>.md` (`github.md` or `azure-devops.md`) and, unless the tracker is `none` or undecided, `../ship-plan/trackers/<tracker>.md` (`jira.md` or `linear.md`). A reference below to an operation of the host or the tracker names the section of that name in those files. **When `Tracker:` is not `none`, or the tracker question is asked, read [templates-issue.md](../ship-plan/templates-issue.md).**
 - **No `origin` remote** (and no `Host:`): there is no host and no PR to open. Read no host file, skip the host's *Auth check*, *Find open PRs* and *Find the base-branch run* and every `git fetch origin`, and branch from `<base>` where this skill says `origin/<base>`. ship-plan then stops before its section 4 and says so in its report.
@@ -100,7 +109,8 @@ Everything ship-plan's "What invoking this skill authorizes" lists, plus:
 
 It does **not** authorize what ship-plan's "does not authorize" list names, nor
 anything under the config's `## Never do`. A deploy in particular is never part
-of the run. It is a follow-up in the Done comment and **never a question**.
+of the run, except a merge that `## Allowed` covers, under `ship-plan`
+([`## Allowed`](../ship-plan/config-format.md#-allowed)). Otherwise it is a follow-up in the Done comment and **never a question**.
 
 ## The ledger
 
@@ -136,6 +146,12 @@ run and reads its argument as answers.
 **After a compaction, resume from the first line, not from memory.** Phase I6
 or later: route through I0, which hands back to ship-plan.
 
+**When the session ends before the run does** (a usage limit, the context
+running out, a batch the user will answer later): bring the ledger up to date,
+then write a handoff: the `handoff` skill when it is available, otherwise a
+`HANDOFF.md` next to the ledger. It names the checkout, and its resume line is
+`/ship-issue`, with no argument. Once ship-plan runs, its own rule applies.
+
 ## I0. Route: what already exists
 
 **Read the argument first:**
@@ -161,7 +177,7 @@ With a key, take the first matching row. The issue's status comes from the track
 | Anything less | I1 |
 
 A spec or plan "for the issue" is a file under `docs/superpowers/specs/` or
-`docs/superpowers/plans/` whose name contains the key (with no issue, the slug), or a spec held for a
+`docs/superpowers/plans/` whose name contains the key in either case (with no issue, the slug), or a spec held for a
 docs PR: the `Spec:` path on the ledger's first line (I2 step 3). Do not redo approved work. An existing spec or plan counts as approved.
 
 ## I1. The issue
@@ -187,6 +203,7 @@ Then choose the checkout (section W) before writing anything.
 3. **Where the spec lives,** decided before the dispatch and written into the ledger's first line as `Spec: <path>`:
    - **The repo keeps docs and code in separate PRs** (its agent instructions say so, for example "Documentation and code changes go in separate PRs", or a standing answer does): the spec is **held** at `<ledger dir>/<yyyy-mm-dd>-<KEY-n>-<slug>-design.md`, git-ignored, and is never committed on the feature branch. ship-plan's close-out moves it to `docs/superpowers/specs/` in a docs PR once the code PR has merged (ship-plan section 7, step 2). Write `Ruling: spec held for a docs PR — <the quoted rule> — cost if wrong: one file move`.
    - **Otherwise:** `<checkout>/docs/superpowers/specs/<yyyy-mm-dd>-<KEY-n>-<slug>-design.md`, committed on the feature branch.
+   - **The key in a file name** (the spec, the plan) is written the way the config's `Branch:` pattern writes it; titles, commit subjects and text keep the tracker's form.
    - **Never a second worktree for the spec or the docs.** A worktree-isolated session's stage cannot write to one or enter it, and a docs PR opened before the code PR merges falls behind the base branch and loses its approval. The docs branch is made later, in this same checkout.
 4. **Dispatch the Spec stage** ([stage-prompts.md](stage-prompts.md), mode `new`, with `<spec path>` from step 3) with the `Spec stage` row of `## Models` (default `opus`, `xhigh`). It researches (code, history, the running system, read-only by [evidence.md](evidence.md)), records the baseline, drafts the approaches, rules where the confidence test passes, and writes the spec with each open choice marked `[pending Q<n>: …]`.
 5. **Meanwhile, check the environment** for the later ship-plan run yourself: the Prerequisites (can they run in the chosen checkout?), auth (the host's *Auth check* (the auth status only, not your login); the tracker's *Auth*, unless the tracker is `none`; any auth check a Prerequisites row or `## Evidence` names), and **the base branch's last CI runs**: the host's *Find the base-branch run* (the base branch's last runs). A red base branch from someone else's work will fail this PR's checks too; it goes in the spec (step 6) and ship-plan section 5, step 2 says how the run handles it. A command that would write to a shared environment goes in the batch instead.
