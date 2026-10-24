@@ -18,6 +18,8 @@ claude plugin marketplace add tarmopr/ai-skills
 claude plugin install ai-skills@tarmopr
 ```
 
+From a clone of this repo, `./scripts/install-plugin.sh` does both, skipping whichever is already done.
+
 Skills are then available as `/ai-skills:ship-plan`, `/ai-skills:verify-and-fix` and so on. Get updates with
 `claude plugin marketplace update tarmopr`.
 
@@ -27,7 +29,8 @@ This repo is the source of truth. Every machine, the author's included, uses the
 marketplace plugin (see Install), not through symlinks in `~/.claude/skills/`. Edit the skills here only:
 the installed copy under `~/.claude/plugins/cache/` is replaced on every update.
 
-- **New machine:** run the two Install commands. Cloning the repo is only needed to edit it.
+- **New machine:** run the two Install commands, or `./scripts/install-plugin.sh` from a clone.
+  Cloning the repo is only needed to edit it.
 - **New skill:** create `skills/<name>/SKILL.md` in this repo. Never add a copy or a symlink to
   `~/.claude/skills/`: with the plugin installed, every skill would load twice.
 - **Publish a change:** commit on a branch, open a PR, and bump `version` in
