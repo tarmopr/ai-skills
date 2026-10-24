@@ -106,7 +106,7 @@ regressions: a later round often finds bugs an earlier round's fixes introduced.
   - Read `.claude/ship-plan.md` by its reading rules: headings match case-insensitively; a heading that matches no known section is **unknown**. Its rows never run, and the report names it.
   - Then read the repo override files for this skill, `.claude/ship-plan/verify-and-fix/<file>.md`, as each shared file is read ([Repo override files](../ship-plan/config-format.md#repo-override-files)).
   - **No config:** draft one ([config-drafting.md](../ship-plan/config-drafting.md)) and write it to `.claude/ship-plan.md`. Put it at the top of the question batch with each gate's source. **Run no gate until the user confirms it.** Do the review round meanwhile. A draft lives in the repo, not in a scratch note: it is what the next run reads. Run on its own, leave the draft uncommitted and say so; under `ship-plan`, ship-plan commits it once confirmed.
-  - The config is the single list of gates. If the repo's agent instructions or a Makefile name a check the config lacks, do not run it: propose adding it to the config. Section 8 says where such a proposal goes.
+  - The config is the single list of gates. If the repo's agent instructions or a Makefile name a check the config lacks, do not run it: add it to the config, as section 8 says.
 - **Ask for everything only the user can provide, in one message, now:** hosted sign-ins, secrets the config names, the draft config. Then carry on with everything that does not wait on them. Asking in the middle of the loop costs the user a second interruption.
 - **Prerequisites:** run the config's `## Prerequisites` rows in order, wait for each one's "Ready when", and start background rows with `run_in_background`. Stop them with TaskStop when the loop ends.
 
@@ -235,7 +235,7 @@ sweeps in logs and drafts), and let the repo's hooks run (never
 
 Only these stop the loop:
 
-- **Signing in on a hosted URL:** ask once for every role you need. Local URLs you sign in to yourself, and `Hosted URL:` too when `## Allowed`, read from the base branch, has `Sign in on Hosted URL: test users` (ui-testing.md).
+- **Signing in on a hosted URL:** ask once for every role you need. Local URLs you sign in to yourself, and `Hosted URL:` too when `## Allowed` has `Sign in on Hosted URL: test users` and the branch's diff does not touch `## Allowed` (ui-testing.md).
 - **An action that is outward-facing or destructive:** a push without an open
   PR, opening a PR, merge, any write to a shared environment or production,
   deleting anything you did not create. (Pushing and replying on an open PR are
