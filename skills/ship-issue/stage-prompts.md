@@ -30,9 +30,11 @@ them).
 
 Then, in either mode, re-check every PR the issue, the spec or the ledger
 depends on, as the host's *Find open PRs* reads a named PR's state
-(<skill dir>/../ship-plan/hosts/<host>.md), and fetch `origin/<base>`. A PR
-can merge or move while the run waits on the batch. If one has changed since
-the ledger last recorded it, say so as a Lesson: and write the spec for the state you see now, not the state the ledger describes.
+(<skill dir>/../ship-plan/hosts/<host>.md), and fetch `origin/<base>` when the
+repo has an `origin` remote. A PR can merge or move while the run waits on the
+batch. If one has changed since the ledger last recorded it, say so as a
+Lesson: and write the spec for the state you see now, not the state the ledger
+describes.
 
 ## Research (mode new)
 Before designing, confirm the problem is real and find its edges. Every claim

@@ -47,7 +47,7 @@ Stopping at the first hit:
 
 ## Read an issue
 
-`get_issue` with the id. The issue description may be the plan; with Linear unavailable there is no plan, so park it and ask now.
+`get_issue` with the id, and its comments with `list_comments`. The issue description may be the plan; with Linear unavailable there is no plan, so park it and ask now.
 
 ## Where a new issue goes
 

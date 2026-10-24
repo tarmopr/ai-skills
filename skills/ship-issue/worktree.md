@@ -21,7 +21,7 @@ is refused. `cat <main>/.git/HEAD` shows its branch but not whether it is dirty.
 `$( … )`.
 
 0. **Git must run unmodified.** Run plain `git status` once. If a hook refuses it, that goes in the batch with the hook's message. Until it is fixed, the run falls back to the full git path (`/usr/bin/git`), and step 5 applies.
-1. **Create it from `origin/<base>`.** `git fetch origin <base> --quiet`. `git rev-parse --path-format=absolute --git-common-dir` prints `<main>/.git`; `<main>` is its parent. Then, with that path written out literally (a relative path would nest it inside the current worktree):
+1. **Create it from `origin/<base>`.** `git fetch origin <base> --quiet`, when the repo has an `origin` remote. `git rev-parse --path-format=absolute --git-common-dir` prints `<main>/.git`; `<main>` is its parent. Then, with that path written out literally (a relative path would nest it inside the current worktree):
    `git worktree add --detach <main>/.claude/worktrees/<KEY-n> origin/<base>`
    Then call `EnterWorktree` with that `path`. The worktree starts detached on `origin/<base>`; I2 step 1 creates the branch once the key is known, so nothing needs renaming.
 2. **Dependencies:** the config's Prerequisites rows with `Background: no`, in order. In a permission mode that prompts, their allow lines are in the I3 batch, so run them once the answers arrive; research needs only the code. Otherwise run them now.
