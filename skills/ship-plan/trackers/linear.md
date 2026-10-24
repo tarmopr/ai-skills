@@ -51,7 +51,7 @@ Stopping at the first hit:
 
 ## Where a new issue goes
 
-The configured team and project, from the config's `## Linear`. No question is asked.
+The configured team and project, from the config's `## Linear`. No question is asked. If an answer names a related issue, or the new issue must wait for another, link them as "Link two issues" says.
 
 ## Create an issue
 
@@ -105,8 +105,12 @@ the same Plan section as above. Never replace the user's text.
 
 ## Link two issues
 
-None defined for Linear in these skills. Skip.
+`save_issue` on the issue being linked (the links are append-only):
+
+- Related issue: `relatedTo: [<related key>]`.
+- An answer that makes this issue wait for another issue or PR: `blockedBy: [<other key>]`. A PR without its own issue: link the issue its branch or title names.
+- A follow-up: `relatedTo: [<run issue key>]` on the follow-up.
 
 ## Find an existing follow-up
 
-None defined for Linear in these skills. Use "Find an issue" with the follow-up's subject as the `query`.
+Use "Find an issue" with the follow-up's subject as the `query`. When an issue already covers it, create nothing: name that issue in the Done comment's follow-ups. Otherwise create the follow-up and link it to the run issue as "Link two issues" says.
