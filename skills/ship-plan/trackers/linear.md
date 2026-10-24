@@ -13,7 +13,7 @@ Team, project and statuses come from the config's `## Linear`; follow its `Notes
 
 Linear `get_user("me")`.
 
-**Linear configured but unavailable** (not connected, or the call fails): park "Linear unavailable: <exact error>" in the batch, continue as if Linear were not configured (the PR body carries the plan), and say so in the report. Never retry it through another route. **A Linear call that fails later in the run** gets the same rule; if the PR already exists, post its Plan section as a `gh pr comment`.
+**Linear configured but unavailable** (not connected, or the call fails): park "Linear unavailable: <exact error>" in the batch, continue as if Linear were not configured (the PR body carries the plan), and say so in the report. Never retry it through another route. **A Linear call that fails later in the run** gets the same rule; if the PR already exists, post its Plan section with the host's *PR comment*.
 
 ## Issue keys
 
@@ -52,6 +52,14 @@ Stopping at the first hit:
 ## Where a new issue goes
 
 The configured team and project, from the config's `## Linear`. No question is asked. If an answer names a related issue, or the new issue must wait for another, link them as "Link two issues" says.
+
+**No `## Linear` in the config** (`Tracker: linear`, or the tracker question just answered Linear): draft the section ([config-drafting.md](../config-drafting.md)). Gather the options:
+
+- **Team:** `list_teams`.
+- **Project:** `list_projects` for the chosen team (the default, or the team of the most relevant candidate).
+- **Start, Review and Done status:** `list_issue_statuses` for that team: the first "started" status, a review status if the team has one, and the first "completed" status.
+
+Ask them in the issue question's batch, one question each (Team, Project, Start status, Review status, Done status), every question with 2 to 4 options, the recommended one first and marked "(Recommended)"; "Other" is added by the tool. More than 4 questions in the batch: ask the rest in a second `AskUserQuestion` call right after. The answers are the drafted `## Linear` (Team, Project, Start status, Review status, Done status; `Done means:` and `Notes:` left at their defaults), each a `Ruling: user <date>`. The draft goes in the question batch like any draft config, and once confirmed it is committed on the feature branch like `## Jira`'s draft (ship-plan: with the product change; ship-issue: with the spec). "No issue": no draft.
 
 ## Create an issue
 

@@ -6,7 +6,7 @@ Read when a run asks the tracker question or the issue question, or writes to th
 
 Asked when the config has no `Tracker:` and none can be resolved. Ask it **before the issue question**, on its own, with one `AskUserQuestion` call. Options, the recommended one first and marked "(Recommended)": "Jira"; "Linear"; "No tracker (the PR is the record)". Recommend Jira or Linear when only that one's integration is connected (the Atlassian MCP for Jira, the Linear MCP for Linear). "Other" is always added by the tool.
 
-The answer is a `Ruling: user <date>`. It is written as `Tracker: jira`, `linear` or `none` into the drafted config (config-drafting.md), never into an existing one.
+The answer is a `Ruling: user <date>`. It is written as `Tracker: jira`, `linear` or `none` into the config's `## Repo`, together with the tracker's drafted section, and committed on the feature branch's first commit, like `## Slack`. A drafted config (config-drafting.md) gets it inside the draft. (Only `Host:` is never added to an existing config.)
 
 ## Issue question
 

@@ -15,7 +15,7 @@ propose the allow line, as for any refused command.
 
 With no `## Jira` in the config, call `getAccessibleAtlassianResources`. One Jira site: use its URL. Several: ask which one first, in its own `AskUserQuestion` call.
 
-**Jira unavailable** (not connected, or the call fails): park "Jira unavailable: <exact error>" in the batch, continue with no Jira issue (the PR body carries the plan), and say so in the report. Never retry it through another route. **A Jira call that fails later in the run** gets the same rule; if the PR already exists, post its Plan section as a `gh pr comment`.
+**Jira unavailable** (not connected, or the call fails): park "Jira unavailable: <exact error>" in the batch, continue with no Jira issue (the PR body carries the plan), and say so in the report. Never retry it through another route. **A Jira call that fails later in the run** gets the same rule; if the PR already exists, post its Plan section with the host's *PR comment*.
 
 ## Issue keys
 
@@ -169,4 +169,4 @@ None. The key in the branch name and the PR title links it on `github`; see Inte
 
 ## Find an existing follow-up
 
-**Before creating a follow-up issue,** whether this batch approved it or an earlier answer did (a `Ruling: user` line copied from `ship-issue`'s I3 batch), check that a reviewer has not filed it already. Read the PR's review bodies and comments (`gh pr view <n> --json reviews,comments`), and search the project with `searchJiraIssuesUsingJql` (`project = <key> AND text ~ "<the follow-up's subject>" AND created >= -14d`). When an issue already covers it, create nothing: name that issue in the Done comment's follow-ups, and record a `Ruling:` that quotes the line of it that covers the follow-up. ORIG-8340's approver filed ORIG-8361, which covered both follow-ups the I3 batch had approved; creating them as well would have split the work in two. Also grep `.claude/ship-plan/*.md` and `.claude/ship-issue/*.md` for the follow-up's subject: a log entry can name the issue when a Jira text search misses it (ORIG-8125 filed ORIG-8371 as a duplicate of ORIG-8346, which `interruptions.md` named, because ORIG-8346's summary says "fail once", not "flaky").
+Search the project with `searchJiraIssuesUsingJql` (`project = <key> AND text ~ "<the follow-up's subject>" AND created >= -14d`). Reading the PR's review bodies and grepping the logs are ship-plan's own steps (section 7, step 7).
