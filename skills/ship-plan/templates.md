@@ -39,21 +39,3 @@ Simplify pass: <`<short sha>`, <n> edits | no changes>
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 ```
-
-## Review reply
-
-One reply per PR review item (`verify-and-fix` section 4b). Short, in plain
-words, quoting code where it settles the point. Fixed replies name the commit.
-
-| Grade | Reply |
-|---|---|
-| Fixed | `Fixed in <short sha>: <what changed, one line>. Test: <test name>.` |
-| Suggestion, out of scope | `Agreed, but outside this PR's scope. Noted as a follow-up<: <KEY-n> comment>.` |
-| Follow-up while approved | `Good point. The PR is approved, and a push now would dismiss that approval, so I've noted it as a follow-up<: <KEY-n> comment>.` |
-| Question | `<the answer>, see <path:line>: <quoted line>.` |
-| Not valid | `I don't think this applies: <path:line> <quoted code> <why>. Happy to change it if I've missed something.` |
-| Needs the user | `This needs a decision from the author: <the question>. I've raised it with them.` |
-
-A reply that promises a change in another file or a later PR names a place you
-have grepped first. On #159 a reply promised a README line the README already
-had, and the correction took a second comment and an edit of the Done comment.
