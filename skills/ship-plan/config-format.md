@@ -142,7 +142,7 @@ filters, PR-only triggers) is not `None`; `ship-plan` handles that case per run.
 
 ### `## After merge`
 
-Read-only checks run at close-out, once base-branch CI is green: a deployed
+Read-only checks run in `ship-plan`'s section 6b, once base-branch CI is green: a deployed
 version answers, a published artifact exists. Never a write. Default: none.
 
 ### `## Jira`

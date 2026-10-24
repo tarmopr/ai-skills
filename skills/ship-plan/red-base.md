@@ -2,7 +2,7 @@
 
 Read only when the base-branch run is red (section 6, step 3 of [SKILL.md](SKILL.md)), or validation fails (section 6b, step 3).
 
-A failed validation in section 6b that this run's diff explains enters here like a red base-branch run: it is **Real**, so fix forward or revert.
+A failed validation in section 6b that this run's diff explains enters here like a red base-branch run. It has no failed run to read: go straight to **Real** in step 1, so fix forward or revert.
 
 1. **Red:** the host's *Read a failed run*, then classify:
    - **Transient, listed in `blockers.md`:** when `## CI` has `Merge deploys to:`, never rerun it: a rerun redeploys, and `## Allowed` never covers that ([config-format.md](config-format.md#-allowed)). Park the rerun in `questions.md` for the user, with the run's id, and go on to close-out. Otherwise the host's *Rerun a base-branch run*, then watch again (the host's *Watch a run*). Up to 3 reruns. Before the 2nd and 3rd, wait 10 and then 20 minutes: run `sleep 600` (then `sleep 1200`) with `run_in_background`, and rerun when it finishes. Keep the rerun a separate command, so it matches the pre-approval. After the 3rd, park it in `questions.md` and go on to close-out; the work is not done.
