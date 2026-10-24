@@ -57,13 +57,3 @@ words, quoting code where it settles the point. Fixed replies name the commit.
 A reply that promises a change in another file or a later PR names a place you
 have grepped first. On #159 a reply promised a README line the README already
 had, and the correction took a second comment and an edit of the Done comment.
-
-## Slack: review request
-
-Short; Slack unfurls the PR and Jira links. Take `Size` from `gh pr view <n> --json changedFiles,additions,deletions` right before the post, never from memory: the message cannot be edited.
-
-```markdown
-:github-pr: **Review request:** <PR title> <pr url>
-<1–2 sentences: what changes for a user.> <Jira: <issue url> | no Jira issue>
-Size: <files> files, +<added> −<removed>. Needs: <n approvals | code owner approval | no approval, review welcome>.
-```
