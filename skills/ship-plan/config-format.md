@@ -5,6 +5,8 @@ holds everything about one repo: every command, reviewer, rule, CI and tracker
 setting. **A command that is not in this file is never run as a gate.** The
 skills do not guess a repo's tech; they read it here.
 
+**When the config is missing or a section must be drafted, read [config-drafting.md](config-drafting.md).**
+
 ## Reading rules
 
 - Sections are found by their `## ` heading, matched case-insensitively and ignoring surrounding whitespace. Order does not matter.
@@ -21,12 +23,20 @@ skills do not guess a repo's tech; they read it here.
 
 | Field | Meaning | Default |
 |---|---|---|
-| `Base branch:` | The branch PRs target and whose CI must be green | `gh repo view --json defaultBranchRef --jq .defaultBranchRef.name` |
+| `Host:` | `github` or `azure-devops` | From `git remote get-url origin`: `dev.azure.com` or `*.visualstudio.com` is `azure-devops`; anything else, GitHub Enterprise included, is `github`. Never asked when an `origin` remote exists; written only into a drafted config, never added to an existing one. |
+| `Tracker:` | `jira`, `linear` or `none` | `## Jira` present: `jira`. `## Linear` present: `linear`. Neither: not decided yet; asked once with the issue question, then written here. |
+| `Base branch:` | The branch PRs target and whose CI must be green | the host's *Default branch* |
 | `Merge:` | `squash` or `merge` | `squash` |
 | `Branch:` | Branch name pattern | `<type>/<slug>`; with an issue `<type>/<id>-<slug>` |
 | `Approvals:` | Approvals a PR needs from someone other than the author: `none` (POCs, internal tools) or a number. Overrides what the rulesets say. | read from the base branch's rulesets, else branch protection, else 1 |
 | `Copilot review:` | `yes` requests a Copilot review on every PR; `no` does not | `yes` |
 | `Review wait:` | Minutes a run polls for reviews before it hands off | 120 |
+
+Fields that mean something different per host:
+
+- `Approvals:`. GitHub: rulesets, then branch protection, as the default says. Azure DevOps: the base branch's "Minimum number of reviewers" policy; no such policy means 0, because the policies were readable. The default is the host's *Read the review rule*.
+- `Copilot review:`. GitHub only. On Azure DevOps it defaults to `no`, and a `yes` is named in the report as having no effect.
+- `## CI` `Workflow:`. A workflow file on GitHub, a pipeline definition id on Azure DevOps.
 
 `<type>` is one of `feature`, `fix`, `docs`, `chore`, `refactor`. `<slug>` is
 3–6 words of the title in kebab case. Never a username prefix.
@@ -100,8 +110,7 @@ values that need a separate justification to change. Default: none.
 
 `None` means the repo has no CI at all, neither on PRs nor on pushes: `ship-plan`
 merges once `verify-and-fix` is clean and reports "base branch has no CI". When this
-section is absent and `.github/workflows/` holds no workflow file, treat it as
-`None`. A repo whose workflows exist but do not cover a given PR or push (path
+section is absent and the host's *Has CI* is false, treat it as `None`. A missing `.github/` folder alone never means `None`. A repo whose workflows exist but do not cover a given PR or push (path
 filters, PR-only triggers) is not `None`; `ship-plan` handles that case per run.
 
 ### `## After merge`
@@ -133,14 +142,32 @@ they lead to: "Start progress" may lead to "In Progress".
 ### `## Slack`
 
 Where the review request for each new PR is posted. Absent means not decided
-yet: the next run asks once in pre-flight. It writes the answer at once to
-`.claude/ship-plan.local.md` (git-ignored, this machine only, the same
-`## Slack` format), and commits it here for the team on its feature branch.
-This section wins over the local file.
+yet: the next run asks once in pre-flight and writes the answer here, on its
+feature branch. This committed section is the only place a run writes the
+channel. `.claude/ship-plan.local.md` (git-ignored, this machine only, the same
+`## Slack` format) is read when this section is missing, so a machine that
+answered before keeps working, and is never written. This section wins over the
+local file.
 
 | Field | Meaning |
 |---|---|
 | `Channel:` | `#<name> (<channel id>)`, or `none` for no post. The id is what `slack_send_message` takes; the name is for people. |
+| `People:` | A table, `host login | Slack user id`, repo-wide because reviewers belong to the team. Filled the first time a login is seen. Used to @-mention people in the re-review request; a login not in it is named in plain text. |
+
+### `## Linear`
+
+Present when `Tracker: linear`. Absent with a Linear tracker: the issue
+question finds the team and drafts this section.
+
+| Field | Meaning | Default |
+|---|---|---|
+| `Team:` | Team name and key | required |
+| `Project:` | Project name | none |
+| `Start status:` | Set when implementation starts | required |
+| `Review status:` | Set when the PR is opened for review | none: the issue stays in the start status |
+| `Done status:` | Set when Done means is met | required |
+| `Done means:` | When the issue may be closed | merged and base-branch CI green; with CI `None`, merged |
+| `Notes:` | Facts about the workspace, e.g. whether an integration closes issues | none |
 
 ### `## Evidence`
 
@@ -213,94 +240,3 @@ review. If they need fix rounds, set `Implementer (mechanical)` to `sonnet`.
 
 Bullets. Each is added to the "never on its own" list of both skills for this
 repo: `ship-plan`'s authorization and `verify-and-fix`'s stop conditions. Default: none.
-
-## Drafting a missing config
-
-1. **CI first.** Read `.github/workflows/*.yml`. From the jobs that run on `pull_request`, take each `run:` command, in order, as a gate. Setup, checkout, cache and install steps become Prerequisites, not gates. Service containers become a Prerequisites note. A step's `working-directory` becomes part of its command (`cd <dir> && …`). Expand a `${{ }}` expression to its literal value, or drop the step and list it under "consider adding". CI already knows the repo's tech.
-   **Never a gate:** a step that deploys, publishes, uploads (coverage, artifacts), comments on the PR, or reads `secrets.*`. Those are outward actions; list them in the batch as "left out".
-2. **Manifests fill gaps** when CI is missing or thin: `package.json` scripts, `*.sln` / `*.csproj`, `pyproject.toml`, `go.mod`, `Cargo.toml`, `Makefile`, `Taskfile.yml`. Take only targets named lint, format check, typecheck, test, build.
-3. **`## CI`:** `Workflow:` the workflow that runs on `push` to the base branch. No workflow file at all: `None`. Workflows on PRs only: leave `Workflow:` out and note "no push workflow" in the batch.
-   **`## Repo`:** set `Merge:` from `gh repo view --json squashMergeAllowed,mergeCommitAllowed`: `squash` when allowed, else `merge`.
-4. **Never invent** `## Jira` (the issue question drafts it), `## Slack` (pre-flight asks for it), `## Never do`, `## UI testing` sign-ins, `## Evidence`, `## Worktree`, `## Models`, or reviewers. List them in the batch as "consider adding".
-5. **Write the draft** to `.claude/ship-plan.md` and put it at the top of the question batch, with each gate's source (`ci.yml: job test, step 3`). Until the user confirms it, `verify-and-fix` runs no gate. Once confirmed: under `ship-plan`, it is committed on the feature branch; `verify-and-fix` run on its own leaves it uncommitted and says so.
-
-## Examples
-
-Illustrative only. A Node web app:
-
-```markdown
-# Ship config
-
-## Repo
-- Base branch: main
-- Merge: squash
-- Approvals: 1
-- Review wait: 180
-
-## Prerequisites
-| Command | Background | Ready when |
-|---|---|---|
-| npm ci | no | exit 0 |
-| npm run dev | yes | http://localhost:5173 answers |
-
-## Gates
-| Gate | Command | Only when changed | Timeout |
-|---|---|---|---|
-| Lint | npm run lint | | |
-| Types | npx tsc --noEmit | | |
-| Unit | npx vitest run | | |
-| E2E | npx playwright test | src/**, e2e/** | 30 |
-| Build | npm run build | | |
-
-## Reviewers by path
-| Paths | Agent |
-|---|---|
-| db/migrations/** | migration-reviewer |
-
-## Security extras
-- Every query that reads user data filters by `account_id`.
-
-## Fix rules
-- Never edit an existing migration; add a new one.
-
-## UI testing
-- URL: http://localhost:5173
-- Started by: Prerequisites row `npm run dev`
-- Sign-in: users seeded by `db/seed.sql`
-- User-visible paths: src/**
-- Roles: admin, member
-
-## CI
-- Workflow: ci.yml
-
-## Jira
-- Site: https://acme.atlassian.net · Project: WEB · Issue type: Task
-- Fields: Team = Web
-- Start transition: Start progress · Done transition: Done
-- Notes: GitHub for Jira links PRs by key; no automation closes issues.
-
-## Evidence
-| Source | Environment | Read-only command or tool | Notes |
-|---|---|---|---|
-| Logs | staging | Grafana Loki, `{app="web"}` | count over 7 days first |
-| HTTP | staging | `curl -s https://staging.acme.test/api/health` | no sign-in |
-
-## Worktree
-- Copy: .env, .env.local
-- Shared: port 5173; container `web-db-test`
-
-## Slack
-- Channel: #web-reviews (C0123ABCD)
-
-## Never do
-- Run `npm publish`.
-```
-
-Gate rows for other stacks:
-
-| Stack | Gates |
-|---|---|
-| .NET | `dotnet format --verify-no-changes` · `dotnet build -warnaserror` · `dotnet test` |
-| Python | `ruff check .` · `mypy .` · `pytest -q` |
-| Go | `go vet ./...` · `go test ./...` |
-| Terraform | `terraform fmt -check -recursive` · `terraform validate` · `tflint` |
