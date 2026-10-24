@@ -307,7 +307,9 @@ target file. ship-plan's section 8 writes them on its lessons branch at the end 
   allow something, an action the user did by hand): propose the exact
   `## Allowed` line in the report, with the reason. Never write it
   ([`## Allowed`](../ship-plan/config-format.md#-allowed)). When no entry on
-  the closed list fits, propose it as a shared-skill change instead.
+  the closed list fits, propose it as a shared-skill change instead; a command
+  the permission system refused is proposed as an `allowed-tools` line, never
+  edited into settings.
 - If the lesson is a rule for the whole repo rather than for this loop, propose
   a change to the repo's agent instructions file in the report. Do not edit it
   on your own.
