@@ -88,7 +88,7 @@ Then `transitionJiraIssue` with `transitionName: <Start transition>`. Summary:
 the outcome, not the task ("Notes can be exported as GeoJSON", not "Implement
 export").
 
-Create each issue in one call with the run issue's labels and the fields the config's `## Jira` names (for example Cross-Functional Team and Work Type), not afterwards.
+Create each issue in one call with the run issue's labels and the fields the config's `## Jira` names (for example a required team or component field), not afterwards.
 
 ```markdown
 <one paragraph: the problem and who has it, from the plan's Goal>

@@ -131,7 +131,7 @@ carries besides the spec (rows in the agent instructions, an ADR).
 
 When the spec suggests a commit order, check that each commit builds from what
 it and the commits before it add. Do this check yourself; the builder check
-does not. A spec once put `Country.Length` after the commit whose test
+does not. A spec once put a new constant after the commit whose test
 reads it.
 
 ## Mode revise
