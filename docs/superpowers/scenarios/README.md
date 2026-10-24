@@ -23,7 +23,7 @@ files' shape. These scenarios pin behaviour.
 | S10 | [S10-verify-standalone.md](S10-verify-standalone.md) | `verify-and-fix` on a branch with no PR |
 | S11 | [S11-override-files.md](S11-override-files.md) | A repo override file: read right after its shared file and followed; a line that widens is not applied |
 | S12 | [S12-allowed-merge-deploys.md](S12-allowed-merge-deploys.md) | Four runs: `Merge deploys to:` with and without `## Allowed` `Merge that deploys to:`, a production-like name, a fix-forward PR |
-| S13 | [S13-lessons.md](S13-lessons.md) | Two runs: where each kind of lesson goes, and a lessons PR that loosens the config stays open |
+| S13 | [S13-lessons.md](S13-lessons.md) | Three runs: where each kind of lesson goes; a lessons PR that loosens the config, or touches `## Allowed`, stays open |
 | S14 | [S14-validate-deploy.md](S14-validate-deploy.md) | Four runs: validating the deploy at `Hosted URL:`: the run signs in, a failure that leads to `red-base.md`, no sign-in, a refused sign-in |
 | S15 | [S15-loop-behaviors.md](S15-loop-behaviors.md) | Implementer context, prerequisites first, reviewers run no gates, gates after a base-branch merge, the key in a branch name, a handoff |
 
@@ -41,7 +41,9 @@ files' shape. These scenarios pin behaviour.
    Never give it the **Pass if** lines, this README's table, or the spec and
    plan: a runner that knows what is being tested answers to the test.
 3. Save its answer verbatim to `results/<id>.md` (`baseline/<id>.md` for the
-   baseline).
+   baseline), with one change: replace every occurrence of the step 1 path
+   with the literal `SKILLDIR` first. Saved answers are published, and they
+   must hold no home path.
 4. Grade the answer against the scenario's `## Pass if` lines. Every line must
    hold. Quote the answer's line for each failure.
 
