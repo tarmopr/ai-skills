@@ -367,10 +367,10 @@ Answer, in order:
 **S14b**
 - `ship-plan/red-base.md` is read once scenario 5 fails, and the failure is
   handled as a real red base branch caused by this run.
-- The run finds the root cause, then fixes forward from `origin/main`
-  (`git fetch origin main --quiet`, then
-  `git switch -c fix/BILL-464-base-after-67 origin/main`) with a failing test
-  first, and opens a fix PR titled "Fix main after #67: …".
+- The run fixes forward from `origin/main` (`git fetch origin main --quiet`,
+  then `git switch -c fix/BILL-464-base-after-67 origin/main`), finds the root
+  cause and writes a failing test before the fix, and opens a fix PR titled
+  "Fix main after #67: …".
 
 **S14c**
 - The run does not wait for the sign-in. The outcome is Done, with

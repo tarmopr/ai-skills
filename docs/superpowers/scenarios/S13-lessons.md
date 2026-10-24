@@ -264,7 +264,7 @@ Answer, in order:
   `- Merge that deploys to: staging`, with the reason. Nothing on any branch
   adds, changes or removes a `## Allowed` line.
 - `Writes allowed: yes` is in the report as a proposed change and is written
-  to no file.
+  to no config or override file.
 - Lessons PR #69 is merged with `gh pr merge 69 --squash --delete-branch`.
 
 **S13b**

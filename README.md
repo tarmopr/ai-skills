@@ -23,6 +23,15 @@ From a clone of this repo, `./scripts/install-plugin.sh` does both, skipping whi
 Skills are then available as `/ai-skills:ship-plan`, `/ai-skills:verify-and-fix` and so on. Get updates with
 `claude plugin marketplace update tarmopr`.
 
+## Repo-specific instructions
+
+The shared skills name no repo. A repo adds its own instructions in override files at
+`.claude/ship-plan/<skill>/<file>.md` (for example `.claude/ship-plan/verify-and-fix/ui-testing.md`):
+whenever a skill reads one of its own files, it reads the repo's file of the same name next. An override may
+add steps or make a rule stricter, never widen what a run may do. The config's `## Allowed` section is a closed
+list, edited only by a person, of the few permissions a repo can switch on, such as a merge that deploys to a
+staging environment. See [config-format.md](skills/ship-plan/config-format.md).
+
 ## Maintaining (author workflow)
 
 This repo is the source of truth. Every machine, the author's included, uses the skills through the
