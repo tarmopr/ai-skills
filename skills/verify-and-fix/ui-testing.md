@@ -24,10 +24,15 @@ Derive them from the issue's acceptance criteria and the spec, then add:
 ## 2. Where to run
 
 Run at the config's `## UI testing` `URL:`, after its `Started by:` is ready.
+Follow its `Notes:` as part of every scenario: a preflight, test-mode values,
+what cannot run at `URL:`, the languages, extra failure paths.
 
 - **A local URL** (`localhost`, `127.0.0.1`): sign in yourself, only with test users from the config's `Sign-in:` source.
 - **A hosted URL** (anything else): the user signs in, not you. A browser holds one session per origin, so test one role at a time. Give the user the whole role list, in order, up front, and ask them to sign in as the next role when you finish one. Reuse each session.
   A hosted URL is a shared environment: only read-only scenarios run there, unless the config's `## UI testing` says `Writes allowed: yes`. Without it, a scenario that creates, edits or deletes anything is reported as pending, not run.
+- **`Hosted URL:`**, when set: a scenario that cannot run at `URL:` is **pending after merge**, and runs there after the merge under the hosted-URL rules above.
+  - You sign in there yourself only when `## Allowed` has `Sign in on Hosted URL: test users` ([format](../ship-plan/config-format.md#-allowed)), and only with the `Sign-in:` source's users. Otherwise the user signs in.
+  - If a tool or safety rule refuses that sign-in, try no other route: list the scenario under Not tested.
 
 No `## UI testing` section: no scenarios. User-visible changes are reported as
 not tested.

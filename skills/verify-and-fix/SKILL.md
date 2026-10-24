@@ -104,6 +104,7 @@ regressions: a later round often finds bugs an earlier round's fixes introduced.
 - **Base:** `<base>` is a branch name: `$ARGUMENTS`, else the config's `Base branch:`, else the repo's default branch from the host's *Default branch*. Run `git fetch origin <base> --quiet` first; every diff below compares `origin/<base>...HEAD`. If `git rev-parse --verify --quiet origin/HEAD` prints nothing (common in a fresh clone), run `git remote set-head origin --auto`: the `security-review` skill diffs against `origin/HEAD` and fails without it. It changes local git metadata only.
 - **Config:**
   - Read `.claude/ship-plan.md` by its reading rules: headings match case-insensitively; a heading that matches no known section is **unknown**. Its rows never run, and the report names it.
+  - Then read the repo override files for this skill, `.claude/ship-plan/verify-and-fix/<file>.md`, as each shared file is read ([config-format.md](../ship-plan/config-format.md#repo-override-files), Repo override files).
   - **No config:** draft one ([config-drafting.md](../ship-plan/config-drafting.md)) and write it to `.claude/ship-plan.md`. Put it at the top of the question batch with each gate's source. **Run no gate until the user confirms it.** Do the review round meanwhile. A draft lives in the repo, not in a scratch note: it is what the next run reads. Run on its own, leave the draft uncommitted and say so; under `ship-plan`, ship-plan commits it once confirmed.
   - The config is the single list of gates. If the repo's agent instructions or a Makefile name a check the config lacks, do not run it: propose adding it to the config.
 - **Ask for everything only the user can provide, in one message, now:** hosted sign-ins, secrets the config names, the draft config. Then carry on with everything that does not wait on them. Asking in the middle of the loop costs the user a second interruption.
@@ -113,7 +114,10 @@ regressions: a later round often finds bugs an earlier round's fixes introduced.
 
 - Run every `## Gates` row whose `Only when changed` globs match `git diff --name-only origin/<base>...HEAD` (no globs: always). Run each with `CI=true` in its environment and its output sent to `.superpowers/verify-and-fix/<branch>/<gate>.log`, then read the tail. Long output left in context crowds out the rest of the loop.
 - Run the command **exactly as configured.** A variant you think is better (an extra flag, a one-shot form) is a proposed config change, not something you run as the gate.
-- Each gate has one result: **pass, fail, skipped, or could not run.** Read the tail for skip counts. Any skipped test or suite beyond the row's `Allowed skips` makes the gate "skipped", never pass; skips within it are a pass, noted in the gate table.
+- Follow the row's `Notes` as part of the gate: a precondition, a second run under another setup, a known local-only failure. Empty: nothing extra.
+- Each gate has one result: **pass, fail, skipped, or could not run.** Read the tail for skip counts and the file each skip is in. The row's `Allowed skips` is a number or `files: <globs>`:
+  - A number: any skipped test or suite beyond it makes the gate "skipped", never pass; skips within it are a pass, noted in the gate table.
+  - `files: <globs>`: a skip inside a matching file is allowed, noted in the gate table; a skip in any other file makes the gate "skipped".
 - **Timeout:** the row's `Timeout`, else 20 minutes. Run the gate in the background and check it; at the limit, stop it. The result is "could not run: <reason>", for example "watch mode, never exits". Propose a one-shot command as a config change, and go on with the other gates.
 - **Could not run** (no prerequisite, timeout, missing tool): keep running the other gates and the review rounds, but the loop cannot end as clean. The report names the gate, why it could not run, and what the user has to do.
 - **No gates configured:** the loop cannot end as clean. Say so in the question batch.
@@ -184,6 +188,11 @@ report.
 Give each reviewer the ledger's `Ruling:` lines, so settled questions are not
 raised again as new findings.
 
+**Tell every reviewer, in its prompt: never run a gate or test command, and
+never edit the working tree.** Gates hold fixed resources, and a second run
+collides with the first. A reviewer that needs to prove a test fails does it in
+its own scratch worktree.
+
 **If a reviewer agent or the `security-review` skill is unavailable,** do its
 review yourself against the same checklist, and mark it "self-review" in the
 ledger and the report.
@@ -226,7 +235,7 @@ sweeps in logs and drafts), and let the repo's hooks run (never
 
 Only these stop the loop:
 
-- **Signing in on a hosted URL:** ask once for every role you need (ui-testing.md). Local URLs you sign in to yourself.
+- **Signing in on a hosted URL:** ask once for every role you need (ui-testing.md). Local URLs you sign in to yourself, and `Hosted URL:` too when `## Allowed` has `Sign in on Hosted URL: test users`.
 - **An action that is outward-facing or destructive:** a push without an open
   PR, opening a PR, merge, any write to a shared environment or production,
   deleting anything you did not create. (Pushing and replying on an open PR are
@@ -266,7 +275,7 @@ reason), the scenario table from `scenarios.md` with the paths to the GIFs, how
 many rounds ran, the fixes with their commits, the PR review items (author,
 grade, result, reply) when there is a PR, every `Ruling:`, the suggestions
 listed rather than fixed, the blockers entries added this run, every unknown
-config section, and every proposed config change.
+config section, every override line not applied, and every proposed config change.
 
 ## 8. Self-improvement
 
@@ -281,17 +290,29 @@ lessons branch, so it never lands in the product PR.
   command), and the date.
 - If an existing entry was wrong or out of date, correct it rather than adding a
   second one.
-- If the lesson changes how the loop runs (a missing step, a reviewer to add, a
-  step in the wrong order), propose the change to this skill in the report.
-  Never edit this skill's files silently: every repo uses them, and they are
-  published from their own git repository.
-- A missing gate or reviewer: propose the `.claude/ship-plan.md` change in the report.
+- **A lesson only this repo needs** (a step, a fact, a failure path, a test
+  value): write it into the matching override file,
+  `.claude/ship-plan/verify-and-fix/<file>.md`, created if missing. It may only
+  add or make a rule stricter ([Repo override files](../ship-plan/config-format.md#repo-override-files)).
+- **A config fact** (a missing gate, a reviewer by path, a `Notes:`): write it
+  into `.claude/ship-plan.md` under the narrowing rule. A loosening change is
+  proposed in the report with its exact line, not written, unless the user
+  approved it in this run ([Loosening changes](../ship-plan/config-format.md#loosening-changes)).
+- **A lesson for every repo** (a missing step, a step in the wrong order):
+  propose it in the report as a "proposed shared-skill change", with the exact
+  text and no repo, team or org names. Never edit this skill's files: every
+  repo uses them, and they are published from their own git repository.
+- **A missing permission** (a refusal, a question the user had to answer to
+  allow something, an action the user did by hand): propose the exact
+  `## Allowed` line in the report, with the reason. Never write it
+  ([`## Allowed`](../ship-plan/config-format.md#-allowed)). When no entry on
+  the closed list fits, propose it as a shared-skill change instead.
 - If the lesson is a rule for the whole repo rather than for this loop, propose
   a change to the repo's agent instructions file in the report. Do not edit it
   on your own.
 
-Run on its own, leave these edits uncommitted and say so. Under `ship-plan`, they go
-to its lessons PR as `Lesson:` lines.
+Run on its own, leave these edits uncommitted and say so. Under `ship-plan`, each
+one, written or proposed, is a `Lesson:` line for its lessons PR.
 
 A blocker you got past but did not write down will stop the next run too.
 
