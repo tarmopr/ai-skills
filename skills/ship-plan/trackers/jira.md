@@ -2,7 +2,11 @@
 
 How the three skills do each tracker operation when the repo's tracker is Jira.
 Every Jira call passes the config's `Site:` as `cloudId`. If an operation name
-below is refused, `discover` it and use the name it returns.
+below is refused, `discover` it and use the name it returns. Parameter names
+and shapes (the assignee, the description, a comment body) come from each
+tool's schema as the client lists it, or as `discover` returns it: read it
+before the first call to that tool, and never guess a field's shape. Where
+this file names a parameter, it is the one to set.
 
 MCP tool names depend on how a connector is installed. The Atlassian tools are
 listed as `mcp__plugin_atlassian_atlassian__*`. A repo whose connector has
