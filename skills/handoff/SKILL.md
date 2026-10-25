@@ -67,8 +67,11 @@ Use the template below at the suggested path. Rules:
 - **User decisions quoted verbatim**, with the date. Your own rulings with why
   and what they cost if wrong.
 - **No secrets**, no long logs (point to the log file), no pasted diffs.
-- `resume:` in the frontmatter is the exact first action: a slash command with
-  its argument (`/ship-plan docs/…/plan.md`), or `Do "Next step"`.
+- `resume:` in the frontmatter is the exact first action: the slash command
+  with the argument that skill's own handoff rule gives, or `Do "Next step"`.
+  A skill that resumes from its ledger takes none (`/ship-plan`, `/ship-issue`);
+  a next part starts a new run (`/ship-plan docs/…/plan.md`, or `/ship-issue <key>`
+  when it has no plan yet).
 
 ## 4. Supersede, check, point
 

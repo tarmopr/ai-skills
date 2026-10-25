@@ -139,7 +139,7 @@ step that would have caught it>`. When the batch is sent, the last line is
 `Stage: <spec|plan> <new|revise> dispatched <date>` before its dispatch and
 `Stage: <spec|plan> done <path> — skills: <its Skills: line>` once its report is copied in.
 
-ship-plan keeps its own ledger in `.superpowers/ship-plan/<branch>/`. **Never
+ship-plan keeps its own ledger in `.superpowers/ship-plan/<branch>/` (every `/` in the branch name written as `-`). **Never
 create or write that file.** ship-plan treats an existing ledger as a resumed
 run and reads its argument as answers.
 

@@ -8,7 +8,12 @@ allowed-tools:
   - Bash(git diff *)
   - Bash(git add *)
   - Bash(git commit *)
-  - Bash(git push origin HEAD)
+  - Bash(git push origin feature/*)
+  - Bash(git push origin fix/*)
+  - Bash(git push origin docs/*)
+  - Bash(git push origin chore/*)
+  - Bash(git push origin refactor/*)
+  - Bash(git merge origin/*)
   - Bash(git rev-parse *)
   - Bash(git log *)
   - Bash(git remote set-head origin --auto)
@@ -100,7 +105,7 @@ regressions: a later round often finds bugs an earlier round's fixes introduced.
 ## 1. Setup
 
 - **Host and tracker:** resolve `Host:` and `Tracker:` as [config-format.md](../ship-plan/config-format.md) says (`Host:` from the `origin` remote when absent; `Tracker:` from `## Jira` or `## Linear` when absent). Then read `../ship-plan/hosts/<host>.md` (`github.md` or `azure-devops.md`). A reference below to an operation of the host names the section of that name in that file; one of the tracker names the section of that name in `../ship-plan/trackers/<tracker>.md` (`jira.md` or `linear.md`), read where the reference says.
-- **Ledger:** `mkdir -p .superpowers/verify-and-fix/<branch>`, then `ledger.md` there. If `.superpowers/` is not listed in `.git/info/exclude`, append it there; never edit the repo's `.gitignore`. One line per round: the gate results, the findings with their grades, the fixes with their commits, and every `Ruling:` you made. After a context compaction, trust the ledger and `git log` over memory.
+- **Ledger:** `mkdir -p .superpowers/verify-and-fix/<branch>` (here and below, every `/` in the branch name written as `-`), then `ledger.md` there. If `.superpowers/` is not listed in `.git/info/exclude`, append it there; never edit the repo's `.gitignore`. One line per round: the gate results, the findings with their grades, the fixes with their commits, and every `Ruling:` you made. After a context compaction, trust the ledger and `git log` over memory.
 - **Base:** `<base>` is a branch name: `$ARGUMENTS`, else the config's `Base branch:`, else the repo's default branch from the host's *Default branch*. Run `git fetch origin <base> --quiet` first; every diff below compares `origin/<base>...HEAD`. If `git rev-parse --verify --quiet origin/HEAD` prints nothing (common in a fresh clone), run `git remote set-head origin --auto`: the `security-review` skill diffs against `origin/HEAD` and fails without it. It changes local git metadata only.
 - **Config:**
   - Read `.claude/ship-plan.md` by its reading rules: headings match case-insensitively; a heading that matches no known section is **unknown**. Its rows never run, and the report names it.
@@ -235,7 +240,7 @@ sweeps in logs and drafts), and let the repo's hooks run (never
 
 Only these stop the loop:
 
-- **Signing in on a hosted URL:** ask once for every role you need. Local URLs you sign in to yourself, and `Hosted URL:` too when `## Allowed` has `Sign in on Hosted URL: test users` and the branch's diff does not touch `## Allowed` (ui-testing.md).
+- **Signing in on a hosted URL:** ask once for every role you need. Local URLs you sign in to yourself, and `Hosted URL:` too when `## Allowed` has `Sign in on Hosted URL: test users`; those scenarios run after the merge (ui-testing.md).
 - **An action that is outward-facing or destructive:** a push without an open
   PR, opening a PR, merge, any write to a shared environment or production,
   deleting anything you did not create. (Pushing and replying on an open PR are
@@ -274,18 +279,18 @@ Keep it short: the gate table (pass / fail / skipped / not run, with the
 reason), the scenario table from `scenarios.md` with the paths to the GIFs, how
 many rounds ran, the fixes with their commits, the PR review items (author,
 grade, result, reply) when there is a PR, every `Ruling:`, the suggestions
-listed rather than fixed, the blockers entries added this run, every unknown
+listed rather than fixed, the blockers entries added this run (under `ship-plan`, the `Lesson:` lines for them), every unknown
 config section, every override line not applied, each `## Allowed` entry the run
 used (such as `Sign in on Hosted URL: test users`), and every proposed config change.
 
 ## 8. Self-improvement
 
 Whenever something blocks you (a command that will not run, a hook refusal, a
-tool that misbehaves, a gate that lies) and you get past it, **update
-`.claude/ship-plan/blockers.md` in the same session, before the report.** Create it
-from [log-formats.md](../ship-plan/log-formats.md) if it is missing. **Under `ship-plan`, edit no file,** for this entry or any item below:
+tool that misbehaves, a gate that lies) and you get past it, **record it in the same session, before the report.**
+Run on its own, update `.claude/ship-plan/blockers.md` (create it from
+[log-formats.md](../ship-plan/log-formats.md) if it is missing). **Under `ship-plan`, edit no file,** for this entry or any item below:
 record each one, whether it would be written or proposed, as a `Lesson:` line in ship-plan's ledger that names its
-target file. ship-plan's section 8 writes them on its lessons branch at the end of its run, so they never land in the product PR.
+target file (`.claude/ship-plan/blockers.md` for a blocker). ship-plan's section 8 writes them on its lessons branch at the end of its run, so they never land in the product PR.
 
 - Add an entry: the symptom (exact error text), the cause, the fix (the exact
   command), and the date.

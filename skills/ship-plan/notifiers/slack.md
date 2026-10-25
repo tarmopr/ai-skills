@@ -18,7 +18,7 @@ The `People:` table in `## Slack` maps a host login to a Slack user id. It is re
 
 ## Review request
 
-`slack_send_message` with its `channel_id`, the text below and `unfurl_app_links: true`, unless a standing answer in `interruptions.md` says otherwise (it outranks this default, as every standing answer does). Read it before the post: the message cannot be edited or deleted afterwards. Once per PR: record `Slack: posted <ts>` in the ledger and never post again for that PR, also not on a resume. Fix-forward, revert and lessons PRs are posted only when the review rule needs an approval. A failed post: see Failures.
+`slack_send_message` with its `channel_id`, the text below as `message`, and `unfurl_app_links: true`, unless a standing answer in `interruptions.md` says otherwise (it outranks this default, as every standing answer does). Read it before the post: the message cannot be edited or deleted afterwards. Once per PR: record `Slack: posted <ts>` in the ledger and never post again for that PR, also not on a resume. Fix-forward, revert and lessons PRs are posted only when the review rule needs an approval. A failed post: see Failures.
 
 Short; Slack unfurls the PR and issue links. Take `Size` from the host's *PR size* right before the post, never from memory: the message cannot be edited.
 
@@ -32,7 +32,7 @@ Size: <files> files, +<added> −<removed>. Needs: <n approvals | code owner app
 
 When a review round has addressed comments from people, and a review request was posted for this PR (the ledger's `Slack: posted <ts>`): after `verify-and-fix --comments` has pushed its fixes and replied, once per round. No `Slack: posted <ts>` line means nothing was posted: post nothing here either.
 
-- **What:** one reply in the review request's thread, `slack_send_message` with `thread_ts: <ts>`, naming each person whose comments were addressed this round and asking them to look again. Use the text below.
+- **What:** one reply in the review request's thread, `slack_send_message` with `thread_ts: <ts>` and the text below as `message`, naming each person whose comments were addressed this round and asking them to look again.
 - **Who:** only people. Bots (Copilot, CI) and the PR's author are left out. A person whose only items were answered "not valid" or "follow-up" is still named: their comment got a reply they should read.
 - **Mentions:** a person is @-mentioned when their Slack user is known (see People); otherwise their plain name.
 - **Azure DevOps** has no "re-request a reviewer" action: this thread reply is the re-request.
