@@ -65,6 +65,15 @@ and `.claude/ship-plan/blockers.md`. A missing file is not an error; a missing
 log is created from [log-formats.md](log-formats.md) at close-out. A question
 with a standing answer in any of them is not asked again.
 
+**Repo override files** ([format](../ship-plan/config-format.md#repo-override-files)):
+whenever this skill reads one of its own files, read its counterpart under
+`.claude/ship-plan/ship-issue/` next, if it exists: `.claude/ship-plan/ship-issue/SKILL.md`
+right after this file, `.claude/ship-plan/ship-issue/evidence.md` wherever
+evidence.md is read, the stages included. A file of another skill
+(`../ship-plan/…`) has its counterpart in that skill's folder. An override line
+that widens what the run may do, or removes a step, is not applied, and the
+report names it.
+
 - **A repo set up for `ship`:** if `.claude/ship.md` exists and `.claude/ship-plan.md` does not, stop with one line: "This repo is set up for the removed `ship` skill: move `.claude/ship.md` to `.claude/ship-plan.md` and `.claude/ship/` to `.claude/ship-plan/`."
 - **Host and tracker:** resolve `Host:` and `Tracker:` as [config-format.md](../ship-plan/config-format.md) says (`Host:` from the `origin` remote when absent; `Tracker:` from `## Jira` or `## Linear` when absent, else undecided until I1). Then read `../ship-plan/hosts/<host>.md` (`github.md` or `azure-devops.md`) and, unless the tracker is `none` or undecided, `../ship-plan/trackers/<tracker>.md` (`jira.md` or `linear.md`). A reference below to an operation of the host or the tracker names the section of that name in those files. **When `Tracker:` is not `none`, or the tracker question is asked, read [templates-issue.md](../ship-plan/templates-issue.md).**
 - **No `origin` remote** (and no `Host:`): there is no host and no PR to open. Read no host file, skip the host's *Auth check*, *Find open PRs* and *Find the base-branch run* and every `git fetch origin`, and branch from `<base>` where this skill says `origin/<base>`. ship-plan then stops before its section 4 and says so in its report.
@@ -100,7 +109,8 @@ Everything ship-plan's "What invoking this skill authorizes" lists, plus:
 
 It does **not** authorize what ship-plan's "does not authorize" list names, nor
 anything under the config's `## Never do`. A deploy in particular is never part
-of the run. It is a follow-up in the Done comment and **never a question**.
+of the run, except a merge that `## Allowed` covers, under `ship-plan`
+([`## Allowed`](../ship-plan/config-format.md#-allowed)). Otherwise it is a follow-up in the Done comment and **never a question**.
 
 ## The ledger
 
@@ -125,7 +135,7 @@ Below it, one line per event, in ship-plan's formats (its section 3):
 — <options, recommendation> — <what it blocks>`, `Asked: <question> — <answer, or
 "pending">` for every question put to the user, and `Lesson: <what> — <the
 step that would have caught it>`. When the batch is sent, the last line is
-`Waiting: batch of <n>, sent <date>; heads: #<pr> <sha>, …`, with the head of every open PR the issue depends on, so a resumed run can see whether one moved while the batch waited (ORIG-8125: #158 moved from `5183f29` to `d530d43`). Each stage writes
+`Waiting: batch of <n>, sent <date>; heads: #<pr> <sha>, …`, with the head of every open PR the issue depends on, so a resumed run can see whether one moved while the batch waited. Each stage writes
 `Stage: <spec|plan> <new|revise> dispatched <date>` before its dispatch and
 `Stage: <spec|plan> done <path> — skills: <its Skills: line>` once its report is copied in.
 
@@ -135,6 +145,12 @@ run and reads its argument as answers.
 
 **After a compaction, resume from the first line, not from memory.** Phase I6
 or later: route through I0, which hands back to ship-plan.
+
+**When the session ends before the run does** (a usage limit, the context
+running out, a batch the user will answer later): bring the ledger up to date,
+then write a handoff: the `handoff` skill when it is available, otherwise a
+`HANDOFF.md` next to the ledger. It names the checkout, and its resume line is
+`/ship-issue`, with no argument. Once ship-plan runs, its own rule applies.
 
 ## I0. Route: what already exists
 
@@ -161,7 +177,7 @@ With a key, take the first matching row. The issue's status comes from the track
 | Anything less | I1 |
 
 A spec or plan "for the issue" is a file under `docs/superpowers/specs/` or
-`docs/superpowers/plans/` whose name contains the key (with no issue, the slug), or a spec held for a
+`docs/superpowers/plans/` whose name contains the key in either case (with no issue, the slug), or a spec held for a
 docs PR: the `Spec:` path on the ledger's first line (I2 step 3). Do not redo approved work. An existing spec or plan counts as approved.
 
 ## I1. The issue
@@ -183,11 +199,12 @@ Then choose the checkout (section W) before writing anything.
 ## I2. Research and spec: the Spec stage
 
 1. **Branch,** once the issue key is known: `git switch -c <branch> origin/<base>` in the checkout chosen in section W (in a new worktree, from its detached `origin/<base>`), named by the config's `Branch:` pattern: `<type>/<KEY-n>-<slug>`, the key written as the tracker's *Issue keys* says (with no issue, `<type>/<slug>`). `<type>` is one of ship-plan's five (`feature`, `fix`, `docs`, `chore`, `refactor`), even when the config's pattern lists others such as `test`: ship-plan's pre-approved push patterns match only those five, and any other type makes every push prompt. Never a username prefix, and never the local base branch.
-2. **Hand the issue over on disk.** Write `<ledger dir>/issue.md`: the issue as I1 read it (description, comments, linked issues), or the user's description. The stage reads it there and needs no tracker access. **For every open PR the issue names or links,** fetch its state now (the host's *Find open PRs*, a named PR's state, then `git fetch origin <its head branch>` and `git log --oneline origin/<base>..origin/<its head branch>`) and add it to `issue.md`: its head commit and the commits not yet on `<base>`. An issue written minutes earlier can already be stale: ORIG-8305's described #99 without the retry #99 had added eight minutes before. The same applies when this run creates the issue (I1): fetch the related PR's head right before writing its Context, and describe what the head holds, not what the PR's title says. **When the issue has a parent,** also list in `issue.md` the parent's sub-tasks that the tracker's *Read an issue* finds, where the tracker has them, looked up at this step (once the base commit date is known).
+2. **Hand the issue over on disk.** Write `<ledger dir>/issue.md`: the issue as I1 read it (description, comments, linked issues), or the user's description. The stage reads it there and needs no tracker access. **For every open PR the issue names or links,** fetch its state now (the host's *Find open PRs*, a named PR's state, then `git fetch origin <its head branch>` and `git log --oneline origin/<base>..origin/<its head branch>`) and add it to `issue.md`: its head commit and the commits not yet on `<base>`. An issue written minutes earlier can already be stale: it can describe a PR without a change the PR gained minutes before. The same applies when this run creates the issue (I1): fetch the related PR's head right before writing its Context, and describe what the head holds, not what the PR's title says. **When the issue has a parent,** also list in `issue.md` the parent's sub-tasks that the tracker's *Read an issue* finds, where the tracker has them, looked up at this step (once the base commit date is known).
 3. **Where the spec lives,** decided before the dispatch and written into the ledger's first line as `Spec: <path>`:
-   - **The repo keeps docs and code in separate PRs** (its agent instructions say so, for example "Documentation and code changes go in separate PRs", or a standing answer does): the spec is **held** at `<ledger dir>/<yyyy-mm-dd>-<KEY-n>-<slug>-design.md`, git-ignored, and is never committed on the feature branch. ship-plan's close-out moves it to `docs/superpowers/specs/` in a docs PR once the code PR has merged (ship-plan section 7, step 3). Write `Ruling: spec held for a docs PR — <the quoted rule> — cost if wrong: one file move`.
+   - **The repo keeps docs and code in separate PRs** (its agent instructions say so, for example "Documentation and code changes go in separate PRs", or a standing answer does): the spec is **held** at `<ledger dir>/<yyyy-mm-dd>-<KEY-n>-<slug>-design.md`, git-ignored, and is never committed on the feature branch. ship-plan's close-out moves it to `docs/superpowers/specs/` in a docs PR once the code PR has merged (ship-plan section 7, step 2). Write `Ruling: spec held for a docs PR — <the quoted rule> — cost if wrong: one file move`.
    - **Otherwise:** `<checkout>/docs/superpowers/specs/<yyyy-mm-dd>-<KEY-n>-<slug>-design.md`, committed on the feature branch.
-   - **Never a second worktree for the spec or the docs.** A worktree-isolated session's stage cannot write to one or enter it (ORIG-8202), and a docs PR opened before the code PR merges falls behind the base branch and loses its approval (ORIG-8119). The docs branch is made later, in this same checkout.
+   - **The key in a file name** (the spec, the plan) is written the way the config's `Branch:` pattern writes it; titles, commit subjects and text keep the tracker's form.
+   - **Never a second worktree for the spec or the docs.** A worktree-isolated session's stage cannot write to one or enter it, and a docs PR opened before the code PR merges falls behind the base branch and loses its approval. The docs branch is made later, in this same checkout.
 4. **Dispatch the Spec stage** ([stage-prompts.md](stage-prompts.md), mode `new`, with `<spec path>` from step 3) with the `Spec stage` row of `## Models` (default `opus`, `xhigh`). It researches (code, history, the running system, read-only by [evidence.md](evidence.md)), records the baseline, drafts the approaches, rules where the confidence test passes, and writes the spec with each open choice marked `[pending Q<n>: …]`.
 5. **Meanwhile, check the environment** for the later ship-plan run yourself: the Prerequisites (can they run in the chosen checkout?), auth (the host's *Auth check* (the auth status only, not your login); the tracker's *Auth*, unless the tracker is `none`; any auth check a Prerequisites row or `## Evidence` names), and **the base branch's last CI runs**: the host's *Find the base-branch run* (the base branch's last runs). A red base branch from someone else's work will fail this PR's checks too; it goes in the spec (step 6) and ship-plan section 5, step 2 says how the run handles it. A command that would write to a shared environment goes in the batch instead.
 6. **Take the report in.** `Status:` other than `done`: a wrong checkout is a bug in this run (fix the path and dispatch again); `blocked` goes in the batch. Otherwise check its `Skills:` line names the stage's required sub-skill (`superpowers:brainstorming` for the Spec stage in mode `new`, `superpowers:writing-plans` for the Plan stage); if it does not, write `Lesson: <stage> stage did not call <skill> — the stage prompt's REQUIRED SUB-SKILL line`. Then copy its `Ruling:`, `Parked:` and `Lesson:` lines into the ledger, its `Q<n>` lines into the I3 batch, and the step 5 findings into the spec. Check the file it names exists, then commit the spec on the branch, unless step 3 held it for a docs PR. Never re-check its research yourself: that would load into this session the context the stage exists to keep out of it.
@@ -197,7 +214,7 @@ Then choose the checkout (section W) before writing anything.
 Collect every question the rest of the run could need, then ask them together.
 
 1. **Design decisions:** the Spec stage's `Q<n>` lines, as it wrote them. It already applied ship-plan's confidence test (section 3); don't re-rule them here.
-2. **What ship-plan's pre-flight would ask** (ship-plan section 0, steps 1, 6 and 7, and its authorization section): a draft config; the exact allow lines (`Bash(<command>)`) for every gate and Prerequisites command, in a permission mode that prompts; hosted sign-ins for `## UI testing`; a drafted tracker section (`## Jira` or `## Linear`); **the Slack channel, if neither the config nor `.claude/ship-plan.local.md` has `## Slack`**: **When `## Slack` is missing from the config and from `.claude/ship-plan.local.md`, read [notifiers/slack.md](../ship-plan/notifiers/slack.md) and choose the channel.** Ask it as the notifier's *Choose the channel* says; the answer is written to the committed config only: commit `## Slack` to the config on the branch with the next commit this run makes; and anything on the "does not authorize" list. Ask them now, so ship-plan's pre-flight has nothing left.
+2. **What ship-plan's pre-flight would ask** (ship-plan section 0, steps 1, 6 and 8, and its authorization section): a draft config; the exact allow lines (`Bash(<command>)`) for every gate and Prerequisites command, in a permission mode that prompts; hosted sign-ins for `## UI testing` (a `Hosted URL:` one only if `## Allowed` lacks `Sign in on Hosted URL: test users`); a merge that `## CI` `Merge deploys to:` names and `## Allowed` doesn't cover (ship-plan section 5, step 3); a drafted tracker section (`## Jira` or `## Linear`); **the Slack channel, if neither the config nor `.claude/ship-plan.local.md` has `## Slack`**: **When `## Slack` is missing from the config and from `.claude/ship-plan.local.md`, read [notifiers/slack.md](../ship-plan/notifiers/slack.md) and choose the channel.** Ask it as the notifier's *Choose the channel* says; the answer is written to the committed config only: commit `## Slack` to the config on the branch with the next commit this run makes; and anything on the "does not authorize" list. Ask them now, so ship-plan's pre-flight has nothing left.
 3. **Environment decisions** (section W) that could not be settled.
 4. **Standing answers** remove questions. Apply them first.
 
@@ -216,7 +233,7 @@ spec here; commit its result, unless the spec is held for a docs PR (I2 step 3).
 (skipped with no issue); I5 adds only the plan:
 
 - the tracker's *Comment*: the questions and the answers, one line each.
-- **An answer that makes this issue wait for another issue or PR** ("wait for #99", "after ORIG-8101 merges"): link the two at once, as the tracker's *Link two issues* says for an issue that waits. A PR without its own issue: link the issue its branch or title names. Say in the comment what this issue waits for.
+- **An answer that makes this issue wait for another issue or PR** ("wait for #<n>", "after ENG-123 merges"): link the two at once, as the tracker's *Link two issues* says for an issue that waits. A PR without its own issue: link the issue its branch or title names. Say in the comment what this issue waits for.
 
 The user reads the issue to see where the run stands; a dependency that is
 only in the ledger is invisible to them.
@@ -233,7 +250,7 @@ Starts once the spec holds no `[pending Q<n>` marker.
 
 1. **Dispatch the Plan stage** ([stage-prompts.md](stage-prompts.md)) with the `Plan stage` row of `## Models` (default `opus`, `high`). It gets the spec path, not this conversation: a gap it finds is a gap in the spec. It writes `docs/superpowers/plans/<yyyy-mm-dd>-<KEY-n>-<slug>.md` with the **Scenarios** table for verify-and-fix and the **Close-out notes for ship-plan**, and leaves the `From ship-issue` block empty.
 2. **Take the report in** as in I2 step 6. Its `Parked:` lines are ship-plan's to ask at close-out; they stay `[needs a decision]` in the plan.
-3. **Fill the `From ship-issue` block** with every `Ruling:`, `Parked:`, `Asked:` and `Lesson:` line from this skill's ledger, verbatim. **When the spec is held for a docs PR** (I2 step 3), add one line for ship-plan's close-out (its section 7, step 3): `Docs PR: <held spec path> → docs/superpowers/specs/<file name>; also <each other docs change the spec's delivery section lists, or "nothing else">`. Commit the plan on the branch unless `git check-ignore -q <plan path>` says it is ignored: ship-plan's pre-flight parks a dirty tree it did not make.
+3. **Fill the `From ship-issue` block** with every `Ruling:`, `Parked:`, `Asked:` and `Lesson:` line from this skill's ledger, verbatim. **When the spec is held for a docs PR** (I2 step 3), add one line for ship-plan's close-out (its section 7, step 2): `Docs PR: <held spec path> → docs/superpowers/specs/<file name>; also <each other docs change the spec's delivery section lists, or "nothing else">`. Commit the plan on the branch unless `git check-ignore -q <plan path>` says it is ignored: ship-plan's pre-flight parks a dirty tree it did not make.
 
 ## I5. Tracker
 

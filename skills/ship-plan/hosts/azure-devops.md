@@ -261,7 +261,7 @@ This asks Azure DevOps to complete the PR; the merge itself is asynchronous.
 Poll `az repos pr show --id <n> --query "{status:status,mergeStatus:mergeStatus,sha:lastMergeCommit.commitId}" -o json`
 until `status` is `completed`. Still `active` after 5 minutes, or a
 `mergeStatus` of `rejectedByPolicy`, `conflicts` or `failure`: the merge is
-refused (ship-plan 5.4).
+refused (ship-plan 5.5).
 
 The merge SHA: `az repos pr show --id <n> --query lastMergeCommit.commitId -o tsv`, once `status` is `completed`.
 

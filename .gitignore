@@ -1,1 +1,6 @@
 .DS_Store
+
+# Plans, specs and SDD workspaces name real repos: keep them local (this repo is public)
+docs/superpowers/plans/
+docs/superpowers/specs/
+.superpowers/

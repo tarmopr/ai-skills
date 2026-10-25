@@ -38,7 +38,7 @@ Do not assume an integration closes the issue. You apply the done transition, on
 
 `getJiraIssue` with `view: "evidence"` (it includes linked issues), and its comments (`executeRead` with `listJiraIssueComments`; `discover` "list comments on a Jira issue" if that name is refused). Read the linked issues too.
 
-**When the issue has a parent story** (ship-issue, I2 step 2), also list the parent's sub-tasks created since the base commit (`searchJiraIssuesUsingJql`: `parent = <story> AND created >= "<base commit date>"`) into `issue.md`: a sibling filed minutes earlier can already cover part of this issue (ORIG-8363 was created after ORIG-8125's first spec and covered its stored-value conversion).
+**When the issue has a parent story** (ship-issue, I2 step 2), also list the parent's sub-tasks created since the base commit (`searchJiraIssuesUsingJql`: `parent = <story> AND created >= "<base commit date>"`) into `issue.md`: a sibling filed minutes earlier can already cover part of this issue.
 
 ## Where a new issue goes
 
@@ -88,7 +88,7 @@ Then `transitionJiraIssue` with `transitionName: <Start transition>`. Summary:
 the outcome, not the task ("Notes can be exported as GeoJSON", not "Implement
 export").
 
-Create each issue in one call with the run issue's labels and the fields the config's `## Jira` names (for example Cross-Functional Team and Work Type), not afterwards.
+Create each issue in one call with the run issue's labels and the fields the config's `## Jira` names (for example a required team or component field), not afterwards.
 
 ```markdown
 <one paragraph: the problem and who has it, from the plan's Goal>
@@ -154,7 +154,7 @@ None. The key in the branch name and the PR title links it on `github`; see Inte
 `executeWrite` with `createJiraIssueLink` and the inputs `{linkType, inwardIssue, outwardIssue}`; `type` is refused ("linkType: Required"). Both skills pre-approve `executeWrite` for this call. The pre-approval covers every operation `executeWrite` can run, so use it for `createJiraIssueLink` only; any other write operation is outside the skills' authorization. A refusal is recorded, not retried another way.
 
 - Related issue: `linkType: "Relates"`, `inwardIssue: <new key>`, `outwardIssue: <related key>`.
-- An answer that makes this issue wait for another issue or PR ("wait for #99", "after ORIG-8101 merges"): `linkType: "Blocks"`, the other issue as the blocker. A PR without its own issue: link the issue its branch or title names.
+- An answer that makes this issue wait for another issue or PR ("wait for #<n>", "after ENG-123 merges"): `linkType: "Blocks"`, the other issue as the blocker. A PR without its own issue: link the issue its branch or title names.
 - A follow-up: link it to the run issue.
 
 ## Find an existing follow-up

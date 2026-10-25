@@ -14,8 +14,28 @@ skills do not guess a repo's tech; they read it here.
 - A heading that matches no section here is named in the report as "unknown config section `## <heading>`". It is never silently ignored: a typo would otherwise switch something off.
 - An unknown section's rows are not applied, with one exception: a heading that resembles `Never do`, `Fix rules` or `Security extras` (`## Never-do`, `## never do:`) is applied as that section anyway and flagged, because those sections only restrict. A near-miss of any other section (`## Gate`, `## Jira tracking`) is not applied.
 - A table row with an empty command is skipped and named in the report.
-- The config can add to the skills' "never on its own" list. Nothing in it removes anything from that list or widens the authorization.
+- The config can add to the skills' "never on its own" list. Nothing in it removes anything from that list or widens the authorization, except the closed list in `## Allowed`.
 - No secret goes in this file; it is committed. Name where a secret comes from instead.
+
+## Repo override files
+
+A repo extends a shared skill file with a file of the same name at
+`.claude/ship-plan/<skill>/<file>.md`, where `<skill>` is `ship-plan`, `ship-issue` or
+`verify-and-fix`. Examples:
+
+- `.claude/ship-plan/verify-and-fix/ui-testing.md` extends `verify-and-fix/ui-testing.md`;
+- `.claude/ship-plan/ship-issue/evidence.md` extends `ship-issue/evidence.md`, and holds the repo's own research techniques;
+- `.claude/ship-plan/ship-plan/SKILL.md` extends `ship-plan/SKILL.md`. It is not under `.claude/skills/`, so it is never loaded as a skill of its own.
+
+Rules:
+
+- Whenever a skill reads one of its own files, it reads that file's repo counterpart next, if it exists. No override file: nothing changes.
+- An override file may:
+  - add steps, facts, commands, test values and failure paths;
+  - make a rule stricter;
+  - name `blockers.md` entries to read.
+- An override file may not widen what a run is authorized to do, or remove a step of the shared file. Such a line is not applied and is named in the report as "override line not applied: `<file>`: `<line>`". Permissions live only in `## Allowed`.
+- Logs stay where they are: `.claude/ship-plan/interruptions.md`, `.claude/ship-plan/blockers.md`, `.claude/ship-issue/interruptions.md` and `.claude/ship-issue/evidence.md`. Override files sit in the `<skill>` subfolders, and an override never replaces a log: `.claude/ship-plan/ship-issue/evidence.md` extends the shared file, while `.claude/ship-issue/evidence.md` stays a log.
 
 ## Sections
 
@@ -57,13 +77,17 @@ Default: none.
 ### `## Gates`
 
 ```markdown
-| Gate | Command | Only when changed | Timeout | Allowed skips |
-|---|---|---|---|---|
+| Gate | Command | Only when changed | Timeout | Allowed skips | Notes |
+|---|---|---|---|---|---|
 ```
 
 - `Only when changed`: comma-separated globs matched against `git diff --name-only origin/<base>...HEAD`. Empty means always.
 - `Timeout`: minutes. Default 20.
-- `Allowed skips`: the number of skipped tests this gate always reports (standing `skip` / `xfail` markers), with the reason. Up to that many skips is a pass, noted in the gate table; one more is "skipped". Default 0. The last two columns may be left out.
+- `Allowed skips`: a number or `files: <globs>`, with the reason. Default 0.
+  - A number: the skipped tests this gate always reports (standing `skip` / `xfail` markers). Up to that many skips is a pass, noted in the gate table; one more is "skipped".
+  - `files: <globs>`: skips inside matching files are allowed, whatever their count. A skip in any other file makes the gate "skipped".
+- `Notes`: how to run or judge this gate: a precondition, a second run under another setup, a known local-only failure. `verify-and-fix` follows it as part of the gate. Empty means none.
+- The last three columns may be left out.
 - Every command runs with `CI=true` in its environment and must be one-shot. A watch-mode or prompting command is a config error to fix, not something to wait on.
 
 Default: none, and then `verify-and-fix` cannot end clean.
@@ -100,6 +124,8 @@ values that need a separate justification to change. Default: none.
 | `User-visible paths:` | Globs. A diff touching them needs scenarios. |
 | `Roles:` | The roles scenarios must cover |
 | `Writes allowed:` | `yes` lets scenarios create and delete their own rows on a hosted URL. Default `no`: on a hosted URL only read-only scenarios run, and write scenarios are reported as pending. A local URL always allows writes. |
+| `Notes:` | Facts for driving scenarios: a preflight command for a third-party flow and what it must report, test-mode values, what cannot run at `URL:`, the UI's languages, extra failure paths. `ui-testing.md` follows it. Longer procedures go in the override file `.claude/ship-plan/verify-and-fix/ui-testing.md`. Default: none. |
+| `Hosted URL:` | Where scenarios that cannot run at `URL:` run, after the merge. The hosted-URL rules apply: the user signs in, unless `## Allowed` has `Sign in on Hosted URL: test users`, and only read-only scenarios run unless `Writes allowed: yes`. Default: none, and no scenario runs after the merge. |
 
 ### `## CI`
 
@@ -107,6 +133,7 @@ values that need a separate justification to change. Default: none.
 |---|---|---|
 | `Workflow:` | The workflow file whose push run on the base branch is watched | all runs on the merge commit |
 | `Green:` | What counts as green | every check on the merge commit is success or skipped |
+| `Merge deploys to:` | `<env>[, <env>]`: the environments base-branch CI deploys to after a merge. A fact, set by a person, a drafted config or a lesson; it grants nothing. A merge check uses the union of the base branch's and the branch's own ([`## Allowed`](#-allowed)). Present: the merge rule in `## Allowed` applies. | none: merging works as today |
 
 `None` means the repo has no CI at all, neither on PRs nor on pushes: `ship-plan`
 merges once `verify-and-fix` is clean and reports "base branch has no CI". When this
@@ -115,7 +142,7 @@ filters, PR-only triggers) is not `None`; `ship-plan` handles that case per run.
 
 ### `## After merge`
 
-Read-only checks run at close-out, once base-branch CI is green: a deployed
+Read-only checks run in `ship-plan`'s section 6b, once base-branch CI is green: a deployed
 version answers, a published artifact exists. Never a write. Default: none.
 
 ### `## Jira`
@@ -240,3 +267,50 @@ review. If they need fix rounds, set `Implementer (mechanical)` to `sonnet`.
 
 Bullets. Each is added to the "never on its own" list of both skills for this
 repo: `ship-plan`'s authorization and `verify-and-fix`'s stop conditions. Default: none.
+
+### `## Allowed`
+
+A closed list of opt-in permissions. The skills define the list; a repo can only
+switch entries on, one line each. Absent: nothing is switched on, and every run
+behaves as today.
+
+| Entry | Meaning |
+|---|---|
+| `Merge that deploys to: <env>[, <env>]` | Merging is authorized even though base-branch CI then deploys to these non-production environments. A production-like name (below) is not applied, and the report says so. |
+| `Sign in on Hosted URL: test users` | On `## UI testing` `Hosted URL:`, the run signs in itself, with the test users that `Sign-in:` names. Without it, the user signs in, as today. |
+
+- **A branch's own edit never widens its own run:** when either field is set, a merge first runs `git diff origin/<base>...HEAD -- .claude/ship-plan.md`. A diff that touches `## Allowed`, or removes or changes `Merge deploys to:` other than by adding an environment, makes the PR a hand merge; otherwise the working tree's `## Allowed` is the base branch's, and its `Merge deploys to:` the union of both.
+- **Production-like names:** an environment name that contains `prod`, `prd` or `live`, case-insensitive, is never applied in `Merge that deploys to:`. The report names it; the line's other names still apply.
+- **`## Never do` wins:** when a `## Never do` line forbids what an entry allows, the stricter rule wins.
+- **Coverage:** `Merge that deploys to:` covers every merge the run is already authorized to make in this repo: the code PR, a fix-forward or revert PR (`red-base.md`), the docs PR and the lessons PR. It never covers rerunning or queueing a run that deploys; the host files' rerun rules stay, and the run hands off instead.
+- **The merge rule:** with `## CI` `Merge deploys to:` present, the run merges only when `Merge that deploys to:` covers it: every environment listed there is named in `Merge that deploys to:` and is applied (not production-like). Otherwise the merge goes into the question batch, with the exact `## Allowed` line that would allow it, to add to `.claude/ship-plan.md` on `<base>` only if `<env>` is not production. For a production-like environment no line allows the merge: the batch asks the user to merge it by hand and proposes no `## Allowed` line.
+- **Only a person edits it.** A run never adds, changes or removes a line here: not on the feature branch, not in the lessons PR, not when drafting a config. Any PR whose diff touches `## Allowed`, or removes or changes `Merge deploys to:` other than by adding an environment (code, fix-forward, revert, docs or lessons PR), is a hand merge: the run never merges it, it stays open, and the report says why.
+- **Visible on every run:** the run lists each switched-on entry in the ledger at pre-flight and in the report's status section.
+- **Closed:** a line that is not one of the entries above is named in the report as "unknown `## Allowed` entry: `<line>`" and is not applied. No other section, no override file and no standing answer in `interruptions.md` grants a permission.
+
+## Loosening changes
+
+A config change that loosens what a run checks or may do. These are:
+
+- `Writes allowed: yes`;
+- `Approvals:` lowered or `none`;
+- `Copilot review: no`;
+- a larger `Allowed skips` or new `files:` globs;
+- a removed or weakened gate;
+- a removed `## Never do` / `## Fix rules` / `## Security extras` line;
+- a changed `URL:` / `Sign-in:`, or an added or changed `Hosted URL:`;
+- a removed `Merge deploys to:`, or an environment removed from it;
+- a changed `Green:` or `Workflow:`;
+- a gate `Notes` entry that changes how the gate is judged.
+
+A run proposes each one in the report with its exact line, and never writes it,
+unless the user approved that change in this run's batch: an answer there is
+approval for that one change. A lessons PR whose config diff holds a change not
+on the "may be written" list below, without that approval, is never merged by
+the run. A `## Allowed` line is never written, approved or not.
+
+A config lesson that adds a fact or makes a check stricter may be written: a new
+gate, a `## Never do` or `## Fix rules` line, a `## UI testing` `Notes:`, a
+`Merge deploys to:` environment, a `Prerequisites` row, a tighter `Allowed skips`.
+A change that fits both lists is a loosening change. Any other config change is
+written only when the user approved it.

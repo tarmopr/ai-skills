@@ -24,7 +24,8 @@ and report "wrong checkout: <what you saw>". Work only there. Branch
 Mode: <new | revise>.
 
 Read first, in full: the issue <ledger dir>/issue.md; the repo config
-<checkout>/.claude/ship-plan.md; <skill dir>/evidence.md; the ledger
+<checkout>/.claude/ship-plan.md; <skill dir>/evidence.md, then
+<checkout>/.claude/ship-plan/ship-issue/evidence.md if it exists; the ledger
 <ledger dir>/ledger.md (its Ruling: and Asked: lines are settled: never reopen
 them).
 
@@ -53,15 +54,14 @@ that would write to one is a question.
    `git grep` the value itself, not only its name, across every module and
    service. A match in another module's domain is a copy across a boundary,
    which the design treats differently from a literal in the same module.
-   ORIG-8343's first draft took `AttributionRules`' 2048 and 512 for Sign-up's
-   own rules; they copy two limits of the Leads module.
+   A first draft once took another module's two limits for its own rules; they
+   copy two limits across the boundary.
    When the issue is about personal data (logs, events, masking), count as
    personal data every stored text a person can be identified by: a name, a
    display name, an email, an identity provider's subject. That holds whether
    or not any code writes it yet: a mapped column with no writer today is
-   still exposed once one exists. ORIG-8340's spec said User Account maps no
-   plaintext personal data; its review found `login_method.DisplayName` and
-   `Subject`.
+   still exposed once one exists. A spec once said a module maps no
+   plaintext personal data; its review found a display name and a subject.
 2. History: `git log -S'<string>' --format='%h %ad %s' --date=short -- <file>`
    shows when and why the code arrived.
 3. The running system, read-only, following evidence.md and the config's
@@ -74,20 +74,20 @@ that would write to one is a question.
 4. Claims the design rests on, proved before they go in the spec:
    - A concurrency claim (writes do not interleave, a lock is enough, an
      append is atomic): run a two-writer probe in a scratch directory outside
-     <checkout> and quote its result. ORIG-8305's first spec said concurrent
+     <checkout> and quote its result. A first spec once said concurrent
      appends do not interleave; in .NET, FileMode.Append seeks to the end once,
      at open, and a second writer overwrote the first line.
    - A source generator or analyzer the design relies on (`[LoggerMessage]`,
      `[GeneratedRegex]`, a JSON source generator): check it reaches the new
      project. Prove it with a build: add one use of the generator to the
      project, run `dotnet build` on it, quote the result, and remove the
-     probe. A .nuspec's `exclude="Analyzers"` is not proof: ORIG-8339's
-     prompt said Testcontainers keeps `[LoggerMessage]` out of
-     Platform.Testing, and on SDK 10.0.402 it did not.
+     probe. A .nuspec's `exclude="Analyzers"` is not proof: A prompt
+     once said a package keeps `[LoggerMessage]` out of a project, and on the
+     SDK in use it did not.
    - A schema claim (what a migration does, a column's type, what a schema
      test will find): apply the migration to a scratch database and run there
      every query the spec's tests will run, quoting what each returns.
-     ORIG-8343's column-classification query was written but never run; it
+     A column-classification query was once written but never run; it
      would also have matched EF Core's `__ef_migrations_history`, which the
      module keeps in the same schema. Run each probe command on its own: a
      worktree-isolated session refuses a `docker exec … psql` joined to
@@ -98,7 +98,7 @@ that would write to one is a question.
 Every acceptance command the spec lists (a grep, `git merge-tree`, a test
 filter, a curl) is run on today's tree before it is written down. Write what it
 prints today, and what it must print once the change lands, and reason about
-whether the finished code would still match it. ORIG-8305's first spec
+whether the finished code would still match it. A first spec once
 required "merge-tree reports none" against a PR that already conflicted on the
 base, and a `\.StartAsync\(` grep that matched the very helper calls the spec
 meant to allow.
@@ -120,7 +120,7 @@ Leave nothing as "the builder's call": each task's implementer sees only its
 own task, so a choice the spec leaves open is ruled on in the Plan stage
 without your research. Rule on each such choice (a name, the form of a test,
 a doc comment's text, a test's setup) with the same confidence test, or return
-it as a question. ORIG-8340's spec left four, and the Plan stage had to rule
+it as a question. A spec once left four, and the Plan stage had to rule
 on every one.
 
 Always write a spec, even for a bounded change; the classification only sets
@@ -132,7 +132,7 @@ carries besides the spec (rows in the agent instructions, an ADR).
 
 When the spec suggests a commit order, check that each commit builds from what
 it and the commits before it add. Do this check yourself; the builder check
-does not. ORIG-8343's spec put `Country.Length` after the commit whose test
+does not. A spec once put a new constant after the commit whose test
 reads it.
 
 ## Mode revise
@@ -174,6 +174,8 @@ REQUIRED SUB-SKILL: superpowers:writing-plans. Its plan review and its
 execution-method choice are overridden by ship-issue: the method is always
 ship-plan (subagent-driven-development). Write one Ruling: line for each stop
 you skip. Save to <checkout>/docs/superpowers/plans/<yyyy-mm-dd>-<KEY-n>-<slug>.md.
+In that file name, write the key the way the config's `Branch:` pattern writes
+it; titles, commit subjects and text keep the tracker's form, <KEY-n>.
 
 Next to the skill's required header, the plan needs:
 - a Scenarios table for verify-and-fix: unit, local, and (when the config has
@@ -187,7 +189,7 @@ Next to the skill's required header, the plan needs:
   <skill dir>/../ship-plan/config-format.md. It picks the model that
   implements the task. When in doubt, standard;
 - every commit subject the plan names ends in ` (<KEY-n>)`, as the PR title
-  does (ORIG-8125's spec gave four of five without it);
+  does (a spec once gave four of five without it);
 - never a PR number in text: none exists yet. Cite the issue key.
 
 A gap in the spec that the confidence test lets you rule on is a Ruling:. One
