@@ -6,4 +6,4 @@ set -euo pipefail
 
 claude plugin marketplace update tarmopr
 claude plugin update ai-skills@tarmopr
-echo "Restart Claude Code to load the update."
+echo "Run /reload-plugins in a running Claude Code session, or start a new one, to load the update."

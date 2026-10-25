@@ -1,7 +1,7 @@
 {
   "name": "ai-skills",
   "description": "Ship a plan or an issue to a merged PR on GitHub or Azure DevOps with Jira, Linear or no tracker, verify a branch to merge-ready, and hand off work between sessions.",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "author": {
     "name": "Tarmo Protsin"
   },

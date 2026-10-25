@@ -14,5 +14,5 @@ if claude plugin list --json | grep -q '"id": "ai-skills@tarmopr"'; then
   echo "ok         ai-skills@tarmopr (already installed; scripts/update-plugin.sh updates it)"
 else
   claude plugin install ai-skills@tarmopr
-  echo "Restart Claude Code to load the skills."
+  echo "Run /reload-plugins in a running Claude Code session, or start a new one, to load the skills."
 fi
