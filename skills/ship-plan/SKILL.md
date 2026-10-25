@@ -319,10 +319,11 @@ for this plan, stay on it; if its name does not start with one of the five types
 
 ## 2. Implement
 
-**REQUIRED SUB-SKILL:** superpowers:subagent-driven-development, on the branch from section 1. Eight adjustments:
+**REQUIRED SUB-SKILL:** superpowers:subagent-driven-development, on the branch from section 1. Nine adjustments:
 
 - **Prerequisites first:** run the config's `## Prerequisites` before the first implementer dispatch, as `verify-and-fix`'s setup runs them (in order, each one's `Ready when` awaited, background rows with `run_in_background`); not from a draft the user has not confirmed. When `verify-and-fix` reaches its setup, it does not start a row again whose `Ready when` already passes. Background rows started here are stopped with TaskStop at close-out, right before the report (section 7, step 5).
 - **Every implementer dispatch carries the repo's rules:** the config's `## Fix rules`, `## Never do` and `## Security extras`, verbatim, and the paths of the override files that apply to the task, always `.claude/ship-plan/ship-plan/SKILL.md` when it exists, and the rule "never edit `## Allowed` in `.claude/ship-plan.md`". An implementer sees only its own prompt.
+- **Every implementer dispatch carries the plan's `## Global Constraints`,** verbatim, when the plan has that section. The task brief holds only the task's own text, so a step that takes a value "from Global Constraints" sent an implementer to read the whole plan.
 - **Its pre-flight concerns and rulings** follow its own "Rulings, not stalls" rule. Anything it would stop for goes into `questions.md` (section 3). The run goes on with the tasks that don't depend on it.
 - **Before it deletes its workspace,** copy every `Ruling:` line from its `progress.md` into this ledger. They go to the user in the report and the closing comment.
 - **Skip its last step,** `finishing-a-development-branch`. Its menu is the question this skill already answered. Go to section 2b.
