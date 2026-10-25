@@ -61,7 +61,7 @@ In `gh pr create`'s output, and in `gh pr view <n> --json number,url`.
 
 ## Wait for the PR's checks
 
-`gh pr checks <n> --watch --fail-fast` with `run_in_background`. Read once, without waiting: `gh pr checks <n>`.
+`gh pr checks <n> --watch --fail-fast` with `run_in_background`. Read once, without waiting: `gh pr checks <n>`. Its summary can count Copilot's review run (workflow `Copilot`, event `dynamic`) as pending: that is the AI review, which *Review state* tracks, not a check to wait for.
 
 If it answers "no checks reported":
 - **CI None** — the config's `## CI` says `None`, or `.github/workflows/` holds no workflow file: there is nothing to wait for.

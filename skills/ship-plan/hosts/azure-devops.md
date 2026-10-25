@@ -58,7 +58,7 @@ These two field names were not seen in a real policy: the repo checked has no me
 
 ## Open the PR
 
-The description is capped at 4000 characters. Write the files to the ledger folder with the Write tool:
+The description is capped at 4000 characters. Write the files to ship-plan's ledger folder with the Write tool:
 
 1. The full body is 3,900 characters or less: all of it is the description. There is no `pr-body-rest.md`.
 2. Longer: the description is the head, everything before `## What changed`, and `pr-body-rest.md` is the rest, from `## What changed` to the end.
@@ -66,7 +66,7 @@ The description is capped at 4000 characters. Write the files to the ledger fold
 
 When the body is split, the head's last line is: "Full description in the first comment: what changed, how it was verified, and the decisions made without the user." Count the head including that line: it stays under 4,000 characters, so the 3,900 limit is for the head without it. The rulings are then in the first comment, and the closing comment's "Decisions" pointer names the first comment, not the description.
 
-Write the request body to `pr-request.json` in the ledger folder, with the Write tool (JSON-escaped, so the body's backticks and quotes never reach the shell):
+Write the request body to `pr-request.json` in ship-plan's ledger folder, with the Write tool (JSON-escaped, so the body's backticks and quotes never reach the shell):
 
 ```json
 {"sourceRefName": "refs/heads/<branch>", "targetRefName": "refs/heads/<base>", "title": "<title>", "description": "<the description>"}
@@ -324,8 +324,8 @@ Bash(az pipelines run --id <pipeline> --branch <base> *)
 
 ## PR comment
 
-`az repos pr` has no comment command. Write the comment to a JSON file in the
-ledger folder, with the Write tool:
+`az repos pr` has no comment command. Write the comment to a JSON file in
+ship-plan's ledger folder, with the Write tool:
 
 ```json
 {"comments": [{"parentCommentId": 0, "content": "<the markdown>", "commentType": 1}], "status": "closed"}
