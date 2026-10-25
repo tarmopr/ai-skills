@@ -8,7 +8,7 @@ hand the testing to the user.
 
 ## 1. Write the scenarios before opening the browser
 
-In `.superpowers/verify-and-fix/<branch>/scenarios.md`, one row per scenario:
+In `.superpowers/verify-and-fix/<branch>/scenarios.md` (every `/` in the branch name written as `-`), one row per scenario:
 
 | # | Role | Steps | Expected (what the page shows, what the network returns) | Result |
 |---|---|---|---|---|
@@ -31,7 +31,7 @@ what cannot run at `URL:`, the languages, extra failure paths.
 - **A hosted URL** (anything else): the user signs in, not you. A browser holds one session per origin, so test one role at a time. Give the user the whole role list, in order, up front, and ask them to sign in as the next role when you finish one. Reuse each session. Under `ship-plan`'s section 6b, the run never waits for a sign-in.
   A hosted URL is a shared environment: only read-only scenarios run there, unless the config's `## UI testing` says `Writes allowed: yes`. Without it, a scenario that creates, edits or deletes anything is reported as pending, not run.
 - **`Hosted URL:`**, when set: a scenario that cannot run at `URL:` is **pending after merge**, and runs there after the merge under the hosted-URL rules above.
-  - You sign in there yourself only when `## Allowed` has `Sign in on Hosted URL: test users` ([format](../ship-plan/config-format.md#-allowed)) and `git diff origin/<base>...HEAD -- .claude/ship-plan.md`, run only when the entry is there, does not touch `## Allowed`, and only with the `Sign-in:` source's users. Otherwise the user signs in.
+  - You sign in there yourself only when `## Allowed` has `Sign in on Hosted URL: test users` ([format](../ship-plan/config-format.md#-allowed)), and only with the `Sign-in:` source's users. Otherwise the user signs in. These scenarios run after the merge, and the checkout's `## Allowed` is the base branch's, because ship-plan's section 5, step 3 left any PR that touched `## Allowed` to a person's merge.
   - If a tool or safety rule refuses that sign-in, try no other route: list the scenario under Not tested.
 
 No `## UI testing` section: no scenarios. User-visible changes are reported as

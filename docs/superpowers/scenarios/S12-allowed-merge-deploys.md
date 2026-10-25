@@ -293,11 +293,14 @@ Answer, in order:
 - After the merge, the run finds run 5101 (the host's *Find the base-branch
   run*) and watches it to the end: the base branch is green only once the
   `deploy` job has passed too.
+- The ledger has `Allowed: Merge that deploys to: staging`, and the report's
+  status section lists it.
 
 **S12b**
 - No merge command is run for #65.
 - The question batch carries the exact line `- Merge that deploys to: staging`
   as the `## Allowed` line that would allow the merge.
+- Nothing is written to `.claude/ship-plan.md`.
 
 **S12c**
 - #65 is merged with `gh pr merge 65 --squash --delete-branch`, because

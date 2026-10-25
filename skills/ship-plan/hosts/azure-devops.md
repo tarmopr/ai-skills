@@ -167,7 +167,7 @@ Record
 - **Code owners:** yes when a blocking "Required reviewers" policy exists.
 - **Stale dismissed:** the "Minimum number of reviewers" policy's `settings.resetOnSourcePush` is true.
 - **Threads must be resolved:** yes when a blocking "Comment requirements" policy exists.
-- **The config's `Approvals:`** applies when the policies could not be read, and can raise what they say, never lower it: Azure DevOps enforces its own policies whatever the config says.
+- **The config's `Approvals:`** applies when the policies could not be read, and can raise what they say (source `config`), never lower it: Azure DevOps enforces its own policies whatever the config says.
 - **The policy list fails, and no `Approvals:`:** assume 1.
 
 ## Request an AI review
@@ -196,7 +196,7 @@ Comment ids count from 1 within each thread, so the key needs both ids.
 
 ## Reply to a review item
 
-Write the reply to a JSON file in the ledger folder with the Write tool:
+Write the reply to a JSON file in `verify-and-fix`'s ledger folder with the Write tool:
 
 ```json
 {"content": "<the markdown>", "parentCommentId": 1, "commentType": 1}
@@ -212,7 +212,7 @@ az devops invoke --area git --resource pullRequestThreadComments --route-paramet
 
 Only a bot's thread, once it has a reply. Azure DevOps has no Copilot reviewer, so in practice never. A person's thread is theirs to resolve.
 
-The command sets the thread's status. Write `{"status": "fixed"}` to a JSON file in the ledger folder, then:
+The command sets the thread's status. Write `{"status": "fixed"}` to a JSON file in `verify-and-fix`'s ledger folder, then:
 
 ```bash
 az devops invoke --area git --resource pullRequestThreads --route-parameters project=<project> repositoryId=<repo> pullRequestId=<n> threadId=<thread id> --http-method PATCH --in-file <file> --api-version 7.1

@@ -194,8 +194,7 @@ prints `git@github.com:acme/billing-api.git`. A push to `main` runs
 `ci.yml`, whose `deploy` job deploys to `staging`, served at
 `https://staging.acme-billing.example`. The logs in `.claude/ship-plan/` hold
 only their seed text, and the repo has no other files under
-`.claude/ship-plan/`. Its `.claude/ship-plan.md` has no `Sign in on Hosted URL`
-entry:
+`.claude/ship-plan/`. Its `.claude/ship-plan.md`:
 
 ```markdown
 # Ship config
@@ -359,8 +358,8 @@ Answer, in order:
 **S14a**
 - The `## After merge` check runs first, then the run signs in itself to the
   hosted URL as `admin@example.test` and `customer@example.test`, and runs
-  scenarios 4 and 5 there. Each step's source is section 6b of
-  `ship-plan/SKILL.md` (`## 6b. Validate the deploy`).
+  scenarios 4 and 5 there. Each of these steps' sources includes section 6b
+  of `ship-plan/SKILL.md` (`## 6b. Validate the deploy`).
 - The outcome is Done: "Issue comment: done", then the tracker's *Set status*
   with the `Done` transition.
 

@@ -6,10 +6,19 @@ When the branch has an open PR (the host's *Find open PRs*, the branch's own
 PR), its review comments are findings too, from people and from bot reviewers.
 Every round, after the agents, fetch the ones not handled yet. Invoking this
 skill on a branch with an open PR authorizes, for that PR only: committing,
-`git push origin HEAD` while the PR's head branch is checked out (never
-`--force`, never on the base branch), replying in its threads, resolving a
+`git push origin <branch>` naming the PR's head branch while it is checked out
+(never `--force`, never the base branch; a branch not named `feature/`, `fix/`,
+`docs/`, `chore/` or `refactor/` prompts for the push), replying in its threads, resolving a
 bot reviewer's threads (the bots the host's *Resolve a bot's thread* names: Copilot on GitHub), and re-requesting a review (below). Never approve, dismiss a
 review, resolve a person's thread, merge, or request a new reviewer.
+A push refused as non-fast-forward: never force. `git fetch origin <branch>`,
+then `git fetch origin <base>`. When `git log --no-merges HEAD..origin/<branch>
+--not origin/<base>` prints nothing, the host only merged the base branch in
+("Update branch"): `git merge origin/<branch>` (a merge, not a rebase; resolve
+any conflict, and check that `git diff --name-only --diff-filter=U` prints
+nothing), rerun the gates, then push again. Anything else is someone's work on
+the PR branch: never push over it, and end `not clean: the PR branch moved on
+the host` (section 7).
 
 Repo identity and your login come from the host's *Repo identity* and *Auth
 check*. Run each once.
@@ -27,7 +36,8 @@ agents' findings, by the same rules: a comment is right or wrong on its merits,
 not by who wrote it.
 
 **Reply** to every item once its fix is pushed (templates below, "Review
-reply"; write the body to a file in the ledger directory), with the host's
+reply"; write the body to a file in this skill's ledger directory, `.superpowers/verify-and-fix/<branch>/` with every `/` in the branch name
+written as `-`, under `ship-plan` too), with the host's
 *Reply to a review item*.
 
 - **Resolve** a bot reviewer's thread (the bots the host's *Resolve a bot's thread* names: Copilot on GitHub), with that operation, once it has a reply of any kind (fixed, answered, follow-up, not valid). A person's thread is theirs to resolve. On a host without bot reviewers this never applies, and a person's thread stays theirs to resolve on every host.

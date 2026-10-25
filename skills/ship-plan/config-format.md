@@ -48,7 +48,7 @@ Rules:
 | `Base branch:` | The branch PRs target and whose CI must be green | the host's *Default branch* |
 | `Merge:` | `squash` or `merge` | `squash` |
 | `Branch:` | Branch name pattern | `<type>/<slug>`; with an issue `<type>/<id>-<slug>` |
-| `Approvals:` | Approvals a PR needs from someone other than the author: `none` (POCs, internal tools) or a number. Overrides what the rulesets say. | read from the base branch's rulesets, else branch protection, else 1 |
+| `Approvals:` | Approvals a PR needs from someone other than the author: `none` (POCs, internal tools) or a number. Applies when the host's rules cannot be read; otherwise it can raise them, never lower them (the host's *Read the review rule*). | read from the base branch's rulesets, else branch protection, else 1 |
 | `Copilot review:` | `yes` requests a Copilot review on every PR; `no` does not | `yes` |
 | `Review wait:` | Minutes a run polls for reviews before it hands off | 120 |
 
