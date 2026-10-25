@@ -84,11 +84,14 @@ A red PR check: `gh run view <run-id> --log-failed | tail -150`. A red base-bran
 ## Read the review rule
 
 Record
-`Review rule: approvals <n> | code owners <yes/no> | stale dismissed <yes/no> | threads must be resolved <yes/no> | source <config/ruleset/protection/unknown>`:
+`Review rule: approvals <n> | code owners <yes/no> | stale dismissed <yes/no> | threads must be resolved <yes/no> | source <config/ruleset/protection/unknown/none possible/user>`:
 - **The rulesets:** `gh api repos/<o>/<r>/rules/branches/<base> --hostname <host>`. Every rule with `"type": "pull_request"` counts; take the strictest of each of `required_approving_review_count`, `require_code_owner_review`, `dismiss_stale_reviews_on_push` and `required_review_thread_resolution` from its `parameters`.
 - **Else classic branch protection:** `gh api repos/<o>/<r>/branches/<base>/protection/required_pull_request_reviews --hostname <host>`. A 403 or 404 means unknown, not none.
 - **The config's `Approvals:`** (`## Repo`: `none` for POCs and internal tools, or a number) applies when neither could be read, and can raise what they say, never lower it: GitHub enforces its own rules whatever the config says.
 - **Nothing readable and no `Approvals:`:** assume 1.
+- **Both answer 403 with a message that the feature needs a paid plan or a public repository** (for example "Upgrade to GitHub Pro or make this repository public to enable this feature"): the repository can have no rulesets and no branch protection, so GitHub enforces no review rule. Record source `none possible`. With no `Approvals:`, assume 1. Once the PR's checks are green, every remaining path is blocked (only another collaborator could approve), so ask now, as SKILL.md section 3, step 5 allows, without waiting out `Review wait:` first. The question, part of this run's batch: "Add `Approvals: none` to `## Repo`?", with the 403 text quoted. It is a loosening change ([config-format.md](../config-format.md#loosening-changes)).
+  - **Yes:** record it as an `Asked:` line, and record the rule again, replacing the first line, as `Review rule: approvals 0 | … | source user`. This run's PR and its lessons PR are then judged by that line, and section 8 writes `Approvals: none` on the lessons branch.
+  - **No, or no answer:** the rule stays at 1, and section 4R waits and hands off as usual.
 
 ## Request an AI review
 

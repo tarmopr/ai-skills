@@ -151,7 +151,7 @@ otherwise take whatever model the session runs on.
 - Always: `pr-review-toolkit:code-reviewer` and `pr-review-toolkit:silent-failure-hunter`.
 - When tests changed: `pr-review-toolkit:pr-test-analyzer`. When comments or docs changed: `pr-review-toolkit:comment-analyzer`. When types were added: `pr-review-toolkit:type-design-analyzer`.
 - The agents from the config's `## Reviewers by path` whose globs the diff touches.
-- **Security, every round:** run the `security-review` skill on the branch. Check these yourself too, because no gate does:
+- **Security, every round:** run the `security-review` skill on the branch, from the checkout under review. When the session's working directory is another repository, the skill reviews that repository's diff instead: do its review yourself against this checklist, and mark it "self-review" (below). Check these yourself too, because no gate does:
   - **Authorization:** every new endpoint, route, handler or RPC checks who calls it, the same way its siblings do. Quote the sibling.
   - **Tenancy and ownership:** every new query that reads or writes user data is scoped to the caller the way existing queries are.
   - **Input:** no query built by string concatenation; no untrusted input in raw HTML, a URL, a file path, a shell command or an object key without validation.
