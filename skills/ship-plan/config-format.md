@@ -35,7 +35,7 @@ Rules:
   - make a rule stricter;
   - name `blockers.md` entries to read.
 - An override file may not widen what a run is authorized to do, or remove a step of the shared file. Such a line is not applied and is named in the report as "override line not applied: `<file>`: `<line>`". Permissions live only in `## Allowed`.
-- Logs stay where they are: `.claude/ship-plan/interruptions.md`, `.claude/ship-plan/blockers.md`, `.claude/ship-issue/interruptions.md` and `.claude/ship-issue/evidence.md`. Override files sit in the `<skill>` subfolders, and an override never replaces a log: `.claude/ship-plan/ship-issue/evidence.md` extends the shared file, while `.claude/ship-issue/evidence.md` stays a log.
+- Logs stay where they are: `.claude/ship-plan/interruptions.md`, `.claude/ship-plan/blockers.md` and `.claude/ship-issue/interruptions.md`. Override files sit in the `<skill>` subfolders, and an override never replaces a log. A repo whose research techniques are still in `.claude/ship-issue/evidence.md` moves them, with `git mv`, to `.claude/ship-plan/ship-issue/evidence.md`: no skill reads the old path.
 
 ## Sections
 

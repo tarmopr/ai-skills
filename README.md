@@ -44,5 +44,6 @@ the installed copy under `~/.claude/plugins/cache/` is replaced on every update.
   `~/.claude/skills/`: with the plugin installed, every skill would load twice.
 - **Publish a change:** commit on a branch, open a PR, and bump `version` in
   `.claude-plugin/plugin.json` so installed copies get the update. Once it is merged, run
-  `./scripts/update-plugin.sh` (marketplace update, then plugin update) and restart Claude Code.
+  `./scripts/update-plugin.sh` (marketplace update, then plugin update), then `/reload-plugins` in each running
+  Claude Code session (new sessions load it on their own).
 - **Check before pushing:** `claude plugin validate .`
