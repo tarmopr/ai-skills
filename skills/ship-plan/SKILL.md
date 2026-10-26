@@ -540,6 +540,7 @@ log files on the feature branch mixes them into the product PR.
 | "Move it to In Review" | Use only the statuses the config names. |
 | "Checks are green, merge" | Section 4R first: the review rules, the AI review, and every comment handled. |
 | "No approval yet, I'll keep waiting" | Wait for `Review wait:`, then hand off. The run must end. |
+| "One background loop over the whole review window is simpler" | One `sleep 300` at a time, with a status line after each poll (section 4R, step 3). Through a two-hour loop the user sees nothing and cannot ask. |
 | "I'll approve it / resolve their thread so it can merge" | Never. Approval and a person's thread belong to the reviewer. |
 | "The AI reviewer is a bot, its comments don't matter" | Grade every comment by what a user would get. A bot can be right. |
 | "The reviewer is wrong, I'll ignore it" | Reply with the quoted evidence. Every thread gets an answer. |
