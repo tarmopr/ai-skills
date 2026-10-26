@@ -28,6 +28,8 @@ Short; Slack unfurls the PR and issue links. Take `Size` from the host's *PR siz
 Size: <files> files, +<added> −<removed>. Needs: <n approvals | code owner approval | no approval, review welcome>.
 ```
 
+Write `code owner approval` only when the repo has a CODEOWNERS file (`CODEOWNERS`, `.github/CODEOWNERS` or `docs/CODEOWNERS`) whose rules match a changed file. Without one, a rule that requires code owners asks for no more than its approvals, and the host requests nobody: write `<n> approvals`, and say in the report that no reviewer was requested.
+
 ## Re-review request
 
 When a review round has addressed comments from people, and a review request was posted for this PR (the ledger's `Slack: posted <ts>`): after `verify-and-fix --comments` has pushed its fixes and replied, once per round. No `Slack: posted <ts>` line means nothing was posted: post nothing here either.

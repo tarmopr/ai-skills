@@ -218,7 +218,7 @@ reviewer put on it.
 | Grade | Action |
 |---|---|
 | Critical, Important | Fix this round. Write a test that reproduces the finding, watch it fail, then fix. Important includes anything a user sees wrongly: raw error text, a refused write that reads as saved, missing or untranslated text, silently dropped data. |
-| Suggestion | Fix if it keeps behaviour and stays in scope. Otherwise list it in the report. **A PR comment from someone who has not approved, while the PR has approvals:** reply that it is a follow-up and don't push it, because a push can dismiss the approvals ("Follow-up while approved" reply). **An approver's own request** is their condition, not a follow-up: fix it, push, and re-request them. |
+| Suggestion | Fix if it keeps behaviour and stays in scope. Otherwise list it in the report. **A PR comment from someone who has not approved, while the PR has approvals:** reply that it is a follow-up and don't push it, because a push can dismiss the approvals ("Follow-up while approved" reply). **An approver's own request** is their condition, not a follow-up: fix it, push, and re-request them. A note the approver marks non-blocking ("non-blocking", "nit", "optional") is not a condition: reply "Follow-up while approved" and don't push. |
 | Question (PR comment) | A request for information: answer it, quoting the code. A question that proposes a change ("why not use the existing helper?") is a Suggestion: if the proposal fits, make it; if not, say why. |
 | Not a real issue | Write a `Ruling:` quoting the code that proves it. Without a quote, it is a finding. A PR comment also gets a reply with that quote. |
 | Needs the user (PR comment) | A product decision, widened access, money, or beyond the spec (section 6). Reply that it needs the author's decision, and stop on it as section 6 says. |
@@ -332,7 +332,7 @@ A blocker you got past but did not write down will stop the next run too.
 | "Copilot is a bot, its comments don't matter" | Grade every comment on its merits. A bot can be right. |
 | "The reviewer is wrong, I'll ignore it" | Reply with the quoted evidence. Every comment gets an answer. |
 | "I'll resolve their thread so the PR can merge" | Only a bot reviewer's threads, as the host names them. A person resolves their own. |
-| "It's approved, one more suggestion won't hurt" | A push can dismiss the approval. Reply "follow-up" instead, unless the suggestion is an approver's own request: that one you fix. |
+| "It's approved, one more suggestion won't hurt" | A push can dismiss the approval. Reply "follow-up" instead, unless the suggestion is an approver's own request they did not mark non-blocking: that one you fix. |
 | "That was fixed last round" | A fix gets a fresh review. Fixes cause regressions. |
 | "I'll note the blocker later" | Write the blockers entry now, or it is lost. |
 | "The unit tests pass, so the flow works" | Drive it in Chrome. Suites pass and flows still break in the UI. |
