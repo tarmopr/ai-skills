@@ -98,6 +98,22 @@ Simplify pass: <`<short sha>`, <n> edits | no changes>. <n> review rounds. Fixed
 - Follow-ups: <suggestions not done, anything outside the diff, with new issue keys if created, or "None">.
 ```
 
+## Issue comment: done (batch ticket)
+
+On each issue of the plan's `Tickets:` line that gets the done status with the run issue.
+
+```markdown
+**Done** with <run issue key>, in <PR link> (merge `<sha>`): <n> commit(s) carry this key. <Base-branch CI run [<id>](<url>) is green. | Base branch has no CI.>
+```
+
+## Issue comment: not done (batch ticket)
+
+On each issue of the plan's `Tickets:` line that does not get the done status although the run issue does.
+
+```markdown
+**Not done.** <run issue key> merged in <PR link>, but this issue's part is not in it: <tasks parked or skipped, or "no commit carries this key">. It stays in its status.
+```
+
 ## Issue comment: base branch red
 
 ```markdown
