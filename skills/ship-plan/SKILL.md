@@ -231,6 +231,10 @@ digraph ship {
   "base-branch CI green?" -> "Transient failure in blockers.md?" [label="no"];
   "Transient failure in blockers.md?" -> "Rerun the failed jobs" [label="yes, no Merge deploys to"];
   "Transient failure in blockers.md?" -> "7 Close out: tracker or PR comment, docs PR, lessons, report, one question batch" [label="yes, Merge deploys to set: park the rerun"];
+  "Transient failure in blockers.md?" -> "Wait 10 min, rerun once" [label="runner or network, Rerun a transient deploy failure on covers it"];
+  "Transient failure in blockers.md?" -> "7 Close out: tracker or PR comment, docs PR, lessons, report, one question batch" [label="billing: escalate at once"];
+  "Wait 10 min, rerun once" -> "6b Validate the deploy" [label="green"];
+  "Wait 10 min, rerun once" -> "7 Close out: tracker or PR comment, docs PR, lessons, report, one question batch" [label="red again: escalate"];
   "Rerun the failed jobs" -> "base-branch CI green?";
   "Transient failure in blockers.md?" -> "Fix-forward branch: debug, test, fix" [label="no"];
   "Fix-forward branch: debug, test, fix" -> "3 Verify: verify until clean";
@@ -549,7 +553,7 @@ log files on the feature branch mixes them into the product PR.
 | "The tracker already says done, fine" | Done means the config's `Done means:`. Check the base-branch run first. |
 | "The PR is merged, so I'm done" | The run ends when the base branch is green, the closing comment is written, the docs PR is open (when the ledger has a `Docs PR:` line), and lessons are recorded. |
 | "The spec can go in with some later docs change" | A held spec reaches the repository only through section 7, step 2. Open the docs PR at close-out. |
-| "The base branch failed, probably flaky, rerun until it passes" | Only a failure listed as transient gets a rerun, and at most 3; with `Merge deploys to:`, none, since a rerun redeploys. Anything else gets a root cause. |
+| "The base branch failed, probably flaky, rerun until it passes" | Only a failure listed as transient gets a rerun, and at most 3; with `Merge deploys to:`, none, since a rerun redeploys, unless `Rerun a transient deploy failure on:` covers a runner or network failure: then one, after a 10-minute wait, and a second failure escalates. A billing refusal is escalated at once. Anything else gets a root cause. |
 | "Push the fix straight to the base branch, it's one line" | Never push to the base branch. A fix branch goes through the same loop. |
 | "The ruling is obvious, no need to write it down" | An unrecorded ruling is a decision made in secret. Write the ledger line. |
 | "I'll update interruptions.md next time" | Next time is when it would have saved the question. Do it at close-out. |
