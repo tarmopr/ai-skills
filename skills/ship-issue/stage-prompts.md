@@ -191,6 +191,12 @@ Next to the skill's required header, the plan needs:
 - every commit subject the plan names ends in ` (<KEY-n>)`, as the PR title
   does (a spec once gave four of five without it);
 - never a PR number in text: none exists yet. Cite the issue key.
+- a claim about the existing code that a task relies on ("every X already
+  does Y", "no caller passes Z", "only A reads B") is checked with a
+  `git grep` before it is written, and the plan quotes the matches it
+  counted. A plan once said every Stripe failure log line already carried
+  the error fields; several did not, and they surfaced across three review
+  rounds.
 
 A gap in the spec that the confidence test lets you rule on is a Ruling:. One
 it does not (it widens access, changes money, nothing quotable points one way,
