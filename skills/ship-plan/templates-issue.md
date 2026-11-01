@@ -4,9 +4,9 @@ Read when a run asks the tracker question or the issue question, or writes to th
 
 ## Which tracker does this repo use?
 
-Asked when the config has no `Tracker:` and none can be resolved. Ask it **before the issue question**, on its own, with one `AskUserQuestion` call. Options, the recommended one first and marked "(Recommended)": "Jira"; "Linear"; "No tracker (the PR is the record)". Recommend Jira or Linear when only that one's integration is connected (the Atlassian MCP for Jira, the Linear MCP for Linear). "Other" is always added by the tool.
+Asked when the config has no `Tracker:` and none can be resolved. Ask it **before the issue question**, on its own, with one `AskUserQuestion` call. Options, the recommended one first and marked "(Recommended)": "Jira"; "Linear"; "GitHub Issues"; "No tracker (the PR is the record)". Recommend "GitHub Issues" when `Host:` is `github`, the repo has issues enabled (`gh repo view <Repo> --json hasIssuesEnabled`, where `<Repo>` is `<o>/<r>` from the host's *Repo identity*, prefixed with `<host>/` when the host is not `github.com`) and already has one, open or closed (`gh issue list -R <Repo> --state all --limit 1` returns an issue), even when the Atlassian or Linear integration is connected. Otherwise recommend Jira or Linear when only that one's integration is connected (the Atlassian MCP for Jira, the Linear MCP for Linear). "Other" is always added by the tool.
 
-The answer is a `Ruling: user <date>`. It is written as `Tracker: jira`, `linear` or `none` into the config's `## Repo`, together with the tracker's drafted section, and committed on the feature branch's first commit, like `## Slack`. A drafted config (config-drafting.md) gets it inside the draft. (Only `Host:` is never added to an existing config.)
+The answer is a `Ruling: user <date>`. It is written as `Tracker: jira`, `linear`, `github` or `none` into the config's `## Repo`, together with the tracker's drafted section, and committed on the feature branch's first commit, like `## Slack`. A drafted config (config-drafting.md) gets it inside the draft. (Only `Host:` is never added to an existing config.)
 
 ## Issue question
 
@@ -15,7 +15,7 @@ branch this run started. Ask it **before continuing**, on its own, with one
 `AskUserQuestion` call: the answer comes back in the same turn, so the skill's
 pre-approval holds. Never create an issue where the user did not choose.
 
-**Gather the options** as the tracker's *Find an issue* and *Where a new issue goes* say: up to 3 candidate issues, and the places a new issue can go (Jira: project and epic; Linear: the configured team and project, no question).
+**Gather the options** as the tracker's *Find an issue* and *Where a new issue goes* say: up to 3 candidate issues, and the places a new issue can go (Jira: project and epic; Linear: the configured team and project, no question; GitHub Issues: the milestone, only when the repo has open milestones).
 
 **The question.** Every question has 2 to 4 options, the recommended one first
 and marked "(Recommended)", then the rest in the order given. "Other" is always
@@ -24,7 +24,7 @@ added by the tool and takes any key.
 | # | Header | Question | Options |
 |---|---|---|---|
 | 1 | Issue | Which issue tracks this work? | "Create a new issue"; the candidates as `<KEY>: <summary>`; under ship-plan only, "No issue (the PR is the record)". Fill the 4 slots in that order: under ship-plan, at most 2 candidates. With no candidates, the second option is "Type an issue key in Other". Recommend a candidate only if it clearly matches, else "Create a new issue". |
-| 2–3 | Where it goes | If a new issue: where should it go? | The places the tracker's *Where a new issue goes* defines, one question per place, in its order. A tracker with no places to choose (Linear) asks none. The **default** comes first: the config's value, else that of the most relevant candidate, else the first listed. |
+| 2–3 | Where it goes | If a new issue: where should it go? | The places the tracker's *Where a new issue goes* defines, one question per place, in its order. A tracker with no places to choose (Linear, or GitHub Issues with no open milestone) asks none. The **default** comes first: the config's value, else that of the most relevant candidate, else the first listed. |
 | 4 | Related | If a new issue: relate it to an existing issue? (optional) | "No related issue", then the issue candidates (an issue can be related to the new one without being the one that tracks the work). With none found, the second option is "Type an issue key in Other". |
 
 Questions 2–4 begin "If a new issue" because they are ignored when 1 picks an

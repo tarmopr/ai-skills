@@ -26,6 +26,7 @@ files' shape. These scenarios pin behaviour.
 | S13 | [S13-lessons.md](S13-lessons.md) | Three runs: where each kind of lesson goes; a lessons PR that loosens the config, or touches `## Allowed`, stays open |
 | S14 | [S14-validate-deploy.md](S14-validate-deploy.md) | Four runs: validating the deploy at `Hosted URL:`: the run signs in, a failure that leads to `red-base.md`, no sign-in, a refused sign-in |
 | S15 | [S15-loop-behaviors.md](S15-loop-behaviors.md) | Implementer context, prerequisites first, reviewers run no gates, gates after a base-branch merge, the key in a branch name, a handoff |
+| S16 | [S16-github-issues.md](S16-github-issues.md) | GitHub with GitHub Issues: the tracker question, labels as status, no closing keyword, close only when Done means is met |
 
 ## How to run one
 

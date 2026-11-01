@@ -48,6 +48,17 @@ allowed-tools:
   - mcp__plugin_engineering_linear__list_projects
   - mcp__plugin_engineering_linear__save_issue
   - mcp__plugin_engineering_linear__save_comment
+  - Bash(gh repo view *)
+  - Bash(gh issue view *)
+  - Bash(gh issue list *)
+  - Bash(gh issue create *)
+  - Bash(gh issue edit *)
+  - Bash(gh issue comment *)
+  - Bash(gh issue close *)
+  - Bash(gh issue reopen *)
+  - Bash(gh label list *)
+  - Bash(gh label create *)
+  - Bash(gh api repos/*/milestones*)
 ---
 
 # Ship an issue
@@ -75,11 +86,11 @@ that widens what the run may do, or removes a step, is not applied, and the
 report names it.
 
 - **A repo set up for `ship`:** if `.claude/ship.md` exists and `.claude/ship-plan.md` does not, stop with one line: "This repo is set up for the removed `ship` skill: move `.claude/ship.md` to `.claude/ship-plan.md` and `.claude/ship/` to `.claude/ship-plan/`."
-- **Host and tracker:** resolve `Host:` and `Tracker:` as [config-format.md](../ship-plan/config-format.md) says (`Host:` from the `origin` remote when absent; `Tracker:` from `## Jira` or `## Linear` when absent, else undecided until I1). Then read `../ship-plan/hosts/<host>.md` (`github.md` or `azure-devops.md`) and, unless the tracker is `none` or undecided, `../ship-plan/trackers/<tracker>.md` (`jira.md` or `linear.md`). A reference below to an operation of the host or the tracker names the section of that name in those files. **When `Tracker:` is not `none`, or the tracker question is asked, read [templates-issue.md](../ship-plan/templates-issue.md).**
+- **Host and tracker:** resolve `Host:` and `Tracker:` as [config-format.md](../ship-plan/config-format.md) says (`Host:` from the `origin` remote when absent; `Tracker:` from `## Jira`, `## Linear` or `## GitHub Issues` when absent, else undecided until I1). Then read `../ship-plan/hosts/<host>.md` (`github.md` or `azure-devops.md`) and, unless the tracker is `none` or undecided, `../ship-plan/trackers/<tracker>.md` (`jira.md`, `linear.md` or `github.md`). A reference below to an operation of the host or the tracker names the section of that name in those files. **When `Tracker:` is not `none`, or the tracker question is asked, read [templates-issue.md](../ship-plan/templates-issue.md).**
 - **No `origin` remote** (and no `Host:`): there is no host and no PR to open. Read no host file, skip the host's *Auth check*, *Find open PRs* and *Find the base-branch run* and every `git fetch origin`, and branch from `<base>` where this skill says `origin/<base>`. ship-plan then stops before its section 4 and says so in its report.
 
 From the config, this skill reads: `## Repo` (`<base>`, branch pattern, `Host:`, `Tracker:`),
-the tracker's section (`## Jira` or `## Linear`), `## CI`, `## Prerequisites`, `## UI testing`, `## Slack` (or
+the tracker's section (`## Jira`, `## Linear` or `## GitHub Issues`), `## CI`, `## Prerequisites`, `## UI testing`, `## Slack` (or
 `.claude/ship-plan.local.md`), `## Evidence`, `## Worktree` and `## Models`. **When `.claude/ship-plan.md` is missing or a section must be drafted, read [config-drafting.md](../ship-plan/config-drafting.md).** Draft it as that file says, and put the draft at the top of the I3 batch.
 Research, spec and plan proceed meanwhile; no gate runs until it is confirmed.
 Once confirmed, commit it on the feature branch with a `Ruling:`.
@@ -184,7 +195,7 @@ docs PR: the `Spec:` path on the ledger's first line (I2 step 3). Do not redo ap
 
 Every tracker call is made as the tracker's file says. A tracker call that fails is parked with its exact error in the I3 batch, as the tracker's *Auth* says, and nothing that needs the issue starts until it is answered. Only `Tracker: none` runs without an issue.
 
-- **`Tracker:` undecided** (no `Tracker:`, no `## Jira`, no `## Linear`): ask "Which tracker does this repo use?" (templates-issue.md) **before anything else in I1, and wait for the answer.** Write it as `Tracker: <jira, linear or none>` in the config's `## Repo`, with the tracker's section drafted from the issue question (the tracker's *Where a new issue goes*), committed on the feature branch with the first commit this run makes (with `## Slack` when I3 asked too). A drafted config gets it inside the draft instead. Then read `../ship-plan/trackers/<tracker>.md`, unless the answer is `none`.
+- **`Tracker:` undecided** (no `Tracker:`, no `## Jira`, no `## Linear`, no `## GitHub Issues`): ask "Which tracker does this repo use?" (templates-issue.md) **before anything else in I1, and wait for the answer.** Write it as `Tracker: <jira, linear, github or none>` in the config's `## Repo`, with the tracker's section drafted from the issue question (the tracker's *Where a new issue goes*), committed on the feature branch with the first commit this run makes (with `## Slack` when I3 asked too). A drafted config gets it inside the draft instead. Then read `../ship-plan/trackers/<tracker>.md`, unless the answer is `none`.
 - **`Tracker: none`:** there is no issue and no issue question; the PR is the record. With no description given, ask "Describe the problem". Then go on with the slug (The ledger), and skip I5.
 - **Issue key given:** the tracker's *Read an issue*: the issue with its comments and linked issues. Read the linked issues too.
 - **Description given (no key):** ask the "Issue question" (templates-issue.md) **before continuing**, without the "No issue" option, and wait for the answer. Its candidates come from the tracker's *Find an issue*, and the places a new issue can go from the tracker's *Where a new issue goes*. Nothing else starts until the run has a key.
@@ -214,7 +225,7 @@ Then choose the checkout (section W) before writing anything.
 Collect every question the rest of the run could need, then ask them together.
 
 1. **Design decisions:** the Spec stage's `Q<n>` lines, as it wrote them. It already applied ship-plan's confidence test (section 3); don't re-rule them here.
-2. **What ship-plan's pre-flight would ask** (ship-plan section 0, steps 1, 6 and 8, and its authorization section): a draft config; the exact allow lines (`Bash(<command>)`) for every gate and Prerequisites command, in a permission mode that prompts; hosted sign-ins for `## UI testing` (a `Hosted URL:` one only if `## Allowed` lacks `Sign in on Hosted URL: test users`); a merge that `## CI` `Merge deploys to:` names and `## Allowed` doesn't cover (ship-plan section 5, step 3); a drafted tracker section (`## Jira` or `## Linear`); **the Slack channel, if neither the config nor `.claude/ship-plan.local.md` has `## Slack`**: **When `## Slack` is missing from the config and from `.claude/ship-plan.local.md`, read [notifiers/slack.md](../ship-plan/notifiers/slack.md) and choose the channel.** Ask it as the notifier's *Choose the channel* says; the answer is written to the committed config only: commit `## Slack` to the config on the branch with the next commit this run makes; and anything on the "does not authorize" list. Ask them now, so ship-plan's pre-flight has nothing left.
+2. **What ship-plan's pre-flight would ask** (ship-plan section 0, steps 1, 6 and 8, and its authorization section): a draft config; the exact allow lines (`Bash(<command>)`) for every gate and Prerequisites command, in a permission mode that prompts; hosted sign-ins for `## UI testing` (a `Hosted URL:` one only if `## Allowed` lacks `Sign in on Hosted URL: test users`); a merge that `## CI` `Merge deploys to:` names and `## Allowed` doesn't cover (ship-plan section 5, step 3); a drafted tracker section (`## Jira`, `## Linear` or `## GitHub Issues`); **the Slack channel, if neither the config nor `.claude/ship-plan.local.md` has `## Slack`**: **When `## Slack` is missing from the config and from `.claude/ship-plan.local.md`, read [notifiers/slack.md](../ship-plan/notifiers/slack.md) and choose the channel.** Ask it as the notifier's *Choose the channel* says; the answer is written to the committed config only: commit `## Slack` to the config on the branch with the next commit this run makes; and anything on the "does not authorize" list. Ask them now, so ship-plan's pre-flight has nothing left.
 3. **Environment decisions** (section W) that could not be settled.
 4. **Standing answers** remove questions. Apply them first.
 

@@ -49,6 +49,8 @@ allowed-tools:
   - Bash(gh pr diff *)
   - mcp__plugin_engineering_linear__get_issue
   - mcp__plugin_engineering_linear__save_comment
+  - Bash(gh issue view *)
+  - Bash(gh issue comment *)
 ---
 
 # Verify and fix
@@ -104,7 +106,7 @@ regressions: a later round often finds bugs an earlier round's fixes introduced.
 
 ## 1. Setup
 
-- **Host and tracker:** resolve `Host:` and `Tracker:` as [config-format.md](../ship-plan/config-format.md) says (`Host:` from the `origin` remote when absent; `Tracker:` from `## Jira` or `## Linear` when absent). Then read `../ship-plan/hosts/<host>.md` (`github.md` or `azure-devops.md`). A reference below to an operation of the host names the section of that name in that file; one of the tracker names the section of that name in `../ship-plan/trackers/<tracker>.md` (`jira.md` or `linear.md`), read where the reference says.
+- **Host and tracker:** resolve `Host:` and `Tracker:` as [config-format.md](../ship-plan/config-format.md) says (`Host:` from the `origin` remote when absent; `Tracker:` from `## Jira`, `## Linear` or `## GitHub Issues` when absent). Then read `../ship-plan/hosts/<host>.md` (`github.md` or `azure-devops.md`). A reference below to an operation of the host names the section of that name in that file; one of the tracker names the section of that name in `../ship-plan/trackers/<tracker>.md` (`jira.md`, `linear.md` or `github.md`), read where the reference says.
 - **Ledger:** `mkdir -p .superpowers/verify-and-fix/<branch>` (here and below, every `/` in the branch name written as `-`), then `ledger.md` there. If `.superpowers/` is not listed in `.git/info/exclude`, append it there; never edit the repo's `.gitignore`. One line per round: the gate results, the findings with their grades, the fixes with their commits, and every `Ruling:` you made. After a context compaction, trust the ledger and `git log` over memory.
 - **Base:** `<base>` is a branch name: `$ARGUMENTS`, else the config's `Base branch:`, else the repo's default branch from the host's *Default branch*. Run `git fetch origin <base> --quiet` first; every diff below compares `origin/<base>...HEAD`. If `git rev-parse --verify --quiet origin/HEAD` prints nothing (common in a fresh clone), run `git remote set-head origin --auto`: the `security-review` skill diffs against `origin/HEAD` and fails without it. It changes local git metadata only.
 - **Config:**
@@ -229,7 +231,7 @@ dead code), rerun the gates, but not a review round. Every other fix gets both.
 
 Fix rules: the config's `## Fix rules`, plus: never weaken or delete a test to
 make it pass; never change an expected value without a separately justified
-reason. Commit once per round for the agents' findings, and **once per PR
+reason; with `Tracker: github`, never a closing keyword (`Fixes`, `Closes`, `Resolves`…) before an issue reference in a commit message (`../ship-plan/trackers/github.md` *Integration*). Commit once per round for the agents' findings, and **once per PR
 comment** for review fixes (`fix(review): <what>`), so each reply can name its
 commit. Stage only the files you fixed, by name (never `git add -A`, which
 sweeps in logs and drafts), and let the repo's hooks run (never

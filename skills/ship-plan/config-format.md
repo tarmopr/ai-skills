@@ -44,7 +44,7 @@ Rules:
 | Field | Meaning | Default |
 |---|---|---|
 | `Host:` | `github` or `azure-devops` | From `git remote get-url origin`: `dev.azure.com` or `*.visualstudio.com` is `azure-devops`; anything else, GitHub Enterprise included, is `github`. Never asked when an `origin` remote exists; written only into a drafted config, never added to an existing one. |
-| `Tracker:` | `jira`, `linear` or `none` | `## Jira` present: `jira`. `## Linear` present: `linear`. Neither: not decided yet; asked once with the issue question, then written here. |
+| `Tracker:` | `jira`, `linear`, `github` (GitHub Issues) or `none` | `## Jira` present: `jira`. `## Linear` present: `linear`. `## GitHub Issues` present: `github`. None of them: not decided yet; asked once with the issue question, then written here. |
 | `Base branch:` | The branch PRs target and whose CI must be green | the host's *Default branch* |
 | `Merge:` | `squash` or `merge` | `squash` |
 | `Branch:` | Branch name pattern | `<type>/<slug>`; with an issue `<type>/<id>-<slug>` |
@@ -195,6 +195,20 @@ question finds the team and drafts this section.
 | `Done status:` | Set when Done means is met | required |
 | `Done means:` | When the issue may be closed | merged and base-branch CI green; with CI `None`, merged |
 | `Notes:` | Facts about the workspace, e.g. whether an integration closes issues | none |
+
+### `## GitHub Issues`
+
+Present when `Tracker: github`. Absent with a GitHub Issues tracker: the issue
+question drafts this section with the defaults, and asks nothing for it.
+
+| Field | Meaning | Default |
+|---|---|---|
+| `Repo:` | `<owner>/<name>` the issues live in (`<host>/<owner>/<name>` on GitHub Enterprise) | the `origin` repo; required when `Host: azure-devops` |
+| `Start label:` | Added when implementation starts | `in-progress` |
+| `Review label:` | Replaces the start label when the PR is opened for review; `none` keeps the start label | `in-review` |
+| `Type labels:` | Branch type to the label a new issue gets, e.g. `fix → bug, feature → enhancement`; a label the repo lacks is skipped | `fix → bug, feature → enhancement` |
+| `Done means:` | When the issue may be closed | merged and base-branch CI green; with CI `None`, merged |
+| `Notes:` | Facts about the repo, e.g. whether something closes issues on merge | none |
 
 ### `## Evidence`
 
