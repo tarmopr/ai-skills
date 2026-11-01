@@ -114,10 +114,10 @@ that would stop every sub-issue is found now.
 1. **Config.** No `.claude/ship-plan.md`, or no tracker section for its `Tracker:`: stop with one line, "Run `/ship-issue <one sub-issue key>` first: it drafts the config this queue needs." The queue drafts no config.
 2. **Tracker.** `Tracker: github` or `none`: stop with one line, "ship-queue needs a tracker with sub-issues: Linear or Jira." The tracker's *List sub-issues* says so for GitHub Issues.
 3. **Auth,** in parallel: the host's *Auth check* (and your login, as it says), the tracker's *Auth*. A failure stops the queue: no sub-issue could run. Report the exact error.
-4. **A live queue:** this parent's ledger changed in the last 30 minutes (`stat -f %Sm <ledger>` on macOS, `stat -c %y <ledger>` on Linux), or in the last 2 hours with its last line saying it waits: another session holds it. Stop and report. Older: the session died. Resume, and write a `Lesson:`.
-5. **The checkout** (*Checkout*). Then write the ledger.
+4. **A live queue:** this parent's ledger changed in the last 30 minutes (`stat -f %Sm <ledger>` on macOS, `stat -c %y <ledger>` on Linux), or in the last 2 hours with its last line saying it waits: another session holds it. Stop and report. Not when this session wrote it: a queue resumed in the same session after a compaction is its own. Older: resume; when its last `Current:` has no `Result:` after it, the session died during that run: write a `Lesson:`.
+5. **The checkout** (*Checkout*). Then write the ledger. A resume keeps the ledger's `Checkout:`; it does not choose again.
 6. **Read the parent** (the tracker's *Read an issue*, with comments and relations) **and its sub-issues** (the tracker's *List sub-issues*, then *Read an issue* for each). A parent with no sub-issues: stop with one line, "<parent> has no sub-issues."
-7. **Whose sub-issue it is.** A sub-issue assigned to someone other than you, or with an open PR (the host's *Find open PRs*, by search for its key) whose author is not you: `blocked: assigned to <name>` (or `PR <url> by <name>`), and it is not run. Unassigned or assigned to you: it runs.
+7. **Whose sub-issue it is.** A sub-issue assigned to someone other than you, or with an open PR (the host's *Find open PRs*, by search for its key) whose author is not you: `blocked: assigned to <name>` (or `PR <url> by <name>`), and it is not run: write its `Result:` line at once, with the next action "reassign it to you, then `/ship-queue <parent>`". No comment on it: it is someone else's issue, and the summary names it. Unassigned or assigned to you: it runs.
 8. **What every sub-issue would need from the config.** Every sub-issue branches from `origin/<base>`, so anything ship-issue's I3 would ask for and commit on its branch would be asked again by every sub-issue. Check the config on `<base>` for what ship-issue's I3 step 2 lists as config: `## Slack` (config, else `.claude/ship-plan.local.md`), the tracker section, an unknown config section. Any of them missing: stop with the list, and say to put it on `<base>` first.
 9. **Permissions,** in a permission mode that prompts: list the exact allow lines (`Bash(<command>)`) for every gate and Prerequisites command, as ship-issue's I3 does. They go in the user's settings, so they are asked once, here.
 10. **Merges that deploy:** when `## CI` `Merge deploys to:` names an environment that `## Allowed` `Merge that deploys to:` does not cover, say so now, with the exact line ship-plan section 5, step 3 would propose (none for a production-like name). The queue widens nothing. Without that line, each such sub-issue ends `awaiting merge`, and its dependents wait.
@@ -139,7 +139,10 @@ First match wins:
    - **A cycle:** break it at its weakest edge (a text-only one before a tracker relation), with a `Ruling:`.
 
 Sub-issues already in a done status category are `already done` and not run.
-Every sub-issue already done, or `blocked` at Q0 step 7: go to Q4 at once.
+**`Order:` holds only the sub-issues the queue runs:** not the `already done`
+ones, and not those `blocked` at Q0 step 7, which get their `Result:` line at
+once. A resume checks those again (an issue reassigned to you joins at the end).
+Every sub-issue already done, or `blocked` at Q0 step 7: write `Order: none` and go to Q4 at once.
 
 **A worked-out order** (source parent or analysis) **starts at once.** With
 `show order`, show the order, each `Depends:` line and each `Ruling:`, and ask
@@ -150,7 +153,7 @@ with `AskUserQuestion`: "Start in this order" (Recommended), or "Change it"
 
 For each sub-issue in order:
 
-1. **Dependencies.** A hard dependency whose last `Result:` is not `done` (or `already done`): the outcome is `waits for <KEY>`. Comment once on the sub-issue (the tracker's *Comment*): what it waits for, and that `/ship-queue <parent>` runs it once that one is done. Next sub-issue.
+1. **Dependencies.** A hard dependency whose last `Result:` is not `done` (or `already done`): the outcome is `waits for <KEY>`: write its `Result:` line. Comment once on the sub-issue (the tracker's *Comment*): what it waits for, and that `/ship-queue <parent>` runs it once that one is done. Next sub-issue.
 2. **The checkout back to `<base>`** (*Checkout*).
 3. **Write `Current: <KEY> started <time>`** and rewrite the first line's `Current:`.
 4. **Invoke `ship-issue <KEY>`** through the Skill tool, with this sub-issue's answers from the argument, if any (`ship-issue <KEY> <answers>`). It runs as it always does, in its queued mode (ship-issue's and ship-plan's "Queued mode (ship-queue)" sections): it never waits for the user, and ends when it can do nothing more.
@@ -181,7 +184,7 @@ later `/ship-queue <parent>` continues once the base branch is green.
 ## Q3. The review sweep
 
 After the loop's last sub-issue, before the summary. For each sub-issue whose
-last `Result:` is `awaiting review`, in queue order: invoke `ship-issue <KEY>`
+last `Result:` is `awaiting review`, in queue order: write `Current: <KEY> started <time>` (Q2 step 3, so the run is queued), then invoke `ship-issue <KEY>`
 once. ship-plan polls once (its section 4R, step 6) and merges when the review
 rules are now met; read the outcome again (Q2 steps 5–7). A sub-issue that
 becomes `done` here may unblock `waits for` sub-issues: run them now through
@@ -198,8 +201,8 @@ Written once the loop and the sweep are over, or at once when the queue stops:
 4. **Decisions made for you:** the queue's `Ruling:` lines (order, tie-breaks, cycles), each with what it costs if wrong, and every override line not applied.
 
 The same text goes to the parent as one comment (the tracker's *Comment*).
-When every queued sub-issue is `done` or `already done`, rewrite the first line
-with `Phase: done`. Otherwise write a handoff (*Resume and session end*), so the
+When every sub-issue in `Order:` is `done` (an `Order: none` counts), rewrite the first line with
+`Phase: done`. Otherwise write a handoff (*Resume and session end*), so the
 next session finds the queue.
 
 ## Checkout
@@ -218,7 +221,8 @@ The whole queue runs in one checkout, one sub-issue at a time.
   - **Re-read the sub-issues.** With a worked-out order, new sub-issues join at the end in analysis order, and the recorded order is kept. With an argument-given order, nothing is added.
   - **Run the loop again** over every sub-issue whose last `Result:` is not `done` or `already done`:
     - `waiting for answers` with answers in this argument: `ship-issue <KEY> <answers>`, its resume form. With none: it stays as it is, and is not invoked.
-    - `awaiting review`, `awaiting merge`, `not merged`, `blocked`: invoke `ship-issue <KEY>`; it routes to ship-plan, which resumes from its ledger.
+    - `awaiting review`: not in the loop; the review sweep (Q3) polls it once.
+    - `awaiting merge`, `not merged`, `blocked`: invoke `ship-issue <KEY>`; it routes to ship-plan, which resumes from its ledger.
     - `waits for <KEY>`, `not started`: as new.
   - **Answers for a key that is not waiting** (already done, not in the queue, not a sub-issue): report them in the summary as not used, and never pass them to ship-issue: a run that is done is never resumed with answers it did not ask for.
   - Then Q3 and Q4 as usual.
