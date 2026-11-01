@@ -231,7 +231,7 @@ dead code), rerun the gates, but not a review round. Every other fix gets both.
 
 Fix rules: the config's `## Fix rules`, plus: never weaken or delete a test to
 make it pass; never change an expected value without a separately justified
-reason. Commit once per round for the agents' findings, and **once per PR
+reason; with `Tracker: github`, never a closing keyword (`Fixes`, `Closes`, `Resolves`…) before an issue reference in a commit message (`../ship-plan/trackers/github.md` *Integration*). Commit once per round for the agents' findings, and **once per PR
 comment** for review fixes (`fix(review): <what>`), so each reply can name its
 commit. Stage only the files you fixed, by name (never `git add -A`, which
 sweeps in logs and drafts), and let the repo's hooks run (never

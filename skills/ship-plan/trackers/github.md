@@ -2,9 +2,12 @@
 
 How the three skills do each tracker operation when the repo's tracker is GitHub Issues.
 
-Every command passes `-R <Repo>`: the config's `## GitHub Issues` `Repo:`, else
-the `origin` repo as `<owner>/<name>`. `gh` takes the host, GitHub Enterprise
-included, from it. Labels and `Done means:` come from the config's
+Every command passes `-R <Repo>`. `<Repo>` is the config's `## GitHub Issues`
+`Repo:`, else the `origin` repo (`<o>/<r>` from the host's *Repo identity*),
+written `<owner>/<name>` on github.com and `<host>/<owner>/<name>` on GitHub Enterprise:
+`-R` takes the host only from that prefix, and without it `gh` asks github.com.
+`gh api` takes `repos/<owner>/<name>/…` and `--hostname <host>` instead, as the
+host's *Repo identity* says. Labels and `Done means:` come from the config's
 `## GitHub Issues`; follow its `Notes:`. A body or comment the run writes goes
 in a file in the ledger dir (before the ledger dir exists, in `.superpowers/`)
 and is passed with `--body-file`, never inline.
@@ -24,13 +27,13 @@ Status is labels, progress is comments. There is no board: never call
 
 Branch pattern: `<type>/<n>-<slug>`.
 
-From a branch name, the key is only the digits between `<type>/` and the next `-`: `fix/7-sync-auth` carries `#7`; `fix/2fa-login` carries no key.
+From a branch name, the key is only the digits between `<type>/` and the next `-`: `fix/7-sync-auth` carries `#7`; `fix/2fa-login` carries no key. Numbers are common in branch names, so a branch this run did not start (verify-and-fix on its own, a resumed or someone else's branch) carries a key only when its PR body links that issue (`[#<n>](…/issues/<n>)`) or a ship-plan or ship-issue ledger exists for the branch. Otherwise it has no issue: a hand-made `fix/<n>-page-styling` never comments on `#<n>`.
 
 ## Integration
 
 Nothing links a branch to an issue. The PR body's issue link (templates.md, written `[#<n>](<issue url>)`) puts the PR in the issue's timeline. That is the only reference the run makes.
 
-**No closing keyword.** GitHub closes an issue on merge to the default branch when a PR title, PR body or commit message has a closing keyword (`close`, `closes`, `closed`, `fix`, `fixes`, `fixed`, `resolve`, `resolves`, `resolved`, in any case, optionally followed by `:`) directly before an issue reference. The run never writes one, in any of the three. A commit subject or PR title names the issue only as `(#<n>)` at its end (`fix: reject malformed dates (#<n>)`, never `fix #<n>` or `Fixes: #<n>`). Implementer and fixer prompts carry this rule. The run closes the issue itself (*Set status*).
+**No closing keyword.** GitHub closes an issue on merge to the default branch when a PR title, PR body or commit message has a closing keyword (`close`, `closes`, `closed`, `fix`, `fixes`, `fixed`, `resolve`, `resolves`, `resolved`, in any case, optionally followed by `:`) directly before an issue reference. The run never writes one, in any of the three. A commit subject or PR title names the issue only as `(#<n>)` at its end (`fix: reject malformed dates (#<n>)`, never `fix #<n>` or `Fixes: #<n>`). An implementer or fixer sees only its own prompt, so ship-plan section 2 and verify-and-fix's fix rules put this rule in every dispatch, and ship-issue's Plan stage keeps it out of the plan's commit subjects. The run closes the issue itself (*Set status*).
 
 Do not assume nothing closes the issue. You set the done status, only when the config's `Done means:` is met. If the issue is closed earlier, leave it closed while reruns or fixes are still running, so it does not flip back and forth, and record a `Lesson:`: something closes issues, and the config's `Notes:` need correcting.
 
@@ -46,7 +49,7 @@ Otherwise return candidates only: `gh issue list -R <Repo> --state open --search
 
 ## Where a new issue goes
 
-The config's `Repo:`. One place to choose, the milestone, and only when the repo has open milestones: `gh api repos/<Repo>/milestones` (the API returns open milestones only; never add a `?` query, which the shell expands). The question is "If a new issue: add it to a milestone? (optional)": "No milestone" first, then up to 3 open milestones, soonest `due_on` first (none set: most recently created). No open milestones: no question. If an answer names a related issue, or the new issue must wait for another, link them as "Link two issues" says.
+The config's `Repo:`. One place to choose, the milestone, and only when the repo has open milestones: `gh api repos/<owner>/<name>/milestones --hostname <host>` (the API returns open milestones only; never add a `?` query, which the shell expands). The question is "If a new issue: add it to a milestone? (optional)": "No milestone" first, then up to 3 open milestones, soonest `due_on` first (none set: most recently created). No open milestones: no question. If an answer names a related issue, or the new issue must wait for another, link them as "Link two issues" says.
 
 **No `## GitHub Issues` in the config** (`Tracker: github`, or the tracker question just answered GitHub Issues): draft the section ([config-drafting.md](../config-drafting.md)) with the defaults and no questions:
 

@@ -189,7 +189,8 @@ Next to the skill's required header, the plan needs:
   <skill dir>/../ship-plan/config-format.md. It picks the model that
   implements the task. When in doubt, standard;
 - every commit subject the plan names ends in ` (<KEY-n>)`, as the PR title
-  does (a spec once gave four of five without it);
+  does, and no commit text puts a closing keyword (fix, fixes, closes,
+  resolves…) before the key: on GitHub Issues it closes the issue at merge (a spec once gave four of five without it);
 - never a PR number in text: none exists yet. Cite the issue key.
 - a claim about the existing code that a task relies on ("every X already
   does Y", "no caller passes Z", "only A reads B") is checked with a

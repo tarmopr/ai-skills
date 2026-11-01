@@ -203,7 +203,7 @@ question drafts this section with the defaults, and asks nothing for it.
 
 | Field | Meaning | Default |
 |---|---|---|
-| `Repo:` | `<owner>/<name>` the issues live in | the `origin` repo; required when `Host: azure-devops` |
+| `Repo:` | `<owner>/<name>` the issues live in (`<host>/<owner>/<name>` on GitHub Enterprise) | the `origin` repo; required when `Host: azure-devops` |
 | `Start label:` | Added when implementation starts | `in-progress` |
 | `Review label:` | Replaces the start label when the PR is opened for review; `none` keeps the start label | `in-review` |
 | `Type labels:` | Branch type to the label a new issue gets, e.g. `fix → bug, feature → enhancement`; a label the repo lacks is skipped | `fix → bug, feature → enhancement` |
