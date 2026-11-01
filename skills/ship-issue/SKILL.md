@@ -167,7 +167,7 @@ then write a handoff: the `handoff` skill when it is available, otherwise a
 
 **Read the argument first:**
 
-- **Its first word names an existing `.superpowers/ship-issue/<dir>/`** (an issue key, or with no issue the slug) in this checkout or one `git worktree list` shows: this is a resume, and the rest of the argument is answers. Record each as `Asked: … — <answer>` and a `Ruling: user <date>`, then continue from the ledger's first line.
+- **Its first word names an existing `.superpowers/ship-issue/<dir>/`** (an issue key as file names write it, so GitHub Issues' `#<n>` names `<n>/`; or with no issue the slug) in this checkout or one `git worktree list` shows: this is a resume, and the rest of the argument is answers. Record each as `Asked: … — <answer>` and a `Ruling: user <date>`, then continue from the ledger's first line.
 - **An issue key** (the tracker's *Issue keys*): that is the issue.
 - **Anything else** is a description, with no key yet: go to I1.
 - **No argument:** take the key (with no issue, the slug) from the current branch name, but only if this skill's ledger for that key exists in this checkout; otherwise ask the I1 question. Never take a key from a branch you did not start: it is someone else's work.

@@ -8,7 +8,7 @@ section: write "None".
 ## PR body
 
 ```markdown
-<2–3 sentences: what changes for a user, and why. With an issue: [<ID>](<url>)>
+<2–3 sentences: what changes for a user, and why. With an issue: [<ID>](<url>), only the link: never a closing keyword ("Fixes", "Closes", "Resolves") before it>
 
 ## Plan
 <!-- only when no issue is tracked (not configured, or unavailable): the PR is the record -->

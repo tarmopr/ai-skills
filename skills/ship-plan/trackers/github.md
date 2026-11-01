@@ -19,13 +19,15 @@ Status is labels, progress is comments. There is no board: never call
 
 `gh auth status`, then `gh repo view <Repo> --json hasIssuesEnabled`.
 
-**GitHub Issues configured but unavailable** (not signed in, the call fails, or `hasIssuesEnabled` is `false`): park "GitHub Issues unavailable: <exact error>" in the batch, continue as if no tracker were configured (the PR body carries the plan), and say so in the report. Never retry it through another route. **A `gh issue` call that fails later in the run** gets the same rule; if the PR already exists, post its Plan section with the host's *PR comment*.
+**GitHub Issues configured but unavailable** (not signed in, the call fails, or `hasIssuesEnabled` is `false`): park "GitHub Issues unavailable: <exact error>" in the batch, continue as if no tracker were configured (the PR body carries the plan), and say so in the report. Never retry it through another route. **A `gh issue`, `gh label` or milestones `gh api` call that fails later in the run** gets the same rule; if the PR already exists, post its Plan section with the host's *PR comment*.
 
 ## Issue keys
 
 `#<n>`, `<owner>/<name>#<n>`, or an issue URL `https://<host>/<owner>/<name>/issues/<n>`. Text, titles and comments write `#<n>`; branch names and file names write `<n>`.
 
 Branch pattern: `<type>/<n>-<slug>`.
+
+An issue's open PR (the host's *Find open PRs*, by search) is one whose body links the issue's URL, matched on `/issues/<n>)`, never `#<n>`: a search for `#<n>` or `<n>` matches any PR that mentions the number.
 
 From a branch name, the key is only the digits between `<type>/` and the next `-`: `fix/7-sync-auth` carries `#7`; `fix/2fa-login` carries no key. Numbers are common in branch names, so a branch this run did not start (verify-and-fix on its own, a resumed or someone else's branch) carries a key only when its PR body links that issue (`[#<n>](…/issues/<n>)`) or a ship-plan or ship-issue ledger exists for the branch. Otherwise it has no issue: a hand-made `fix/<n>-page-styling` never comments on `#<n>`.
 
@@ -66,7 +68,7 @@ The config's `Repo:`. One place to choose, the milestone, and only when the repo
 
 `gh issue create -R <Repo> --title "<title>" --body-file <file> --assignee @me`, plus:
 
-- `--label <label>` when `Type labels:` maps the branch type to a label and `gh label list -R <Repo> --search <label> --json name` finds it (a type label is never created);
+- `--label <label>` when `Type labels:` maps the branch type to a label and `gh label list -R <Repo> --search <label> --json name` returns a label whose `name` is exactly `<label>` (`--search` also matches longer names: `bug-bounty` is not `bug`; a type label is never created);
 - `--milestone "<title>"` when the user chose one.
 
 Then *Set status* to the start label. Title: the outcome, not the task ("Notes can be exported as GeoJSON", not "Implement export"); it never starts with a closing keyword.
