@@ -108,13 +108,19 @@ full ship-issue runs; several compactions are expected.
 
 ## Q0. Pre-flight
 
+Every stop after step 5 (the ledger exists) writes `Stopped: <reason>` as the ledger's last line, so a later run sees the queue ended.
+
 The user has just invoked the skill and is probably still there. Everything
 that would stop every sub-issue is found now.
 
 1. **Config.** No `.claude/ship-plan.md`, or no tracker section for its `Tracker:`: stop with one line, "Run `/ship-issue <one sub-issue key>` first: it drafts the config this queue needs." The queue drafts no config.
 2. **Tracker.** `Tracker: github` or `none`: stop with one line, "ship-queue needs a tracker with sub-issues: Linear or Jira." The tracker's *List sub-issues* says so for GitHub Issues.
 3. **Auth,** in parallel: the host's *Auth check* (and your login, as it says), the tracker's *Auth*. A failure stops the queue: no sub-issue could run. Report the exact error.
-4. **A live queue:** this parent's ledger changed in the last 30 minutes (`stat -f %Sm <ledger>` on macOS, `stat -c %y <ledger>` on Linux), or in the last 2 hours with its last line saying it waits: another session holds it. Stop and report. Not when this session wrote it: a queue resumed in the same session after a compaction is its own. Older: resume; when its last `Current:` has no `Result:` after it, the session died during that run: write a `Lesson:`.
+4. **A live queue.** Look for this parent's ledger in this checkout and in every checkout `git worktree list` shows.
+   - **Found in another checkout:** stop with one line, "Resume with `/ship-queue <parent>` from a session in `<that checkout>`." Make nothing: no ledger, no worktree.
+   - **Ended:** its last line is `Summary: posted <time>` (Q4) or `Stopped: <reason>` (a stop): not live. Resume; after a `Stopped:` at `Phase: preflight`, run pre-flight again from step 1.
+   - **Live, held by another session:** any of these changed in the last 30 minutes, or in the last 2 hours with its last line saying it waits (`stat -f %Sm <file>` on macOS, `stat -c %y <file>` on Linux): the queue ledger, or the ship-issue or ship-plan ledger of its open `Current:` sub-issue (a `Current:` with no `Result:` after it; the paths from its `Ledger:` line, else ship-issue's and ship-plan's usual paths). A sub-issue's run takes hours and writes only its own ledgers, so the queue ledger's age alone does not show it. Stop and report, and say that answers given now are taken by `/ship-queue <parent> <KEY>: <answers>` once that session's summary is posted. **Not when this session wrote it:** a queue this session resumes after its own compaction is its own.
+   - **Otherwise:** resume. When the open `Current:` has no `Result:` after it, the session died during that run: write a `Lesson:`.
 5. **The checkout** (*Checkout*). Then write the ledger. A resume keeps the ledger's `Checkout:`; it does not choose again.
 6. **Read the parent** (the tracker's *Read an issue*, with comments and relations) **and its sub-issues** (the tracker's *List sub-issues*, then *Read an issue* for each). A parent with no sub-issues: stop with one line, "<parent> has no sub-issues."
 7. **Whose sub-issue it is.** A sub-issue assigned to someone other than you, or with an open PR (the host's *Find open PRs*, by search for its key) whose author is not you: `blocked: assigned to <name>` (or `PR <url> by <name>`), and it is not run: write its `Result:` line at once, with the next action "reassign it to you, then `/ship-queue <parent>`". No comment on it: it is someone else's issue, and the summary names it. Unassigned or assigned to you: it runs.
@@ -164,12 +170,13 @@ For each sub-issue in order:
 
 | Outcome | How it is read | Next action in the summary |
 |---|---|---|
+| `done, questions pending` | ship-plan ledger `Phase: done`, with an `Asked: … — pending` line (its close-out batch: a sign-in, a follow-up, a lessons answer) | the questions; answer with `/ship-queue <parent> <KEY>: <answers>`. Counts as `done` for dependencies; the queue's `Phase: done` waits for the answers |
 | `done` | ship-plan ledger `Phase: done` | none |
-| `base branch red` | ship-plan's close-out outcome "Base branch red" | its report's reason; **the queue stops** (below) |
+| `base branch red` | ship-plan ledger `Outcome: Base branch red` (its queued close-out line) | its report's reason; **the queue stops** (below) |
+| `awaiting review` | ship-plan `Phase: 4R awaiting review` | who must approve, the PR, and every pending `Asked:` question with the answer line |
 | `waiting for answers` | ship-issue's ledger ends `Waiting: batch …`, or the ship-plan ledger has an `Asked: … — pending` line | the numbered questions; answer with `/ship-queue <parent> <KEY>: <answers>` |
-| `awaiting review` | ship-plan `Phase: 4R awaiting review` | who must approve, and the PR |
 | `awaiting merge` | ship-plan `Phase: 5 awaiting merge` | the hand merge, or the `## Allowed` line ship-plan proposed |
-| `not merged` | ship-plan's close-out outcome "Not merged" | its parked reason |
+| `not merged` | ship-plan ledger `Outcome: Not merged` | its parked reason |
 | `blocked` | a stage reported `blocked`; a tracker call failed; ship-issue I0 stopped (another session holds it, a branch checked out elsewhere); the work is not code (a setting in a vendor dashboard); Q0 step 7 | what the user must do, quoted |
 | `waits for <KEY>` | step 1 | finish `<KEY>` first |
 | `already done` | the tracker's status | none |
@@ -201,6 +208,7 @@ Written once the loop and the sweep are over, or at once when the queue stops:
 4. **Decisions made for you:** the queue's `Ruling:` lines (order, tie-breaks, cycles), each with what it costs if wrong, and every override line not applied.
 
 The same text goes to the parent as one comment (the tracker's *Comment*).
+Then write `Summary: posted <time>` as the ledger's last line: a later run reads it as "this queue has ended" (Q0 step 4).
 When every sub-issue in `Order:` is `done` (an `Order: none` counts), rewrite the first line with
 `Phase: done`. Otherwise write a handoff (*Resume and session end*), so the
 next session finds the queue.
@@ -210,7 +218,7 @@ next session finds the queue.
 The whole queue runs in one checkout, one sub-issue at a time.
 
 - **At pre-flight:** the main checkout on `<base>` and clean (`git status --porcelain` prints nothing): the queue uses it. **When the main checkout is busy, read [../ship-issue/worktree.md](../ship-issue/worktree.md).** Make one worktree for the whole queue with its recipe, steps 0–7, at `<main>/.claude/worktrees/<parent key>` on a detached `origin/<base>`, and enter it. Every sub-issue runs there; worktree.md's "The ship-queue worktree" row lets ship-issue branch in it.
-- **Between sub-issues,** before each run: a branch is **the queue's own** when a ledger the queue's `Ledger:` lines name records it: ship-issue's first-line `Branch:`, ship-plan's `Branch:`, `Lessons PR:` or `Docs PR:` line (ship-plan's queued lessons branch is `docs/ship-plan-lessons-<yyyy-mm-dd>-<KEY-n>`). On the queue's own branch with a clean tree: `git switch <base>` in the main checkout, or `git fetch origin <base>` then `git switch --detach origin/<base>` in the queue's worktree. Already there: nothing. **Anything else** (a dirty tree, a branch no ledger names): stop the queue, every sub-issue not yet run is `not started: checkout busy`, and the summary names the branch and the files. Never `git switch -f`, `--discard-changes`, stash, commit or reset.
+- **Between sub-issues,** before each run: a branch is **the queue's own** when a ledger the queue's `Ledger:` lines name records it: ship-issue's first-line `Branch:`, ship-plan's `Branch:`, `Lessons branch:` or `Docs branch:` line (a queued ship-plan writes the last two when it creates those branches). A branch named `docs/ship-plan-lessons-<yyyy-mm-dd>-<KEY-n>` for a key in `Order:` is the queue's own too, as ship-plan's queued lessons branch. On the queue's own branch with a clean tree: `git switch <base>` in the main checkout, or `git fetch origin <base>` then `git switch --detach origin/<base>` in the queue's worktree. Already there: nothing. **Anything else** (a dirty tree, a branch no ledger names): stop the queue, every sub-issue not yet run is `not started: checkout busy`, and the summary names the branch and the files. Never `git switch -f`, `--discard-changes`, stash, commit or reset.
 - **Resuming a sub-issue whose branch exists** (its ship-issue ledger's first line names one, and the branch is not merged): switch to that branch before invoking ship-issue, so ship-issue's section W finds "on this issue's branch: stay".
 
 ## Resume and session end
@@ -221,10 +229,11 @@ The whole queue runs in one checkout, one sub-issue at a time.
   - **Re-read the sub-issues.** With a worked-out order, new sub-issues join at the end in analysis order, and the recorded order is kept. With an argument-given order, nothing is added.
   - **Run the loop again** over every sub-issue whose last `Result:` is not `done` or `already done`:
     - `waiting for answers` with answers in this argument: `ship-issue <KEY> <answers>`, its resume form. With none: it stays as it is, and is not invoked.
-    - `awaiting review`: not in the loop; the review sweep (Q3) polls it once.
+    - `done, questions pending` with answers: write `Current: <KEY> started <time>`, then invoke **ship-plan** with the answers (`ship-plan <answers>`); ship-issue would stop at its I0 row for a Done issue. ship-plan's queued mode takes this run's done ledger, and its section 0, step 2 applies the answers. Read the outcome again (Q2 steps 5–7). With none: it stays as it is.
+    - `awaiting review`: not in the loop; the review sweep (Q3) polls it once, passing this argument's answers for it if any (`ship-issue <KEY> <answers>`).
     - `awaiting merge`, `not merged`, `blocked`: invoke `ship-issue <KEY>`; it routes to ship-plan, which resumes from its ledger.
     - `waits for <KEY>`, `not started`: as new.
-  - **Answers for a key that is not waiting** (already done, not in the queue, not a sub-issue): report them in the summary as not used, and never pass them to ship-issue: a run that is done is never resumed with answers it did not ask for.
+  - **Answers for a key with no pending question** (no `Waiting: batch` and no `Asked: … — pending` in its ledgers: already done before the queue, not in the queue, not a sub-issue): report them in the summary as not used, and never pass them to ship-issue: a run that is done is never resumed with answers it did not ask for.
   - Then Q3 and Q4 as usual.
 
 ## Red flags

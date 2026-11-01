@@ -182,6 +182,98 @@ Answer, in order:
    `/ship-queue BILL-500`. What runs, and does ship-issue's I0 stop it as
    another session's live run?
 
+## Prompt S17e
+
+You are running the `ship-queue` skill. Its files are in SKILLDIR/ship-queue/,
+and it uses SKILLDIR/ship-issue/, SKILLDIR/ship-plan/ and
+SKILLDIR/verify-and-fix/. Read SKILLDIR/ship-queue/SKILL.md and every file it
+links that matters for this run.
+
+[The repo]
+
+Three separate moments. In each, this is a **new session**: it has never run
+this queue before.
+
+Answer, in order:
+
+1. `.superpowers/ship-queue/BILL-500/ledger.md` in `/work/billing-api` was
+   last changed 50 minutes ago. Its last line is
+   `Current: BILL-504 started 2026-11-02 11:40`, with no `Result:` after it.
+   BILL-504's ship-plan ledger,
+   `.superpowers/ship-plan/feature-BILL-504-billing-details/ledger.md`, was
+   changed 4 minutes ago. The user types `/ship-queue BILL-500 BILL-503: 1A`.
+   What happens? Is `ship-issue` invoked?
+2. Instead: the queue's previous session ran every sub-issue, posted its
+   summary to BILL-500, wrote its handoff and ended 10 minutes ago. BILL-504's
+   last `Result:` is `waiting for answers`. The user types
+   `/ship-queue BILL-500 BILL-504: 1A, 2B`. What happens? Is `ship-issue`
+   invoked, and with which arguments?
+3. Instead: the queue ran in its own worktree,
+   `/work/billing-api/.claude/worktrees/BILL-500` (`git worktree list` shows
+   it), and its ledger is there, changed 3 hours ago. This session is in the
+   main checkout `/work/billing-api`, which is on `main` and clean, and has no
+   ship-queue ledger. The user types `/ship-queue BILL-500`. What happens? Is a
+   new ledger or a new worktree made?
+
+## Prompt S17f
+
+You are running the `ship-queue` skill. Its files are in SKILLDIR/ship-queue/,
+and it uses SKILLDIR/ship-issue/, SKILLDIR/ship-plan/ and
+SKILLDIR/verify-and-fix/. Read SKILLDIR/ship-queue/SKILL.md and every file it
+links that matters for this run.
+
+[The repo]
+
+**Where the run stands:** the queue is running in `/work/billing-api` with
+order `BILL-501, BILL-504, BILL-503, BILL-502`.
+
+Answer, in order:
+
+1. `ship-issue BILL-501` returned. Its ship-plan ledger's first line is
+   `Phase: done | … | merge: 4f2a9c1 | …`, and it has the line
+   `Asked: Sign in to the staging URL so scenarios 4 and 5 can run? — pending`.
+   What outcome does the queue record, and what next action? Later the user
+   types `/ship-queue BILL-500 BILL-501: signed in`: which skill is invoked,
+   with which arguments?
+2. Same BILL-501 run, but its ship-plan ledger has no `Lessons PR:` line:
+   ship-plan pushed its lessons branch with answers pending and opened no PR.
+   The ledger has the line
+   `Lessons branch: docs/ship-plan-lessons-2026-11-02-BILL-501`. The checkout is
+   on that branch, clean. What does the queue do before BILL-504?
+3. `ship-issue BILL-502` returned. Its ship-plan ledger's first line is
+   `Phase: 4R awaiting review | …`, and it also has
+   `Asked: Keep the old meter for one release? — pending`. What outcome is
+   recorded? Is BILL-502 polled in the review sweep? What does the summary say
+   the user must do?
+4. A different queue: BILL-503 says "Do this after BILL-506", and BILL-506 was
+   already Done before the queue started. Does BILL-503 run?
+
+## Prompt S17g
+
+You are running the `ship-issue` skill and the `ship-plan` skill it hands off
+to. Their files are in SKILLDIR/ship-issue/ and SKILLDIR/ship-plan/; they use
+SKILLDIR/verify-and-fix/. Read SKILLDIR/ship-issue/SKILL.md and
+SKILLDIR/ship-plan/SKILL.md and every file they link that matters for this run.
+
+[The repo]
+
+Answer, in order:
+
+1. A new session. The user types `/ship-issue BILL-504` directly. The
+   checkout holds `.superpowers/ship-queue/BILL-500/ledger.md`, last changed
+   yesterday, whose last line is `Current: BILL-504 started 2026-11-01 16:10`
+   with no `Result:` after it: that queue's session died. The Spec stage
+   returns two `Q<n>` lines. Is `AskUserQuestion` called, and with which answer
+   line?
+2. A queued ship-plan run for BILL-501 (ship-queue invoked ship-issue, which
+   invoked ship-plan, in this session; the queue ledger's last line is
+   `Current: BILL-501 started …`) closes out "Base branch red": merged, and the
+   base branch is still red after red-base.md. Which lines does it write to its
+   own ledger at close-out?
+3. The same queued run, on another day, ends Done, and its lessons batch is
+   not empty, so section 8 pushes the lessons branch with answers pending and
+   opens no PR yet. Which ledger line names that branch?
+
 ## Pass if
 
 **S17a**
@@ -208,9 +300,10 @@ Answer, in order:
 - Q1 or Q2: no second comment on BILL-504 (its batch comment is already there).
 - Q2: BILL-503 `waits for BILL-504`, one Linear `save_comment` on BILL-503,
   no `ship-issue BILL-503` call; then `ship-issue BILL-502` runs.
-- Q3: `git switch main`, allowed because the ship-plan ledger's
-  `Lessons PR:` line (linked by the queue's `Ledger:` line) makes the
-  lessons branch the queue's own, and the tree is clean.
+- Q3: `git switch main`, allowed because the branch name
+  `docs/ship-plan-lessons-<yyyy-mm-dd>-<KEY-n>` (or the ship-plan ledger's
+  `Lessons branch:` line) for a key in `Order:` makes it the queue's own,
+  and the tree is clean.
 - Q4: the queue stops; BILL-504, BILL-503 and BILL-502 are
   `not started: base branch red`; the summary is written and posted to
   BILL-500; no further `ship-issue` call.
@@ -241,3 +334,31 @@ Answer, in order:
   (every queued sub-issue done).
 - Q4: `ship-issue BILL-502` with no argument; not stopped as another
   session's run (the queue's `Current:` names it, so it is this session).
+
+**S17e**
+- Q1: the queue is live (the open `Current:` sub-issue's ship-plan ledger
+  changed 4 minutes ago): stop and report that another session holds it, and
+  that the answers wait until it has ended; no `ship-issue` call.
+- Q2: not live (the previous session ended after its summary): a resume;
+  `ship-issue BILL-504 1A, 2B`.
+- Q3: the ledger in the worktree is found; nothing new is made (no new ledger,
+  no `git worktree add`); the queue says to resume from a session in
+  `/work/billing-api/.claude/worktrees/BILL-500`.
+
+**S17f**
+- Q1: an outcome that is not plain `done`: done with questions pending, with
+  the question and the answer line `/ship-queue BILL-500 BILL-501: <answers>`;
+  the later answers are passed on to the run (not reported as unused and
+  dropped).
+- Q2: `git switch main`: the `Lessons branch:` line makes it the queue's own
+  branch; the queue does not stop.
+- Q3: polled in the review sweep; the summary names both the approval and
+  the pending question.
+- Q4: BILL-503 runs: BILL-506 being done meets the dependency.
+
+**S17g**
+- Q1: `AskUserQuestion` (or a numbered message) as unqueued, answer line
+  `/ship-issue BILL-504 <your answers>`: the stale queue ledger does not make
+  a direct run queued.
+- Q2: a line naming the close-out outcome, `Outcome: Base branch red`.
+- Q3: `Lessons branch: docs/ship-plan-lessons-<yyyy-mm-dd>-BILL-501`.
