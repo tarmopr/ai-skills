@@ -63,10 +63,11 @@ Answer, in order:
 - The draft has `Host: github` under `## Repo`, with the remote as its source.
 - The host is never asked.
 - The tracker question is asked exactly once in the run, as "Which tracker
-  does this repo use?", with the options Jira, Linear and "No tracker (the PR
-  is the record)", and the run waits for its answer.
+  does this repo use?", with the options Jira, Linear, GitHub Issues and "No
+  tracker (the PR is the record)", and the run waits for its answer.
 - Answer 5: the draft gets `Tracker: none`, no question about a Jira or
   Linear issue follows, and no file under `ship-plan/trackers/` is read (the
   PR is the record).
 - Answer 6: the draft gets `Tracker: jira`, and `ship-plan/trackers/jira.md`
-  is read; `ship-plan/trackers/linear.md` is not.
+  is read; `ship-plan/trackers/linear.md` and `ship-plan/trackers/github.md`
+  are not.

@@ -6,7 +6,8 @@ Every command passes `-R <Repo>`: the config's `## GitHub Issues` `Repo:`, else
 the `origin` repo as `<owner>/<name>`. `gh` takes the host, GitHub Enterprise
 included, from it. Labels and `Done means:` come from the config's
 `## GitHub Issues`; follow its `Notes:`. A body or comment the run writes goes
-in a file in the ledger dir and is passed with `--body-file`, never inline.
+in a file in the ledger dir (before the ledger dir exists, in `.superpowers/`)
+and is passed with `--body-file`, never inline.
 
 Status is labels, progress is comments. There is no board: never call
 `gh project`.
@@ -45,7 +46,7 @@ Otherwise return candidates only: `gh issue list -R <Repo> --state open --search
 
 ## Where a new issue goes
 
-The config's `Repo:`. One place to choose, the milestone, and only when the repo has open milestones: `gh api repos/<Repo>/milestones?state=open`. The question is "If a new issue: add it to a milestone? (optional)": "No milestone" first, then up to 3 open milestones, soonest `due_on` first (none set: most recently created). No open milestones: no question. If an answer names a related issue, or the new issue must wait for another, link them as "Link two issues" says.
+The config's `Repo:`. One place to choose, the milestone, and only when the repo has open milestones: `gh api repos/<Repo>/milestones` (the API returns open milestones only; never add a `?` query, which the shell expands). The question is "If a new issue: add it to a milestone? (optional)": "No milestone" first, then up to 3 open milestones, soonest `due_on` first (none set: most recently created). No open milestones: no question. If an answer names a related issue, or the new issue must wait for another, link them as "Link two issues" says.
 
 **No `## GitHub Issues` in the config** (`Tracker: github`, or the tracker question just answered GitHub Issues): draft the section ([config-drafting.md](../config-drafting.md)) with the defaults and no questions:
 
@@ -60,7 +61,7 @@ The config's `Repo:`. One place to choose, the milestone, and only when the repo
 
 ## Create an issue
 
-`gh issue create -R <Repo> --title "<title>" --body-file <ledger dir>/issue-body.md --assignee @me`, plus:
+`gh issue create -R <Repo> --title "<title>" --body-file <file> --assignee @me`, plus:
 
 - `--label <label>` when `Type labels:` maps the branch type to a label and `gh label list -R <Repo> --search <label> --json name` finds it (a type label is never created);
 - `--milestone "<title>"` when the user chose one.
@@ -111,7 +112,7 @@ Status is a label. Use only the labels the config names.
 - **A label the repo lacks** is created once, before it is first added: `gh label list -R <Repo> --search <label> --json name`, and when no exact name matches, `gh label create <label> -R <Repo> --color <hex> --description "<text>"` (start label `fbca04`, "Work in progress"; review label `0e8a16`, "PR open for review").
 - **Start label:** `gh issue edit <n> -R <Repo> --add-label <Start label> --add-assignee @me`, and `--remove-label <Review label>` when the issue has it. Applied again after a revert: first `gh issue reopen <n> -R <Repo>` if the issue is closed, then the start label, with the failure in a comment.
 - **Review label:** `gh issue edit <n> -R <Repo> --add-label <Review label> --remove-label <Start label>`, if the config names one. `Review label: none`: the issue keeps the start label.
-- **Done,** **only when `Done means:` is met** (with CI None, Done means is "merged"): `gh issue edit <n> -R <Repo> --remove-label <Start label> --remove-label <Review label>` (only the labels it has), then `gh issue close <n> -R <Repo> --reason completed --comment "<Merged comment>"`. Not met (base branch red, not merged): the issue stays open with its label, and the reason goes in a comment.
+- **Done,** **only when `Done means:` is met** (with CI None, Done means is "merged"): `gh issue edit <n> -R <Repo> --remove-label <Start label> --remove-label <Review label>` (only the labels it has), then `gh issue close <n> -R <Repo> --reason completed`. The done comment is posted with *Comment* first; `gh issue close` takes no comment. Not met (base branch red, not merged): the issue stays open with its label, and the reason goes in a comment.
 
 ## Link the PR
 
