@@ -40,6 +40,10 @@ Otherwise return candidates only: `list_issues` with the configured team and a `
 
 `get_issue` with the id, and its comments with `list_comments`. The issue description may be the plan; with Linear unavailable there is no plan, so park it and ask now.
 
+## List sub-issues
+
+Used by ship-queue. `list_issues` with `parentId: <parent key>` and `fields: ["id", "title", "status", "statusType", "priority", "assignee", "createdAt"]`, following `cursor` while `hasNextPage` is true. Then `get_issue` with `includeRelations: true` for each sub-issue: its `relations.blockedBy` keys are its hard dependencies. A `statusType` of completed or canceled, or a duplicate, is a done status category. Tracker order: creation time (`createdAt`, oldest first); the tools return no manual sort order.
+
 ## Where a new issue goes
 
 The configured team and project, from the config's `## Linear`. No question is asked. If an answer names a related issue, or the new issue must wait for another, link them as "Link two issues" says.
