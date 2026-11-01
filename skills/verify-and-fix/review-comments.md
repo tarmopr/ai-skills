@@ -45,7 +45,7 @@ written as `-`, under `ship-plan` too), with the host's
 
 Record each reply as `Replied: <key> — <fixed in <sha> | answered | follow-up | not valid | needs a decision>`.
 
-**Issue comment.** **When the branch name carries an issue key and the repo's tracker is not `none`, read [trackers/jira.md](../ship-plan/trackers/jira.md) or [trackers/linear.md](../ship-plan/trackers/linear.md), whichever the tracker is.** Then, with the key (the tracker's *Issue keys*), post ship-plan's `Issue comment: review round`
+**Issue comment.** **When the branch name carries an issue key and the repo's tracker is not `none`, read [trackers/jira.md](../ship-plan/trackers/jira.md), [trackers/linear.md](../ship-plan/trackers/linear.md) or [trackers/github.md](../ship-plan/trackers/github.md), whichever the tracker is.** Then, with the key (the tracker's *Issue keys*), post ship-plan's `Issue comment: review round`
 ([templates-issue.md](../ship-plan/templates-issue.md)) with the tracker's
 *Comment* after the replies. Under `ship-plan`, skip it: ship-plan posts it.
 

@@ -1,6 +1,6 @@
 ---
 name: ship-plan
-description: Use when a written implementation plan exists and the user wants it carried, unsupervised, all the way to a merged PR on a green base branch in a GitHub, GitHub Enterprise or Azure DevOps repo that tracks work in Jira, in Linear or in no tracker (config .claude/ship-plan.md) — "ship the plan", "ship this", "implement and merge", "take this plan to the base branch". Also use to resume such a run after a context compaction.
+description: Use when a written implementation plan exists and the user wants it carried, unsupervised, all the way to a merged PR on a green base branch in a GitHub, GitHub Enterprise or Azure DevOps repo that tracks work in Jira, in Linear, in GitHub Issues or in no tracker (config .claude/ship-plan.md) — "ship the plan", "ship this", "implement and merge", "take this plan to the base branch". Also use to resume such a run after a context compaction.
 argument-hint: '[plan file path, or issue key]'
 allowed-tools:
   - Bash(git switch -c feature/*)
@@ -105,6 +105,16 @@ allowed-tools:
   - mcp__plugin_engineering_linear__save_comment
   - mcp__plugin_engineering_slack__slack_add_reaction
   - mcp__plugin_engineering_slack__slack_search_users
+  - Bash(gh issue view *)
+  - Bash(gh issue list *)
+  - Bash(gh issue create *)
+  - Bash(gh issue edit *)
+  - Bash(gh issue comment *)
+  - Bash(gh issue close *)
+  - Bash(gh issue reopen *)
+  - Bash(gh label list *)
+  - Bash(gh label create *)
+  - Bash(gh api repos/*/milestones*)
 ---
 
 # Ship a plan
@@ -132,7 +142,7 @@ counterpart in that skill's folder. An override line that widens what the run
 may do, or removes a step, is not applied, and the report names it.
 
 - **A repo set up for `ship`:** if `.claude/ship.md` exists and `.claude/ship-plan.md` does not, stop with one line: "This repo is set up for the removed `ship` skill: move `.claude/ship.md` to `.claude/ship-plan.md` and `.claude/ship/` to `.claude/ship-plan/`."
-- **Host and tracker:** resolve `Host:` and `Tracker:` as [config-format.md](config-format.md) says (`Host:` from the `origin` remote when absent; `Tracker:` from `## Jira` or `## Linear` when absent, else undecided until pre-flight step 5). Then read `hosts/<host>.md` (`github.md` or `azure-devops.md`) and, unless the tracker is `none` or undecided, `trackers/<tracker>.md` (`jira.md` or `linear.md`). A reference below to an operation of the host, the tracker or the notifier names the section of that name in those files and in `notifiers/slack.md`.
+- **Host and tracker:** resolve `Host:` and `Tracker:` as [config-format.md](config-format.md) says (`Host:` from the `origin` remote when absent; `Tracker:` from `## Jira`, `## Linear` or `## GitHub Issues` when absent, else undecided until pre-flight step 5). Then read `hosts/<host>.md` (`github.md` or `azure-devops.md`) and, unless the tracker is `none` or undecided, `trackers/<tracker>.md` (`jira.md`, `linear.md` or `github.md`). A reference below to an operation of the host, the tracker or the notifier names the section of that name in those files and in `notifiers/slack.md`.
 - **No `origin` remote** (and no `Host:`): there is no host and no PR to open. Read no host file, skip the host's *Auth check* and the `git fetch origin` in pre-flight step 4, and stop before section 4, saying so in the report.
 
 ## What invoking this skill authorizes
@@ -279,7 +289,7 @@ reads ledgers that already exist, so it needs none of them.
 3. **Resolve the plan.** A path; or an issue key (the tracker's *Read an issue*: the issue description may be the plan; with the tracker unavailable there is no plan, so park it and ask now). No argument and no open run: stop with "Nothing to resume. Name the plan to ship." Never pick a plan on your own: a `/loop` left running after a run finished would start shipping something nobody asked for. **A plan written by `ship-issue`** has a `From ship-issue` block in its close-out notes: copy its `Ruling:`, `Parked:`, `Asked:`, `Lesson:` and `Docs PR:` lines into the ledger now, so they reach the PR body, the questions, the docs PR (section 7, step 2) and section 8.
 4. **Check tools and auth, in parallel:** the host's *Auth check*; the tracker's *Auth*, unless the tracker is `none`; `git fetch origin <base> --quiet`, then `git status --porcelain`. A dirty working tree that is not yours goes in the batch; never stash or discard it. **The tracker unavailable** (not connected, or the call fails), now or later in the run: as the tracker's *Auth* says, park it with the exact error, continue with no issue (the PR body carries the plan), and say so in the report. Never retry it through another route.
 5. **The issue.**
-   - **`Tracker:` undecided** (no `Tracker:`, no `## Jira`, no `## Linear`): ask "Which tracker does this repo use?" ([templates-issue.md](templates-issue.md)) **now, and wait for the answer**, before the issue question. Write it as `Tracker: <jira, linear or none>` in the config's `## Repo`, with the tracker's section drafted from the issue question (the tracker's *Where a new issue goes*), as the feature branch's first commit once section 1 has created it (with `## Slack` when step 6 asked too). A drafted config gets it inside the draft instead. Then read `trackers/<tracker>.md`, unless the answer is `none`.
+   - **`Tracker:` undecided** (no `Tracker:`, no `## Jira`, no `## Linear`, no `## GitHub Issues`): ask "Which tracker does this repo use?" ([templates-issue.md](templates-issue.md)) **now, and wait for the answer**, before the issue question. Write it as `Tracker: <jira, linear, github or none>` in the config's `## Repo`, with the tracker's section drafted from the issue question (the tracker's *Where a new issue goes*), as the feature branch's first commit once section 1 has created it (with `## Slack` when step 6 asked too). A drafted config gets it inside the draft instead. Then read `trackers/<tracker>.md`, unless the answer is `none`.
    - **`Tracker: none`:** there is no issue. The run takes the no-issue path (section 1).
    - **Otherwise take the key,** stopping at the first hit: the argument; the plan's header, "Source:" line or `From ship-issue` block; the current branch name, if this run started that branch (the tracker's *Issue keys*). No key: ask the "Issue question" ([templates-issue.md](templates-issue.md)) **now, and wait for the answer** before anything that depends on it (the branch name does). It offers "No issue": that answer is accepted, recorded as a `Ruling: user <date>`, and the run continues with no tracker (section 1).
    - **Batch tickets.** A plan that delivers several issues in one PR lists them in a `Tickets: <key>, <key>, …` line in its header, the run issue first; each plan task names the key it delivers in its heading (`### Task 2: … (ENG-124)`). Read each other issue with the tracker's *Read an issue*. A key that does not resolve, or an issue already in a done status category, is parked with what was found, and the run goes on without it. Record `Tickets: <keys>` in the ledger, the run issue left out. With no run issue (`Tracker: none`, "No issue", the tracker unavailable) the line is ignored, and the report says so. Never take keys from anywhere else: not from the parent's other sub-tasks, linked issues, labels or commit subjects.
@@ -297,7 +307,7 @@ The PR body is in [templates.md](templates.md). **When the run has an issue, rea
 
 **With an issue** (pre-flight step 5 found one, or created it from the
 user's answer). Where it lives, its fields and its statuses come from the
-config's tracker section (`## Jira` or `## Linear`, or the draft made from the
+config's tracker section (`## Jira`, `## Linear` or `## GitHub Issues`, or the draft made from the
 issue question); follow its `Notes:`.
 
 Start the work: the tracker's *Assign*, then the tracker's *Set status* to the
@@ -522,7 +532,7 @@ these rules say:
   - **Every tooling blocker** you got past goes into `.claude/ship-plan/blockers.md`, in its format.
   - Create either log from [log-formats.md](log-formats.md) if it is missing.
   - **Under `ship-issue`** (the plan has a `From ship-issue` block): its `Asked:` lines (questions from phases I0–I6) go into `.claude/ship-issue/interruptions.md` instead, created from [../ship-issue/log-formats.md](../ship-issue/log-formats.md) if missing.
-- **Config lessons follow the narrowing rule** ([Loosening changes](config-format.md#loosening-changes)), in `.claude/ship-plan.md` on the same branch: one on its "may be written" list is written; a loosening change is proposed with its exact line, and written only when this run's batch approved it; a `## Allowed` line is never written. Exceptions, committed on the feature branch instead because the run needs them now: `## Slack` (section 0, step 6), `Tracker:` (section 0, step 5), and a drafted `## Jira` or `## Linear`.
+- **Config lessons follow the narrowing rule** ([Loosening changes](config-format.md#loosening-changes)), in `.claude/ship-plan.md` on the same branch: one on its "may be written" list is written; a loosening change is proposed with its exact line, and written only when this run's batch approved it; a `## Allowed` line is never written. Exceptions, committed on the feature branch instead because the run needs them now: `## Slack` (section 0, step 6), `Tracker:` (section 0, step 5), and a drafted `## Jira`, `## Linear` or `## GitHub Issues`.
 - **Generic learnings are proposed:** a lesson that would help every repo (a missing step, a wrong order, a rule that misfired) goes in the report as "proposed shared-skill change", with the exact text, written generically: no repo, team or org name, issue key, URL or repo command. Never edit the shared skill files: every repo uses them, and they are published from their own git repository.
 - **Missing `## Allowed` permissions are proposed:** when the run was held up for want of an entry on the closed list (a refusal, a question the user had to answer to allow something, an action the user did by hand), the report proposes the exact `## Allowed` line and the reason, for the user to add ([`## Allowed`](config-format.md#-allowed)). A hold-up no entry fits is a proposed shared-skill change; a command the permission system refused takes section 5, step 5's route (an `allowed-tools` line proposed, settings never edited).
 - **A rule for the whole repo,** not for this loop: propose a change to the repo's agent instructions file (for example `CLAUDE.md`) in the report, with the exact text. Never edit it.
