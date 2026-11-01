@@ -195,7 +195,7 @@ Next to the skill's required header, the plan needs:
 - a claim about the existing code that a task relies on ("every X already
   does Y", "no caller passes Z", "only A reads B") is checked with a
   `git grep` before it is written, and the plan quotes the matches it
-  counted. A plan once said every Stripe failure log line already carried
+  counted. A plan once said every payment-failure log line already carried
   the error fields; several did not, and they surfaced across three review
   rounds.
 

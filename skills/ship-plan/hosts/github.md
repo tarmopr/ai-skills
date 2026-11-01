@@ -55,7 +55,7 @@ In `gh pr create`'s output, and in `gh pr view <n> --json number,url`.
 ## Find open PRs
 
 - **The branch's own PR:** `gh pr view --json number,url,reviewDecision`.
-- **By search:** `gh pr list --state open --search "<KEY-n>"` (an issue's PR), `gh pr list --state open --search lessons` (open lessons PRs).
+- **By search:** `gh pr list --state open --search "<KEY-n>"` (an issue's PR; with GitHub Issues as the tracker, `gh pr list --state open --limit 200 --json number,body --jq '.[] | select(.body | contains("/issues/<n>)")) | .number'` instead), `gh pr list --state open --search lessons` (open lessons PRs).
 - **A named PR's state:** `gh pr view <n> --json state,mergedAt,headRefOid`, then `git fetch origin <its head branch>` and `git log --oneline origin/<base>..origin/<its head branch>`.
 - **By changed files under a folder** (copies in flight): `gh pr list --state open --json number,files --jq '.[] | select(any(.files[]; .path | startswith("<that folder>/"))) | .number'`, then `gh pr diff <n> | grep -n -e <name>` for each PR it lists: a hit is a copy in flight.
 
