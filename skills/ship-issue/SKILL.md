@@ -3,6 +3,7 @@ name: ship-issue
 description: Use when the user wants an issue, or a problem described in words, taken all the way from idea to a merged PR on a green base branch without supervision, including the design, spec and plan — "ship PROJ-123 end to end", "from issue to merge", "brainstorm, plan and ship this". Also use to resume such a run after a context compaction.
 argument-hint: '[issue key | a description of the problem] [answers to a parked batch]'
 allowed-tools:
+  - Bash(printenv SHIP_QUEUE_PARENT)
   - Bash(git switch -c feature/*)
   - Bash(git switch -c fix/*)
   - Bash(git switch -c docs/*)
@@ -310,18 +311,18 @@ main checkout or a worktree): stay. **When the current checkout is dirty or on a
 
 ## Queued mode (ship-queue)
 
-**A run is queued** when it was started by ship-queue in this session
-(ship-queue invoked this skill from its loop or its review sweep) and a
-ship-queue ledger in this checkout (`.superpowers/ship-queue/*/ledger.md`) has
-a `Current: <KEY> started …` line naming this run's issue, with no
-`Result: <KEY>` line after it. A leftover queue ledger alone does not make a
+**A run is queued** when it was started by ship-queue as its child session
+(`printenv SHIP_QUEUE_PARENT` prints a parent key: ship-queue's *Child
+sessions* sets it) and that parent's ship-queue ledger in this checkout
+(`.superpowers/ship-queue/<parent>/ledger.md`) has a `Current: <KEY> started …`
+line naming this run's issue, with no `Result: <KEY>` line after it. A leftover queue ledger alone does not make a
 run the user started queued: such a run asks as unqueued. The queue
 started this run and waits for it to end; nobody is watching it. Everything
 above applies, with these changes:
 
 - **Ask nothing: never `AskUserQuestion`, and never wait for a reply,** at every point this skill would ask: I1's questions, the I3 batch, a question found after the batch. Write the ledger lines exactly as unqueued (`Asked: … — pending`, `Parked:`, and for I3 the `Waiting: batch …` line). Then post the batch as one comment on the issue (the tracker's *Comment*): the questions numbered, each with its options and the recommendation first, ending with the answer line **"Answer with `/ship-queue <parent> <KEY>: <your answers>`."** (`<parent>` is the queue ledger's `Parent:`), so the user's answers resume the queue, not this run alone; the queue's resume form is `/ship-queue <parent> <KEY>: <answers>`. Carry on with everything the answers do not block (the Spec stage and its commit), then end the run.
 - **A question before the issue is read** (a tracker call failing at I1) has no issue to comment on: write it to the ledger with its exact error, and end the run.
-- **I0's live-run row** does not apply to this run's own issue's ledgers in the queue ledger's `Checkout:`: the queue that names it in `Current:` is this session, and its own Q0 step 4 already checked that no other session holds the queue. A ledger for the issue in any other checkout still counts.
+- **I0's live-run row** does not apply to this run's own issue's ledgers in the queue ledger's `Checkout:`: the queue that names it in `Current:` is this run's parent session, which started this child after its own Q0 step 4 checked that no other session holds the queue, and whose earlier child of this sub-issue (a cut-off run being resumed) has ended. A ledger for the issue in any other checkout still counts.
 - **No session-end handoff** of this run's own: the queue writes one for the whole queue.
 - **ship-plan** runs in its own queued mode (its "Queued mode (ship-queue)" section), found the same way.
 

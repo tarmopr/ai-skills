@@ -3,6 +3,7 @@ name: ship-plan
 description: Use when a written implementation plan exists and the user wants it carried, unsupervised, all the way to a merged PR on a green base branch in a GitHub, GitHub Enterprise or Azure DevOps repo that tracks work in Jira, in Linear, in GitHub Issues or in no tracker (config .claude/ship-plan.md) — "ship the plan", "ship this", "implement and merge", "take this plan to the base branch". Also use to resume such a run after a context compaction.
 argument-hint: '[plan file path, or issue key]'
 allowed-tools:
+  - Bash(printenv SHIP_QUEUE_PARENT)
   - Bash(git switch -c feature/*)
   - Bash(git switch -c fix/*)
   - Bash(git switch -c docs/*)
@@ -562,10 +563,11 @@ log files on the feature branch mixes them into the product PR.
 
 ## Queued mode (ship-queue)
 
-**A run is queued** when it was started by ship-queue in this session
-(ship-queue invoked ship-issue, which invoked this skill, or ship-queue invoked
-it directly with answers) and a ship-queue ledger in this checkout
-(`.superpowers/ship-queue/*/ledger.md`) has a `Current: <KEY> started …` line
+**A run is queued** when it was started by ship-queue as its child session
+(`printenv SHIP_QUEUE_PARENT` prints a parent key; the child ran ship-issue,
+which invoked this skill, or ran this skill directly with answers) and that
+parent's ship-queue ledger in this checkout
+(`.superpowers/ship-queue/<parent>/ledger.md`) has a `Current: <KEY> started …` line
 naming this run's issue (its ledger's first-line `Issue:`, or the plan's
 `From ship-issue` block before the ledger exists), with no `Result: <KEY>` line
 after it. A leftover queue ledger alone does not make a run the user started

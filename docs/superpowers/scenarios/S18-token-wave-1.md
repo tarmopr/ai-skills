@@ -167,7 +167,7 @@ No run of BILL-701 has started before.
 
 **S18d**
 
-- Q1: before the run: `Current: BILL-701 started <time>`, the first line's `Current:` rewritten, and `Child: BILL-701 run 1 <path>`. The run starts with a Bash call with `run_in_background: true` whose command is `SHIP_QUEUE_PARENT=BILL-700 claude -p "<a prompt that invokes ai-skills:ship-issue with the arguments BILL-701>" --model opus --effort high --permission-mode auto --output-format json > <a path under .superpowers/ship-queue/BILL-700/>`. Not the Skill tool in the queue's own session.
+- Q1: before the run: `Current: BILL-701 started <time>`, the first line's `Current:` rewritten, and `Child: BILL-701 run 1 <path>`. The run starts with a Bash call with `run_in_background: true` whose command is `SHIP_QUEUE_PARENT=BILL-700 claude -p` with `--output-format json`, `--model opus`, `--effort high` and `--permission-mode auto` (in any order), a prompt that invokes `ai-skills:ship-issue` with the arguments `BILL-701`, and its output redirected to a path under `.superpowers/ship-queue/BILL-700/`. Not the Skill tool in the queue's own session.
 - Q2: it waits for the background task's completion notification. No `sleep` and no polling.
 - Q3: `Cost: BILL-701 run 1 — $38.2, 412 turns, 150 min` (any rounding of the same numbers), the `Ledger:` line, and `Result: BILL-701 done — …`, with `Current:` rewritten to `none`.
 - Q4: BILL-702's outcome is `cut off`. The queue stops: BILL-703 is `not started: session limit`, and BILL-702 is not recorded as `blocked`. Then the summary (Q4 of the skill) and a handoff whose resume line is `/ship-queue BILL-700`.
