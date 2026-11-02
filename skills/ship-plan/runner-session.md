@@ -22,13 +22,15 @@ Run from the checkout, with the Bash tool and `run_in_background`:
 
 | Run | Command |
 |---|---|
-| one issue | `<runner> start issue <KEY> --permission-mode <m>` |
-| a queue | `<runner> start queue <PARENT> <KEY>,<KEY>… --deps <KEY>:<DEP>,… --permission-mode <m>` |
-| a plan | `<runner> start plan <path> --permission-mode <m>` |
-| verify | `<runner> start verify <branch> --permission-mode <m>` (the checkout must be on `<branch>`) |
+| one issue | `<runner> start issue '<KEY>' --permission-mode <m>` |
+| a queue | `<runner> start queue '<PARENT>' '<KEY>,<KEY>…' --deps '<KEY>:<DEP>,…' --permission-mode <m>` |
+| a plan | `<runner> start plan '<path>' --permission-mode <m>` |
+| verify | `<runner> start verify '<branch>' --permission-mode <m>` (the checkout must be on `<branch>`) |
 
+- **Quote every key, list and path** in single quotes, as above: GitHub Issues' `#<n>` unquoted starts a shell comment (`'#<n>'`).
+- **The checkout, before every `start`:** clean (`git status --porcelain` shows nothing outside `.superpowers/`) and on the base branch; for `verify`, on `<branch>`. Otherwise the runner refuses with exit 2 and starts nothing. A rerun (after a cut-off or after answers) can find it on the run's own branch: when it is clean, `git switch <base>` first (the children switch back to their branch from the ledgers); when it is dirty, tell the user and start nothing. Never stash, commit or discard anything.
 - `<m>` is `## Queue` `Child permission mode:` (default `auto`). The runner never reads it; this session passes it. `bypassPermissions` takes effect only if the user started Claude Code with `SHIP_RUNNER_ALLOW_BYPASS=1`; never set that variable in the command. Otherwise the runner says so in an event and uses `auto`.
-- ship-queue does its Q0 and Q1 first (pre-flight, then the order and dependencies). It passes the order as the key list and each `Depends:` as `<KEY>:<DEP>` (`<KEY>` waits for `<DEP>`); `--deps` is left out when there are none. Every key and dep must be in the list.
+- ship-queue does its Q0 and Q1 first (pre-flight, then the order and dependencies). It passes the order as the key list and each `Depends:` as `<KEY>:<DEP>` (`<KEY>` waits for `<DEP>`); `--deps` is left out when there are none. Every key and dep must be in the list: leave out a `Depends:` on a sub-issue already done.
 - Exit code 3 and the output `held by <pid>`: another runner or its child holds this run. Tell the user; start nothing.
 - **Before every `start`,** work out `N` (Watch) and arm the Monitor from it, then start. `events.log` is append-only: a rerun after a cut-off or after answers starts into the old log.
 - **Resuming after a compaction, or on exit 3:** if `<run dir>/state.json` has `"stopped": null` and the `lock` file's `runner` pid is alive, this session's own run is still going. Do not start. Print `<runner> status <run dir>`, then re-arm the Monitor from the last event number reported (+ 1); if that is unknown, from `wc -l` + 1 taken after the status, which covers what was missed.
@@ -49,26 +51,27 @@ tail -n +<N> -F <run dir>/events.log | awk -v n=<N-1> '{ n++; print n " " $0; ff
 - **`waiting`, `blocked`, `cutoff` and `summary`:** also send a `PushNotification`, with the key and the text. No other kind sends one.
 - **When the monitor times out** you get one notice and nothing more. Re-arm at once with the `N` above. Do this until `summary`.
 - **`cutoff`** (a usage limit or a crash) stops the whole run. Tell the user; rerunning the same `start` command resumes from the files, once the limit resets.
-- **`blocked`:** tell the user the quoted reason. The runner goes on with the other items.
+- **`blocked`:** tell the user the quoted reason. The runner goes on with the other items, unless the text ends `queue stopped` (the checkout is busy, or the base branch is red): then the rest are not started and `summary` follows.
 
 ## Questions
 
 On `waiting` for an item:
 
 1. Run `<runner> status <run dir>`. Its `Pending questions:` block lists `<KEY>: <question>` lines.
-2. Ask them with `AskUserQuestion`, at most 4 per call (more: several calls), each with the recommended option first, labelled "(Recommended)".
+2. Ask them with `AskUserQuestion`, at most 4 per call (more: several calls). Each `Asked:` line holds the question and its options, the recommendation first: offer them in that order, the first labelled "(Recommended)".
 3. **No answer** (the user is away): do nothing. The runner goes on with other work. A single issue keeps waiting by itself.
 4. Write the answers, in the words of the questions' numbering (`1A, 2B`, or the text), to a file with the Write tool, in the run dir or the scratchpad. Never put answer text on a command line.
 5. Run `<runner> answer <run dir> <KEY> <file>`, once per item. It writes only the answers file; the runner applies it.
-6. A single issue (and a plan or a verify run) picks the file up and resumes without a restart.
+6. A single issue (and a plan or a verify run) whose runner is still going picks the file up and resumes without a restart. A runner that has exited (its `summary` came) does not: End, step 2.
 
 ## End
 
 On `summary` (the runner has exited):
 
 1. Print `<runner> status <run dir>`.
-2. A queue exits when only waiting items remain. Ask every still-pending question in one batch (Questions, steps 2 to 5). If any were answered, run the same `start queue …` command again, with the same arguments: it uses the stored items and resumes the answered ones first. Arm the Monitor first, from `N` = `wc -l` + 1 of `events.log` (Watch), then start.
+2. A queue exits when only waiting items remain; any run exits on a cut-off. Ask every still-pending question in one batch (Questions, steps 2 to 5). If any were answered, run the same `start …` command again, whatever the run (issue, queue, plan or verify), with the same arguments: it uses the stored items and resumes the answered ones first. The checkout rule of Start applies. Arm the Monitor first, from `N` = `wc -l` + 1 of `events.log` (Watch), then start.
 3. Finish with the skill's own summary of what the user must do, built from the ledgers.
+4. **A queue's ledger:** the runner writes no ship-queue `Result:` or `Cost:` lines; `status` and the sub-issues' ledgers are the record. If Q0 and Q1 started a ship-queue ledger, close it here, once the queue is finished: write `Summary: posted <time>` as its last line, as ship-queue's Q4 says.
 
 ## Red flags
 
