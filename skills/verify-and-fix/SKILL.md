@@ -47,8 +47,8 @@ allowed-tools:
   - Bash(az repos policy list *)
   - Bash(gh pr list *)
   - Bash(gh pr diff *)
-  - mcp__plugin_engineering_linear__get_issue
-  - mcp__plugin_engineering_linear__save_comment
+  - mcp__plugin_linear_linear__get_issue
+  - mcp__plugin_linear_linear__save_comment
   - Bash(gh issue view *)
   - Bash(gh issue comment *)
 ---

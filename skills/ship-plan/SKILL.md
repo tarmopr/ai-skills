@@ -95,15 +95,15 @@ allowed-tools:
   - Bash(az devops invoke --area git --resource pullRequestThreads *)
   - Bash(az devops invoke --area git --resource pullRequestThreadComments *)
   - Bash(git merge-base *)
-  - mcp__plugin_engineering_linear__get_user
-  - mcp__plugin_engineering_linear__get_issue
-  - mcp__plugin_engineering_linear__list_issues
-  - mcp__plugin_engineering_linear__list_comments
-  - mcp__plugin_engineering_linear__list_issue_statuses
-  - mcp__plugin_engineering_linear__list_teams
-  - mcp__plugin_engineering_linear__list_projects
-  - mcp__plugin_engineering_linear__save_issue
-  - mcp__plugin_engineering_linear__save_comment
+  - mcp__plugin_linear_linear__get_user
+  - mcp__plugin_linear_linear__get_issue
+  - mcp__plugin_linear_linear__list_issues
+  - mcp__plugin_linear_linear__list_comments
+  - mcp__plugin_linear_linear__list_issue_statuses
+  - mcp__plugin_linear_linear__list_teams
+  - mcp__plugin_linear_linear__list_projects
+  - mcp__plugin_linear_linear__save_issue
+  - mcp__plugin_linear_linear__save_comment
   - mcp__plugin_engineering_slack__slack_add_reaction
   - mcp__plugin_engineering_slack__slack_search_users
   - Bash(gh issue view *)

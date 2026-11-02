@@ -40,15 +40,15 @@ allowed-tools:
   - Bash(gh pr view *)
   - Bash(az repos pr show *)
   - Bash(az devops configure --list)
-  - mcp__plugin_engineering_linear__get_user
-  - mcp__plugin_engineering_linear__get_issue
-  - mcp__plugin_engineering_linear__list_issues
-  - mcp__plugin_engineering_linear__list_comments
-  - mcp__plugin_engineering_linear__list_issue_statuses
-  - mcp__plugin_engineering_linear__list_teams
-  - mcp__plugin_engineering_linear__list_projects
-  - mcp__plugin_engineering_linear__save_issue
-  - mcp__plugin_engineering_linear__save_comment
+  - mcp__plugin_linear_linear__get_user
+  - mcp__plugin_linear_linear__get_issue
+  - mcp__plugin_linear_linear__list_issues
+  - mcp__plugin_linear_linear__list_comments
+  - mcp__plugin_linear_linear__list_issue_statuses
+  - mcp__plugin_linear_linear__list_teams
+  - mcp__plugin_linear_linear__list_projects
+  - mcp__plugin_linear_linear__save_issue
+  - mcp__plugin_linear_linear__save_comment
   - Bash(gh repo view *)
   - Bash(gh issue view *)
   - Bash(gh issue list *)

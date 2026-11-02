@@ -28,11 +28,11 @@ allowed-tools:
   - Bash(az repos pr list *)
   - Bash(SHIP_QUEUE_PARENT=* claude -p *)
   - Bash(jq * .superpowers/ship-queue/*)
-  - mcp__plugin_engineering_linear__get_user
-  - mcp__plugin_engineering_linear__get_issue
-  - mcp__plugin_engineering_linear__list_issues
-  - mcp__plugin_engineering_linear__list_comments
-  - mcp__plugin_engineering_linear__save_comment
+  - mcp__plugin_linear_linear__get_user
+  - mcp__plugin_linear_linear__get_issue
+  - mcp__plugin_linear_linear__list_issues
+  - mcp__plugin_linear_linear__list_comments
+  - mcp__plugin_linear_linear__save_comment
   - mcp__plugin_atlassian_atlassian__getAccessibleAtlassianResources
   - mcp__plugin_atlassian_atlassian__atlassianUserInfo
   - mcp__plugin_atlassian_atlassian__getJiraIssue
