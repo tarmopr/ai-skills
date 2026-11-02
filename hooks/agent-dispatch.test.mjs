@@ -149,3 +149,31 @@ test('deny reason gives the absolute defaults path and what an unrelated session
   assert.doesNotMatch(r, /defaults: ship-plan\/config-format\.md/);
   assert.match(r, /not part of that run/);
 });
+
+function runnerState(root, id, state, ageMs = 0) {
+  const dir = join(root, '.superpowers', 'ship-runner', id);
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, 'state.json');
+  writeFileSync(file, JSON.stringify(state));
+  const t = (now - ageMs) / 1000;
+  utimesSync(file, t, t);
+  return file;
+}
+
+test('live runner state counts as a live ship run', () => {
+  const dir = fresh();
+  const file = runnerState(dir, 'issue-X', { kind: 'issue', id: 'X', current: 'X', stopped: null });
+  const live = liveShipLedgers([dir], now);
+  assert.deepEqual(live, [file]);
+  assert.match(decide({ model: 'sonnet' }, live), /Missing: effort/);
+});
+
+test('runner state stopped, older than 6 h or unreadable: allow', () => {
+  const dir = fresh();
+  runnerState(dir, 'issue-A', { stopped: '2026-11-02T10:00:00Z' });
+  runnerState(dir, 'issue-B', { stopped: null }, 6 * 3600e3 + 1000);
+  const bad = join(dir, '.superpowers', 'ship-runner', 'issue-C');
+  mkdirSync(bad, { recursive: true });
+  writeFileSync(join(bad, 'state.json'), '{not json');
+  assert.deepEqual(liveShipLedgers([dir], now), []);
+});

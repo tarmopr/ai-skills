@@ -34,7 +34,8 @@ function ended(text, root) {
   return false;
 }
 
-// Ledgers of a ship run under any root: changed in the last 6 hours and not ended.
+// Ledgers of a ship run under any root: changed in the last 6 hours and not ended;
+// plus runner runs (ship-runner/*/state.json): fresh and `stopped` null.
 export function liveShipLedgers(roots, nowMs) {
   const live = [];
   for (const root of roots) {
@@ -55,6 +56,25 @@ export function liveShipLedgers(roots, nowMs) {
         } catch {
           // no ledger in this run folder
         }
+      }
+    }
+  }
+  for (const root of roots) {
+    const base = join(root, '.superpowers', 'ship-runner');
+    let runs;
+    try {
+      runs = readdirSync(base);
+    } catch {
+      continue;
+    }
+    for (const run of runs) {
+      const file = join(base, run, 'state.json');
+      try {
+        if (statSync(file).mtimeMs < nowMs - LIVE_MS) continue;
+        if (JSON.parse(readFileSync(file, 'utf8')).stopped != null) continue;
+        live.push(file);
+      } catch {
+        // no readable state in this run folder
       }
     }
   }

@@ -254,6 +254,22 @@ Read by `ship-queue` only. It runs each sub-issue in a child session
 |---|---|---|
 | `Child permission mode:` | The `--permission-mode` of each child session: `auto`, `acceptEdits`, `dontAsk` or `bypassPermissions` | `auto` |
 
+For runner runs (`## Runner`), the runner never reads this field. The watching
+session passes its value to `runner.mjs start --permission-mode <m>`.
+`bypassPermissions` is used by the runner only when the user started the
+session with `SHIP_RUNNER_ALLOW_BYPASS=1` in its environment (children never
+inherit it); otherwise it falls back to `auto`.
+
+### `## Runner`
+
+Read by the runner (`skills/ship-plan/scripts/runner.mjs`), which runs each ship
+phase as a `claude -p` child. Opt-in: the default is the single-session path.
+
+| Field | Meaning | Default |
+|---|---|---|
+| `Mode:` | `session` runs the phases in the watching session; `runner` runs them as runner children. The argument `--runner` also selects the runner | `session` |
+| `Implement chunk:` | Plan tasks one implement child takes before the next child continues | `5` |
+
 ### `## Models`
 
 The model and effort for each subagent role. Every dispatch passes both
@@ -278,9 +294,17 @@ start runs on Opus at high effort.
 | `Review round` | `verify-and-fix` section 4: every other review agent, every round | `opus`, `high` |
 | `Research` | `ship-issue`, `ship-plan`, `verify-and-fix`: an `Explore` agent the session sends to read code or logs | `sonnet`, `medium` |
 | `Queue run` | `ship-queue` Q2: each sub-issue's child session | `opus`, `high` |
+| `Phase: implement` | Runner: the implement child (plan tasks, in chunks) | `sonnet`, `high` |
+| `Phase: verify` | Runner: the verify child | `opus`, `high` |
+| `Phase: merge` | Runner: the merge child | `sonnet`, `high` |
+| `Phase: close` | Runner: the close child | `sonnet`, `medium` |
+
+The runner's spec and plan children use the `Spec stage` and `Plan stage` rows.
+It does not use `Spec stage (small)`: its spec child always takes `Spec stage`.
 
 **The hook.** While a ship run's ledger is live (changed in the last 6 hours
-and not `Phase: done`), the plugin's `PreToolUse` hook refuses an Agent
+and not `Phase: done`), or a runner run's `.superpowers/ship-runner/*/state.json`
+is (changed in the last 6 hours, `stopped` null), the plugin's `PreToolUse` hook refuses an Agent
 dispatch that passes no `model` or no `effort`, and its message names the
 ledger. Pass both from the role's row.
 
