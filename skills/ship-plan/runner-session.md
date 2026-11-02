@@ -30,22 +30,22 @@ Run from the checkout, with the Bash tool and `run_in_background`:
 - `<m>` is `## Queue` `Child permission mode:` (default `auto`). The runner never reads it; this session passes it. `bypassPermissions` takes effect only if the user started Claude Code with `SHIP_RUNNER_ALLOW_BYPASS=1`; never set that variable in the command. Otherwise the runner says so in an event and uses `auto`.
 - ship-queue does its Q0 and Q1 first (pre-flight, then the order and dependencies). It passes the order as the key list and each `Depends:` as `<KEY>:<DEP>` (`<KEY>` waits for `<DEP>`); `--deps` is left out when there are none. Every key and dep must be in the list.
 - Exit code 3 and the output `held by <pid>`: another runner or its child holds this run. Tell the user; start nothing.
+- **Before every `start`,** work out `N` (Watch) and arm the Monitor from it, then start. `events.log` is append-only: a rerun after a cut-off or after answers starts into the old log.
+- **Resuming after a compaction, or on exit 3:** if `<run dir>/state.json` has `"stopped": null` and the `lock` file's `runner` pid is alive, this session's own run is still going. Do not start. Print `<runner> status <run dir>`, then re-arm the Monitor from the last event number reported (+ 1); if that is unknown, from `wc -l` + 1 taken after the status, which covers what was missed.
 - The run dir is `<checkout>/.superpowers/ship-runner/<kind>-<id>/`, `/` in `<id>` written as `-` (`issue-<KEY>`, `queue-<PARENT>`, `plan-<path>`, `verify-<branch>`). `events.log` is in it.
 
-## Watch
-
-Start the Monitor tool (its schema is deferred: load it first if it is not
-loaded), with `timeout_ms: 1800000`:
+Start the Monitor tool, with `timeout_ms: 1800000`. Monitor, PushNotification and AskUserQuestion may be deferred tools: load all three with ToolSearch before first use.
 
 ```bash
-tail -n +<N> -F <run dir>/events.log | grep --line-buffered -E ' (start|done|waiting|blocked|cutoff|summary|progress) '
+tail -n +<N> -F <run dir>/events.log | awk -v n=<N-1> '{ n++; print n " " $0; fflush() }'
 ```
 
-`N` is 1 for a new run. Each stdout line is one event, in the form
-`<time> <KEY> <phase> <kind> <text>`.
+`<N>` is the line to read from: `wc -l < <run dir>/events.log` plus 1 if the file exists, else 1, taken **before** the `start` command, with the Monitor armed first. Each stdout line is one event, numbered by its line in the log: `<number> <time> <KEY> <phase> <kind> <text>`. No grep: every kind is shown, so none that ends a run can be dropped.
 
+- **Remember the highest number delivered.** After a timeout or a compaction, `N` is that number + 1. Never derive `N` from `wc -l` at re-arm time: lines written in between would be skipped.
 - **Each event:** one short line to the user. `progress` lines may be batched.
 - **`waiting`, `blocked`, `cutoff` and `summary`:** also send a `PushNotification`, with the key and the text. No other kind sends one.
+- **When the monitor times out** you get one notice and nothing more. Re-arm at once with the `N` above. Do this until `summary`.
 - **The filter lists every kind a run ends on** (`cutoff`, `summary`, `blocked`, `waiting`), not only progress: a filter that drops them hides the end of the run.
 - **When the monitor times out** you get one notice and nothing more. Re-arm at once from the next unread line: `wc -l < <run dir>/events.log`, plus 1, is the new `N`. Do this until `summary`.
 - **`cutoff`** (a usage limit or a crash) stops the whole run. Tell the user; rerunning the same `start` command resumes from the files, once the limit resets.
@@ -67,7 +67,7 @@ On `waiting` for an item:
 On `summary` (the runner has exited):
 
 1. Print `<runner> status <run dir>`.
-2. A queue exits when only waiting items remain. Ask every still-pending question in one batch (Questions, steps 2 to 5). If any were answered, run the same `start queue …` command again, with the same arguments: it uses the stored items and resumes the answered ones first. Watch again from the start (Watch, with `N` = `wc -l` + 1).
+2. A queue exits when only waiting items remain. Ask every still-pending question in one batch (Questions, steps 2 to 5). If any were answered, run the same `start queue …` command again, with the same arguments: it uses the stored items and resumes the answered ones first. Arm the Monitor first, from `N` = `wc -l` + 1 of `events.log` (Watch), then start.
 3. Finish with the skill's own summary of what the user must do, built from the ledgers.
 
 ## Red flags

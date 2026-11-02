@@ -373,7 +373,7 @@ Nobody is watching. Everything above applies, with these changes:
 
 ## Runner or session
 
-With `## Runner` `Mode: runner`, or the argument `--runner`, the ship runner runs the phases and this session only watches and relays: read [../ship-plan/runner-session.md](../ship-plan/runner-session.md) and follow it with `start verify <branch>`. Otherwise ignore this section; the skill runs as above.
+With `## Runner` `Mode: runner`, or the argument `--runner`, the ship runner runs the phases and this session only watches and relays: read [../ship-plan/runner-session.md](../ship-plan/runner-session.md) and follow it with `start verify <the checked-out branch>` (this skill's own argument is the base branch). Otherwise ignore this section; the skill runs as above.
 
 ## Red flags
 
