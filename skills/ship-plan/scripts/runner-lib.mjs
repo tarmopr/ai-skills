@@ -18,14 +18,15 @@ export function readState(dir) {
 }
 
 // Write to a temp file, then rename, so a crash never leaves half a state file.
+// The temp name carries the pid: the runner and an `answer` command may write at the same time.
 export function writeState(dir, state) {
   mkdirSync(dir, { recursive: true });
-  const tmp = join(dir, 'state.json.tmp');
+  const tmp = join(dir, `state.json.${process.pid}.tmp`);
   writeFileSync(tmp, JSON.stringify(state, null, 2) + '\n');
   renameSync(tmp, join(dir, 'state.json'));
 }
 
-function alive(pid) {
+export function alive(pid) {
   try {
     process.kill(pid, 0);
     return true;
@@ -34,7 +35,8 @@ function alive(pid) {
   }
 }
 
-function readLock(dir) {
+// { runner, child } pids, or null.
+export function readLock(dir) {
   try {
     return JSON.parse(readFileSync(join(dir, 'lock'), 'utf8'));
   } catch {

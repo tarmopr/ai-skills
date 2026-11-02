@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { implementChunks, phaseFromLedgers, phasePrompt, PHASES, PHASE_ROWS, runIssue, tailProgress } from './runner-phases.mjs';
+import { findPlanLedger, implementChunks, pendingQuestions, phaseFromLedgers, phasePrompt, PHASES, PHASE_ROWS, runIssue, tailProgress } from './runner-phases.mjs';
 
 process.env.CLAUDE_BIN = join(dirname(fileURLToPath(import.meta.url)), 'fake-claude.mjs');
 
@@ -224,4 +224,68 @@ test('tailProgress: Progress lines and first-line Phase changes, nothing old', a
   await new Promise((r) => setTimeout(r, 60));
   stop();
   assert.deepEqual(seen, [planFirst('3'), 'Progress: task 1 done']);
+});
+
+test('phaseFromLedgers { ledger }: a plan run reads the ship-plan ledger directly, implement until it exists', () => {
+  const root = repo({ plan: [planFirst('3')] });
+  // no ship-issue ledger: without the option this would be spec
+  assert.equal(phaseFromLedgers(root, 'plan', {}).phase, 'spec');
+  assert.deepEqual(phaseFromLedgers(root, 'plan', { ledger: PLAN_LEDGER }), { phase: 'verify', waiting: false, blocked: null });
+  assert.equal(phaseFromLedgers(root, 'plan', { ledger: '.superpowers/ship-plan/none/ledger.md' }).phase, 'implement');
+  assert.equal(phaseFromLedgers(root, 'plan', { ledger: () => null }).phase, 'implement');
+  assert.equal(phaseFromLedgers(root, 'plan', { ledger: () => PLAN_LEDGER }).phase, 'verify');
+});
+
+test('findPlanLedger: the open ledger whose Plan: field names the plan, else a done one, else null', () => {
+  const root = repo();
+  const put = (slug, first) => {
+    mkdirSync(join(root, '.superpowers/ship-plan', slug), { recursive: true });
+    writeFileSync(join(root, '.superpowers/ship-plan', slug, 'ledger.md'), first + '\n');
+  };
+  assert.equal(findPlanLedger(root, 'docs/plan.md'), null);
+  put('a-old', 'Phase: done | Plan: docs/plan.md | PR: #1');
+  put('b-other', 'Phase: 2 | Plan: docs/other.md');
+  assert.equal(findPlanLedger(root, 'docs/plan.md'), join(root, '.superpowers/ship-plan/a-old/ledger.md'));
+  put('c-open', 'Phase: 3 | Plan: docs/plan.md | PR: #2');
+  assert.equal(findPlanLedger(root, './docs/plan.md'), join(root, '.superpowers/ship-plan/c-open/ledger.md'));
+});
+
+test('phaseFromLedgers { ledger, only: verify }: verify alone; Done: after the snapshot finishes it', () => {
+  // a ship-plan ledger: before verify -> verify, past it -> finished
+  const at = (p) => phaseFromLedgers(repo({ plan: [planFirst(p)] }), 'x', { ledger: PLAN_LEDGER, only: 'verify' }).phase;
+  assert.equal(at('2'), 'verify');
+  assert.equal(at('3'), 'verify');
+  assert.equal(at('5 awaiting merge'), 'finished');
+  assert.equal(at('done'), 'finished');
+  // a verify-and-fix ledger has no Phase: line; a Done: line written after the snapshot ends it
+  const root = repo();
+  const VF = '.superpowers/verify-and-fix/feat-x/ledger.md';
+  const opts = { ledger: VF, only: 'verify' };
+  assert.deepEqual(phaseFromLedgers(root, 'feat-x', opts), { phase: 'verify', waiting: false, blocked: null });
+  mkdirSync(dirname(join(root, VF)), { recursive: true });
+  writeFileSync(join(root, VF), 'Round 1: gates green\nBlocked: old\nDone: abc — clean\n');
+  assert.equal(phaseFromLedgers(root, 'feat-x', opts).phase, 'finished');
+  // snapshot after line 3: the old Done: and Blocked: lines no longer count
+  assert.deepEqual(phaseFromLedgers(root, 'feat-x', { ...opts, from: 3 }), { phase: 'verify', waiting: false, blocked: null });
+  writeFileSync(join(root, VF), 'Round 1: gates green\nBlocked: old\nDone: abc — clean\nAsked: rename? — pending\n');
+  assert.equal(phaseFromLedgers(root, 'feat-x', { ...opts, from: 3 }).waiting, true);
+});
+
+test('pendingQuestions: every Asked … — pending line of both ledgers', () => {
+  const root = repo({ issue: [issueFirst(6), 'Asked: a? — pending', 'Asked: b? — yes'], plan: [planFirst('3'), 'Asked: c? — pending'] });
+  assert.deepEqual(pendingQuestions(root, KEY), ['Asked: a? — pending', 'Asked: c? — pending']);
+  assert.deepEqual(pendingQuestions(root, 'p', { ledger: PLAN_LEDGER }), ['Asked: c? — pending']);
+});
+
+test('runIssue { ledgers }: plan run starts at implement with the plan doc, ship-plan skill and path', async () => {
+  const root = repo({ tasks: 2 });
+  const ops = ledgerOps([{ when: 'for phase implement', file: PLAN_LEDGER, firstLine: 'Phase: done | Plan: docs/plan.md' }]);
+  const log = join(root, 'fake.json');
+  const ctx = ctxFor(root, { FAKE_CLAUDE: 'ok:RUNNER: phase-done', FAKE_CLAUDE_LEDGER_APPEND: ops, FAKE_CLAUDE_LOG: log }, {
+    skill: 'ship-plan', args: 'docs/plan.md',
+    ledgers: { ledger: () => findPlanLedger(root, 'docs/plan.md'), planDoc: 'docs/plan.md' },
+  });
+  const it = await runIssue(ctx, item({ key: 'plan' }));
+  assert.equal(it.status, 'done');
+  assert.match(JSON.parse(readFileSync(log, 'utf8')).stdin, /ai-skills:ship-plan skill .* "docs\/plan\.md".*phase implement, plan tasks 1–2\.$/);
 });

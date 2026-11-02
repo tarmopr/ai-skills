@@ -1,8 +1,8 @@
 // Phases of one issue for the ship runner: which phase runs next, read from the ledgers,
 // and the loop that runs one child per phase (per chunk of plan tasks for implement).
 // The ledgers win over a child's RUNNER: marker.
-import { existsSync, readFileSync } from 'node:fs';
-import { isAbsolute, join } from 'node:path';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { isAbsolute, join, resolve } from 'node:path';
 import { emit } from './runner-lib.mjs';
 import { resumeOrFresh, runChild } from './runner-child.mjs';
 
@@ -22,7 +22,7 @@ function readLines(file) {
   try {
     return readFileSync(file, 'utf8').replace(/\r?\n$/, '').split(/\r?\n/);
   } catch (e) {
-    if (e.code === 'ENOENT') return null;
+    if (e.code === 'ENOENT' || e.code === 'ENOTDIR') return null;
     throw e;
   }
 }
@@ -60,47 +60,114 @@ function planPhase(value) {
 const PENDING = /^Asked: .* — pending\s*$/;
 const BLOCKED = /^Blocked: (.+)$/;
 
+/**
+ * Ledger options for a run that has no ship-issue ledger (`start plan`, `start verify`).
+ * @typedef {object} LedgerOpts
+ * @property {string|(() => string|null)} [ledger] read this ledger directly (relative to root or
+ *   absolute; a function is called on every read, for a ledger a child creates); the ship-issue
+ *   ledger is not read. Missing: the run starts at `only`, else at `implement`.
+ * @property {string} [only] run this phase alone: a ledger before it reads as it, past it as finished.
+ * @property {number} [from] lines of that ledger written before the run (a snapshot): only later
+ *   lines count for Done:, Asked: and Blocked:.
+ * @property {string} [planDoc] the plan, until a ledger names one.
+ */
+
+// The ledger files read for this run: { issueFile, planFile } (either may be null).
+function ledgerFiles(root, key, opts = {}) {
+  if (opts.ledger !== undefined) {
+    const p = typeof opts.ledger === 'function' ? opts.ledger() : opts.ledger;
+    return { issueFile: null, planFile: p ? atRoot(root, p) : null };
+  }
+  const issueFile = issueLedgerPath(root, key);
+  return { issueFile, planFile: planLedgerPath(root, readLines(issueFile)) };
+}
+
 // Everything the runner reads from both ledgers.
-function readLedgers(root, key) {
-  const issue = readLines(issueLedgerPath(root, key));
-  const planLedger = planLedgerPath(root, issue);
-  const plan = planLedger ? readLines(planLedger) : null;
+function readLedgers(root, key, opts = {}) {
+  const direct = opts.ledger !== undefined;
+  const { issueFile, planFile } = ledgerFiles(root, key, opts);
+  const issue = issueFile ? readLines(issueFile) : null;
+  const plan = planFile ? readLines(planFile) : null;
   const issueFields = issue ? firstLineFields(issue[0]) : {};
   const planFields = plan ? firstLineFields(plan[0]) : {};
+  const hasPhaseLine = Boolean(plan && /^Phase:/.test(plan[0]));
+  const planBody = plan ? (direct ? plan.slice(opts.from ?? 0) : plan) : null;
 
   let phase = 'spec';
   let unknown = null;
-  if (plan) {
+  if (plan && (hasPhaseLine || !direct)) {
     phase = planPhase(planFields.Phase);
     if (!phase) unknown = `unknown ship-plan phase "${planFields.Phase}"`;
+  } else if (direct) {
+    // no ledger yet, or a verify-and-fix ledger (no Phase: line; it ends with a Done: line)
+    phase = planBody?.some((l) => /^Done: /.test(l)) ? 'finished' : opts.only ?? 'implement';
   } else if (issue) {
     const n = /^I(\d+)\b/.exec(issueFields.Phase ?? '');
     if (!n) unknown = `unknown ship-issue phase "${issueFields.Phase}"`;
     else phase = Number(n[1]) <= 3 ? 'spec' : Number(n[1]) <= 5 ? 'plan' : 'implement';
   }
+  if (opts.only && !unknown && phase !== 'finished') {
+    const at = PHASES.indexOf(phase);
+    const only = PHASES.indexOf(opts.only);
+    if (at > only) phase = 'finished';
+    else if (at < only) phase = opts.only;
+  }
 
-  const all = [...(issue ?? []), ...(plan ?? [])];
+  const all = [...(issue ?? []), ...(planBody ?? [])];
   const lastIssueLine = (issue ?? []).filter((l) => l.trim()).at(-1) ?? '';
   const batch = /^Waiting: batch of (\d+)/.exec(lastIssueLine);
-  const pending = all.filter((l) => PENDING.test(l)).length;
+  const pendingLines = all.filter((l) => PENDING.test(l));
+  const pending = pendingLines.length;
   const blockedLines = all.map((l) => BLOCKED.exec(l)).filter(Boolean);
   const doneTasks = new Set();
-  for (const l of plan ?? []) {
+  for (const l of planBody ?? []) {
     const m = /^Progress: task (\d+) done\b/.exec(l);
     if (m) doneTasks.add(Number(m[1]));
   }
-  const planDoc = planFields.Plan || issueFields.Plan;
+  const planDoc = planFields.Plan || issueFields.Plan || opts.planDoc;
   return {
     phase: unknown ? 'unknown' : phase,
     unknown,
     waiting: Boolean(batch) || pending > 0,
     questions: pending || (batch ? Number(batch[1]) : 0),
+    pendingLines,
     blocked: unknown ?? blockedLines.at(-1)?.[1] ?? null,
     blockedCount: blockedLines.length,
     doneTasks,
     planDoc: planDoc ? atRoot(root, planDoc) : null,
-    signature: JSON.stringify([issue?.[0] ?? null, plan?.[0] ?? null, [...doneTasks].sort((a, b) => a - b)]),
+    // a ledger without a Phase: line advances only by growing
+    signature: JSON.stringify([issue?.[0] ?? null, plan?.[0] ?? null, [...doneTasks].sort((a, b) => a - b),
+      direct && !hasPhaseLine ? plan?.length ?? 0 : null]),
   };
+}
+
+// The ship-plan ledger whose first line's Plan: field names planPath: an open one first, else a
+// done one, else null.
+export function findPlanLedger(root, planPath) {
+  const base = join(root, '.superpowers', 'ship-plan');
+  let names;
+  try {
+    names = readdirSync(base).sort();
+  } catch {
+    return null;
+  }
+  const want = resolve(root, planPath);
+  let done = null;
+  for (const name of names) {
+    const file = join(base, name, 'ledger.md');
+    const first = readLines(file)?.[0];
+    if (!first) continue;
+    const f = firstLineFields(first);
+    if (!f.Plan || resolve(root, f.Plan) !== want) continue;
+    if (f.Phase !== 'done') return file;
+    done ??= file;
+  }
+  return done;
+}
+
+// Every `Asked: … — pending` line of the run's ledgers.
+export function pendingQuestions(root, key, opts = {}) {
+  return readLedgers(root, key, opts).pendingLines;
 }
 
 /**
@@ -108,9 +175,10 @@ function readLedgers(root, key) {
  * `.blocked` is the last `Blocked:` line ever written to either ledger (or an unknown-phase
  * reason); it may be left over from an earlier attempt, so callers that want "blocked by this
  * run" must compare against a snapshot taken before the run, as runIssue does.
+ * opts: LedgerOpts, for a run without a ship-issue ledger.
  */
-export function phaseFromLedgers(root, key) {
-  const { phase, waiting, blocked } = readLedgers(root, key);
+export function phaseFromLedgers(root, key, opts = {}) {
+  const { phase, waiting, blocked } = readLedgers(root, key, opts);
   return { phase, waiting, blocked };
 }
 
@@ -149,12 +217,11 @@ function nextChunk(ledgers, size) {
 
 // Poll both ledgers every intervalMs; call onLine for new `Progress:` lines and for
 // first-line `Phase:` changes. Returns stop(), which reads once more before stopping.
-export function tailProgress(root, key, onLine, intervalMs = 5000) {
+export function tailProgress(root, key, onLine, intervalMs = 5000, opts = {}) {
   const seen = new Map(); // file -> { first, count }
   const files = () => {
-    const issueFile = issueLedgerPath(root, key);
-    const planFile = planLedgerPath(root, readLines(issueFile));
-    return planFile ? [issueFile, planFile] : [issueFile];
+    const { issueFile, planFile } = ledgerFiles(root, key, opts);
+    return [issueFile, planFile].filter(Boolean);
   };
   const read = (report) => {
     for (const file of files()) {
@@ -186,7 +253,8 @@ const plural = (n) => `${n} question${n === 1 ? '' : 's'}`;
 
 // Run the issue's phases until it is done, waiting, blocked or cut off.
 // ctx: { root, dir, models: {[row]: {model, effort}}, mode, env, skill = 'ship-issue',
-//        args = item.key, chunkSize = 5, save?(item) }. state.current is set by the caller.
+//        args = item.key, chunkSize = 5, tailMs = 5000, ledgers?: LedgerOpts, save?(item) }.
+// state.current is set by the caller.
 export async function runIssue(ctx, item) {
   const { root, dir } = ctx;
   const key = item.key;
@@ -205,7 +273,7 @@ export async function runIssue(ctx, item) {
   };
 
   for (;;) {
-    const before = readLedgers(root, key);
+    const before = readLedgers(root, key, ctx.ledgers);
     if (before.phase === 'finished') {
       item.phase = 'finished';
       const reason = before.waiting ? 'questions pending' : '';
@@ -231,7 +299,7 @@ export async function runIssue(ctx, item) {
       dir, cwd: root, key, phase, prompt, model: pick.model, effort: pick.effort,
       mode: ctx.mode ?? 'auto', resume, env: ctx.env ?? {},
     };
-    const stop = tailProgress(root, key, (line) => emit(dir, key, phase, 'progress', line), ctx.tailMs ?? 5000);
+    const stop = tailProgress(root, key, (line) => emit(dir, key, phase, 'progress', line), ctx.tailMs ?? 5000, ctx.ledgers);
     let r;
     try {
       r = resume ? await resumeOrFresh({ ...opts, freshPrompt: prompt }) : await runChild(opts);
@@ -247,7 +315,7 @@ export async function runIssue(ctx, item) {
 
     if (!r.ok) return end('cut off', r.error, phase, 'cutoff', r.error);
     // The ledgers win over the marker.
-    const after = readLedgers(root, key);
+    const after = readLedgers(root, key, ctx.ledgers);
     if (after.phase === 'finished' || after.unknown) continue;
     if (after.waiting) return end('waiting', plural(after.questions), phase, 'waiting', plural(after.questions));
     if (r.marker?.status === 'blocked') {
