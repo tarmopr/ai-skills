@@ -34,6 +34,8 @@ Run from the checkout, with the Bash tool and `run_in_background`:
 - **Resuming after a compaction, or on exit 3:** if `<run dir>/state.json` has `"stopped": null` and the `lock` file's `runner` pid is alive, this session's own run is still going. Do not start. Print `<runner> status <run dir>`, then re-arm the Monitor from the last event number reported (+ 1); if that is unknown, from `wc -l` + 1 taken after the status, which covers what was missed.
 - The run dir is `<checkout>/.superpowers/ship-runner/<kind>-<id>/`, `/` in `<id>` written as `-` (`issue-<KEY>`, `queue-<PARENT>`, `plan-<path>`, `verify-<branch>`). `events.log` is in it.
 
+## Watch
+
 Start the Monitor tool, with `timeout_ms: 1800000`. Monitor, PushNotification and AskUserQuestion may be deferred tools: load all three with ToolSearch before first use.
 
 ```bash
@@ -46,8 +48,6 @@ tail -n +<N> -F <run dir>/events.log | awk -v n=<N-1> '{ n++; print n " " $0; ff
 - **Each event:** one short line to the user. `progress` lines may be batched.
 - **`waiting`, `blocked`, `cutoff` and `summary`:** also send a `PushNotification`, with the key and the text. No other kind sends one.
 - **When the monitor times out** you get one notice and nothing more. Re-arm at once with the `N` above. Do this until `summary`.
-- **The filter lists every kind a run ends on** (`cutoff`, `summary`, `blocked`, `waiting`), not only progress: a filter that drops them hides the end of the run.
-- **When the monitor times out** you get one notice and nothing more. Re-arm at once from the next unread line: `wc -l < <run dir>/events.log`, plus 1, is the new `N`. Do this until `summary`.
 - **`cutoff`** (a usage limit or a crash) stops the whole run. Tell the user; rerunning the same `start` command resumes from the files, once the limit resets.
 - **`blocked`:** tell the user the quoted reason. The runner goes on with the other items.
 
