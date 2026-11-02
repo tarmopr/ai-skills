@@ -7,13 +7,26 @@
 //   noresume          with --resume: the CLI's "No conversation found" result line, exit 1;
 //                     otherwise like ok (marker from FAKE_CLAUDE_MARKER)
 // FAKE_CLAUDE_LOG: when set, argv, stdin and SHIP_RUNNER are written there as JSON.
-import { writeFileSync } from 'node:fs';
+// FAKE_CLAUDE_LEDGER_APPEND: JSON [{file, when?, firstLine?, append?: string[]}], applied before
+//   the output: file is relative to cwd; an op runs only when the prompt contains `when` (if set);
+//   firstLine replaces line 1, append adds lines at the end.
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 
 const chunks = [];
 for await (const c of process.stdin) chunks.push(c);
 const stdin = Buffer.concat(chunks).toString('utf8');
 const argv = process.argv.slice(2);
 if (process.env.FAKE_CLAUDE_LOG) writeFileSync(process.env.FAKE_CLAUDE_LOG, JSON.stringify({ argv, stdin, shipRunner: process.env.SHIP_RUNNER }));
+
+for (const op of JSON.parse(process.env.FAKE_CLAUDE_LEDGER_APPEND || '[]')) {
+  if (op.when && !stdin.includes(op.when)) continue;
+  const lines = existsSync(op.file) ? readFileSync(op.file, 'utf8').replace(/\n$/, '').split('\n') : [];
+  if (op.firstLine) lines[0] = op.firstLine;
+  lines.push(...(op.append || []));
+  mkdirSync(dirname(op.file), { recursive: true });
+  writeFileSync(op.file, lines.join('\n') + '\n');
+}
 
 const mode = process.env.FAKE_CLAUDE || 'ok:RUNNER: done';
 const session_id = 's-1';
