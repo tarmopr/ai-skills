@@ -102,6 +102,17 @@ Default: none, and then `verify-and-fix` cannot end clean.
 Agents added to the review round when the diff touches the globs, beside the
 generic reviewers. Default: none.
 
+### `## Risk paths`
+
+```markdown
+- src/auth/**
+- db/migrations/**
+```
+
+Globs, one per bullet. A diff that touches one gets the full review panel,
+every round, on the whole diff (`verify-and-fix` section 4). Default: none:
+only the diff's size decides.
+
 ### `## Security extras`
 
 Bullets appended to the generic security checklist: this repo's tenancy or
@@ -233,6 +244,15 @@ current checkout is busy. Dependencies come from `## Prerequisites`.
 | `Copy:` | Git-ignored files a run needs, copied from the main checkout (`.env`, local secrets files) | none |
 | `Shared:` | Resources two checkouts cannot use at once: fixed container names, ports | none |
 
+### `## Queue`
+
+Read by `ship-queue` only. It runs each sub-issue in a child session
+(`claude -p`), which nobody watches and which cannot answer a permission prompt.
+
+| Field | Meaning | Default |
+|---|---|---|
+| `Child permission mode:` | The `--permission-mode` of each child session: `auto`, `acceptEdits`, `dontAsk` or `bypassPermissions` | `auto` |
+
 ### `## Models`
 
 The model and effort for each subagent role. Every dispatch passes both
@@ -243,16 +263,25 @@ start runs on Opus at high effort.
 
 | Role | Used by | Default |
 |---|---|---|
-| `Spec stage` | `ship-issue` I2: research, design, spec | `opus`, `xhigh` |
+| `Spec stage (small)` | `ship-issue` I2: research, design, spec of an issue sized `small` | `sonnet`, `high` |
+| `Spec stage` | `ship-issue` I2: research, design, spec of an issue sized `standard` | `opus`, `high` |
+| `Spec check` | `ship-issue` I2: the Spec stage's builder-check subagent | `sonnet`, `high` |
 | `Plan stage` | `ship-issue` I4: the plan, from the spec alone | `opus`, `high` |
 | `Implementer (mechanical)` | `ship-plan` section 2: a task tagged `Tier: mechanical` | `haiku`, `high` |
 | `Implementer` | `ship-plan` section 2: a task tagged `Tier: standard`, or untagged | `sonnet`, `high` |
 | `Implementer (complex)` | `ship-plan` section 2: a task tagged `Tier: complex` | `opus`, `high` |
 | `Escalation` | `ship-plan` section 2: fix rounds 4–5, a stuck implementer | `opus`, `high` |
 | `Task review` | `ship-plan` section 2: each task's spec and quality reviewers | `sonnet`, `high` |
-| `Final review` | `ship-plan` section 2: the whole-branch review | `opus`, `xhigh` |
+| `Final review` | `verify-and-fix` section 4: review round 1's `code-reviewer`, the run's whole-branch review | `opus`, `xhigh` |
 | `Simplify` | `ship-plan` section 2b: the simplify pass over the whole diff | `sonnet`, `high` |
-| `Review round` | `verify-and-fix` section 4: every review agent | `opus`, `high` |
+| `Review round` | `verify-and-fix` section 4: every other review agent, every round | `opus`, `high` |
+| `Research` | `ship-issue`, `ship-plan`, `verify-and-fix`: an `Explore` agent the session sends to read code or logs | `sonnet`, `medium` |
+| `Queue run` | `ship-queue` Q2: each sub-issue's child session | `opus`, `high` |
+
+**The hook.** While a ship run's ledger is live (changed in the last 6 hours
+and not `Phase: done`), the plugin's `PreToolUse` hook refuses an Agent
+dispatch that passes no `model` or no `effort`, and its message names the
+ledger. Pass both from the role's row.
 
 Model: `sonnet`, `opus`, `haiku`, `fable`, or a full model ID. Effort: `low`,
 `medium`, `high`, `xhigh` or `max`. A role left out takes its default; a row
@@ -316,6 +345,8 @@ A config change that loosens what a run checks or may do. These are:
 - a changed `URL:` / `Sign-in:`, or an added or changed `Hosted URL:`;
 - a removed `Merge deploys to:`, or an environment removed from it;
 - a changed `Green:` or `Workflow:`;
+- a removed `## Risk paths` glob;
+- `Child permission mode: bypassPermissions`;
 - a gate `Notes` entry that changes how the gate is judged.
 
 A run proposes each one in the report with its exact line, and never writes it,
