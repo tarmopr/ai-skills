@@ -94,9 +94,34 @@ test('resumeOrFresh: noresume -> second fresh run, event "resume failed"', async
   assert.ok(!seen.argv.includes('--resume'));
   assert.equal(seen.stdin, 'FRESH prompt');
   assert.match(readFileSync(join(dir, 'events.log'), 'utf8'), /^\S+ BILL-1 spec progress resume failed, fresh child$/m);
+  const failed = JSON.parse(readFileSync(join(dir, 'BILL-1-spec-1.jsonl'), 'utf8'));
+  assert.equal(failed.subtype, 'error_during_execution');
+  assert.ok(existsSync(join(dir, 'BILL-1-spec-2.jsonl')));
 });
 
-test('resumeOrFresh: is_error on resume is not retried', async () => {
+test('runChild: result errors[] are in the error text', async () => {
+  const dir = fresh();
+  const r = await runChild(base(dir, { FAKE_CLAUDE: 'noresume' }, { resume: 's-old' }));
+  assert.equal(r.ok, false);
+  assert.equal(r.sessionId, 's-old');
+  assert.match(r.error, /exit 1/);
+  assert.match(r.error, /No conversation found with session ID: s-old/);
+});
+
+test('resumeOrFresh: no result line on resume -> fresh run too', async () => {
+  const dir = fresh();
+  const r = await resumeOrFresh(base(dir, { FAKE_CLAUDE: 'crash' }, { resume: 's-old', freshPrompt: 'FRESH' }));
+  assert.equal(r.ok, false);
+  assert.match(readFileSync(join(dir, 'events.log'), 'utf8'), /resume failed, fresh child/);
+  assert.ok(existsSync(join(dir, 'BILL-1-spec-2.jsonl')));
+});
+
+test('resumeOrFresh: fallback without freshPrompt throws', async () => {
+  const dir = fresh();
+  await assert.rejects(resumeOrFresh(base(dir, { FAKE_CLAUDE: 'noresume' }, { resume: 's-old' })), /freshPrompt is missing/);
+});
+
+test('resumeOrFresh: usage-limit is_error on resume is not retried', async () => {
   const dir = fresh();
   const r = await resumeOrFresh(base(dir, { FAKE_CLAUDE: 'error' }, { resume: 's-old', freshPrompt: 'FRESH' }));
   assert.equal(r.ok, false);

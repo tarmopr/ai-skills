@@ -29,7 +29,14 @@ function logFile(dir, key, phase) {
   }
 }
 
-// One child run. Returns the ChildResult plus whether a result line was seen.
+// The CLI's answer to `--resume <unknown id>`: one is_error result line, no turns run.
+function isResumeFailure(result) {
+  if (!result.is_error) return false;
+  if (result.subtype === 'error_during_execution' && result.num_turns === 0) return true;
+  return Array.isArray(result.errors) && result.errors.some((e) => /No conversation found/.test(String(e)));
+}
+
+// One child run. Returns the ChildResult plus whether it failed the way a dead resume fails.
 function runOnce({ dir, cwd, key, phase, prompt, model, effort, mode, resume, env }) {
   mkdirSync(dir, { recursive: true });
   const file = logFile(dir, key, phase);
@@ -69,10 +76,13 @@ function runOnce({ dir, cwd, key, phase, prompt, model, effort, mode, resume, en
       if (spawnError) errors.push(`spawn failed: ${spawnError.code || spawnError.message}`);
       else if (code !== 0) errors.push(signal ? `killed by ${signal}` : `exit ${code}`);
       if (!result) errors.push('no result line');
-      else if (result.is_error) errors.push(`is_error: ${String(result.result ?? '').trim() || result.subtype || 'unknown'}`);
+      else if (result.is_error) {
+        const listed = Array.isArray(result.errors) ? result.errors.join('; ') : '';
+        errors.push(`is_error: ${[String(result.result ?? '').trim(), listed].filter(Boolean).join('; ') || result.subtype || 'unknown'}`);
+      }
       if (errors.length && stderr.trim()) errors.push(`stderr: ${stderr.trim()}`);
       resolve({
-        sawResult: Boolean(result),
+        resumeFailed: !result || isResumeFailure(result),
         child: {
           ok: errors.length === 0,
           sessionId,
@@ -91,11 +101,13 @@ export async function runChild(opts) {
   return (await runOnce(opts)).child;
 }
 
-// Try the resume; when it dies without a result line, start a fresh child with opts.freshPrompt.
+// Try the resume; when the session cannot be resumed (no result line, or the CLI's
+// "No conversation found" result), start a fresh child with opts.freshPrompt.
 export async function resumeOrFresh(opts) {
   if (!opts.resume) return runChild(opts);
   const first = await runOnce(opts);
-  if (first.child.ok || first.sawResult) return first.child;
+  if (first.child.ok || !first.resumeFailed) return first.child;
+  if (!opts.freshPrompt) throw new Error('resumeOrFresh: resume failed and opts.freshPrompt is missing');
   emit(opts.dir, opts.key, opts.phase, 'progress', 'resume failed, fresh child');
   return runChild({ ...opts, resume: null, prompt: opts.freshPrompt });
 }
