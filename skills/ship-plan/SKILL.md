@@ -256,6 +256,18 @@ digraph ship {
 The run ends at section 7 and nowhere else. Waiting on CI is not an end, and
 neither is a pending question when other work remains.
 
+**This session reads little itself.** Every turn re-reads its whole context,
+so what it reads stays expensive until the next compaction: one session ran
+about 360 `grep`, `sed` and `cat` calls of its own at a median context of
+300k tokens. It reads the ledgers, the config, `questions.md`, the plan text of
+the task it dispatches, `git status`, `git log`, `git diff --stat`, and the
+last 60 lines of a gate or CI log. Anything wider (a source file, `grep` or
+`git grep` over the code, a full CI log, any file over 300 lines) goes to an
+`Explore` agent at the `## Models` `Research` row (default `sonnet`,
+`medium`), whose prompt asks for at most 30 lines with file:line quotes.
+`blockers.md` and `interruptions.md` are read in full once per session; after
+a compaction, `grep -n` them for the tool or gate at hand.
+
 ### The ledger
 
 `.superpowers/ship-plan/<branch>/ledger.md`, with every `/` in the branch name written as `-` (`feature/x` → `feature-x`), so section 0, step 2's `*/ledger.md` listing finds it (`.superpowers/` goes in
@@ -343,7 +355,7 @@ for this plan, stay on it; if its name does not start with one of the five types
 
 ## 2. Implement
 
-**REQUIRED SUB-SKILL:** superpowers:subagent-driven-development, on the branch from section 1. Ten adjustments:
+**REQUIRED SUB-SKILL:** superpowers:subagent-driven-development, on the branch from section 1. Eleven adjustments:
 
 - **Prerequisites first:** run the config's `## Prerequisites` before the first implementer dispatch, as `verify-and-fix`'s setup runs them (in order, each one's `Ready when` awaited, background rows with `run_in_background`); not from a draft the user has not confirmed. When `verify-and-fix` reaches its setup, it does not start a row again whose `Ready when` already passes. Background rows started here are stopped with TaskStop at close-out, right before the report (section 7, step 5).
 - **Every implementer dispatch carries the repo's rules:** the config's `## Fix rules`, `## Never do` and `## Security extras`, verbatim, and the paths of the override files that apply to the task, always `.claude/ship-plan/ship-plan/SKILL.md` when it exists, and the rule "never edit `## Allowed` in `.claude/ship-plan.md`". An implementer sees only its own prompt.
@@ -351,6 +363,7 @@ for this plan, stay on it; if its name does not start with one of the five types
 - **Every implementer dispatch carries the plan's `## Global Constraints`,** verbatim, when the plan has that section. The task brief holds only the task's own text, so a step that takes a value "from Global Constraints" sent an implementer to read the whole plan.
 - **Its pre-flight concerns and rulings** follow its own "Rulings, not stalls" rule. Anything it would stop for goes into `questions.md` (section 3). The run goes on with the tasks that don't depend on it.
 - **Before it deletes its workspace,** copy every `Ruling:` line from its `progress.md` into this ledger. They go to the user in the report and the closing comment.
+- **Every implementer and fixer prompt ends with** "Report in at most 20 lines: status, commits, tests run with their result, concerns." The session keeps every report until it compacts.
 - **Skip its final whole-branch review.** `verify-and-fix`'s review round 1 is the whole-branch review (its `code-reviewer` at the `Final review` row), and it runs after the simplify pass, on the simplified code. Running both reviewed the same diff twice.
 - **Skip its last step,** `finishing-a-development-branch`. Its menu is the question this skill already answered. Go to section 2b.
 - **Every implementer dispatch carries the commit trailers verbatim,** with the words "copy them exactly; do not substitute your own model name". Implementers given the lines without that sentence have written their own trailer, and a haiku implementer did so even with it.

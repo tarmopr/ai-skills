@@ -119,7 +119,7 @@ regressions: a later round often finds bugs an earlier round's fixes introduced.
 
 ## 2. Gates
 
-- Run every `## Gates` row whose `Only when changed` globs match `git diff --name-only origin/<base>...HEAD` (no globs: always). Run each with `CI=true` in its environment and its output sent to `.superpowers/verify-and-fix/<branch>/<gate>.log`, then read the tail. Long output left in context crowds out the rest of the loop.
+- Run every `## Gates` row whose `Only when changed` globs match `git diff --name-only origin/<base>...HEAD` (no globs: always). Run each with `CI=true` in its environment and its output sent to `.superpowers/verify-and-fix/<branch>/<gate>.log`, then read its last 60 lines. Long output left in context crowds out the rest of the loop. When the cause is not in those lines, an `Explore` agent at the `## Models` `Research` row reads the log and reports at most 30 lines; so does any search of the code a fix needs (ship-plan's "This session reads little itself").
 - Run the command **exactly as configured.** A variant you think is better (an extra flag, a one-shot form) is a proposed config change, not something you run as the gate.
 - Follow the row's `Notes` as part of the gate: a precondition, a second run under another setup, a known local-only failure. A note may change how the gate is judged; when it changes the result, the gate table names the note. A note never silently turns a fail or a skip into a pass. Empty: nothing extra.
 - Each gate has one result: **pass, fail, skipped, or could not run.** Read the tail for skip counts and the file each skip is in. The row's `Allowed skips` is a number or `files: <globs>`:
@@ -215,6 +215,8 @@ report.
 
 Give each reviewer the ledger's `Ruling:` lines, so settled questions are not
 raised again as new findings.
+
+**Every reviewer's prompt asks for findings only:** one line each (file:line, grade, what, why), at most 25 lines, and no summary of the diff.
 
 **Tell every reviewer, in its prompt: never run a gate or test command in this
 working tree, and never edit it.** Gates hold fixed resources, and a second run

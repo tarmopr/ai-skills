@@ -100,7 +100,9 @@ the Plan stage, each from a fresh context at the model and effort of its
 `## Models` row, by [stage-prompts.md](stage-prompts.md). This session never
 changes its own model or effort, which would invalidate its prompt cache: start
 it on Opus at high effort. It does the routing, the tracker, the checkout, the batch,
-the commits and ship-plan.
+the commits and ship-plan, and it reads little itself, by ship-plan's rule
+"This session reads little itself" (its section "The run"): code and long
+logs go to an `Explore` agent at the `Research` row.
 
 **All work is tracked in an issue in the repo's tracker.** With `Tracker: none`,
 the PR is the record: there is no issue and no issue question. With a tracker
