@@ -130,8 +130,10 @@ happens.
 `.claude/ship-plan/blockers.md` in full.** The config holds every command and
 setting for this repo. The first log holds standing answers to questions
 earlier runs asked; the second holds the fixes for tooling that stopped earlier
-runs. A question that has a standing answer is not asked again. Missing log
-files are created from [log-formats.md](log-formats.md) at close-out.
+runs. A question that has a standing answer is not asked again. An entry that
+records a refused command is not a standing rule: refusals depend on the
+session's permission mode, so run the command once in this run before using
+the entry's fix. Missing log files are created from [log-formats.md](log-formats.md) at close-out.
 
 **Repo override files** ([format](config-format.md#repo-override-files)):
 whenever this skill reads one of its own files, read its counterpart under
