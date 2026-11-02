@@ -459,3 +459,30 @@ test('start queue: each item after the first starts on the base branch; a dirty 
   assert.deepEqual(starts(dir), ['H-1']);
   assert.match(events(dir), / H-2 - blocked checkout busy: src\/; queue stopped$/m);
 });
+
+test('start verify: a question before the closing Done: waits; the answer resumes the verify session', async () => {
+  const root = repo();
+  git(root, 'switch', '-q', '-c', 'feat/q');
+  const vf = '.superpowers/verify-and-fix/feat-q/ledger.md';
+  const VQ = 'Asked: drop the flag? A) yes (recommended) B) no — pending';
+  const dir = runDir(root, 'verify', 'feat/q');
+  const log = join(root, 'v.json');
+  const env = {
+    ...ENV, FAKE_CLAUDE: 'ok:RUNNER: waiting 1 question', FAKE_CLAUDE_LOG: log,
+    FAKE_CLAUDE_LEDGER_APPEND: ops([
+      { when: 'phase verify.', file: vf, append: [VQ, 'Done: abc — not clean: 1 question'] },
+      { when: 'copied exactly', file: vf, replace: [[VQ, 'Asked: drop the flag? A) yes (recommended) B) no — A']], append: ['Done: def — clean'] },
+    ]),
+  };
+  const child = spawn(process.execPath, [RUNNER, 'start', 'verify', 'feat/q'], { cwd: root, env, stdio: 'ignore' });
+  const exited = new Promise((r) => child.on('close', r));
+  for (let i = 0; i < 200 && !/ feat-q verify waiting 1 question$/m.test(events(dir)); i++) await new Promise((r) => setTimeout(r, 25));
+  assert.match(events(dir), / feat-q verify waiting 1 question$/m);
+  assert.match(cli(root, ['status', dir]).stdout, /Pending questions:\nfeat-q: Asked: drop the flag\? A\) yes \(recommended\) B\) no — pending\n/);
+  writeFileSync(join(root, 'a.txt'), 'A\n');
+  assert.equal(cli(root, ['answer', dir, 'feat-q', join(root, 'a.txt')]).status, 0);
+  assert.equal(await exited, 0);
+  const seen = JSON.parse(readFileSync(log, 'utf8'));
+  assert.deepEqual(seen.argv.slice(-2), ['--resume', 's-1']);
+  assert.deepEqual(readState(dir).items.map((i) => i.status), ['done']);
+});

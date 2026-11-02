@@ -317,3 +317,73 @@ test('runIssue { ledger, only: verify }: a clean Done: with no new Blocked: ends
   const it = await runIssue(ctx, item({ key: 'feat-x' }));
   assert.equal(it.status, 'done');
 });
+
+test('runIssue { ledger, only: verify }: a question before the closing Done: ends waiting; answers resume it', async () => {
+  const root = repo();
+  const VF = '.superpowers/verify-and-fix/feat-x/ledger.md';
+  const Q = 'Asked: rename it? A) yes (recommended) B) no — pending';
+  const ops = ledgerOps([
+    { when: 'for phase verify.', file: VF, append: ['Round 1: green', Q, 'Done: abc — clean'] },
+    { when: 'copied exactly', file: VF, replace: [[Q, 'Asked: rename it? A) yes (recommended) B) no — A']], append: ['Done: def — clean'] },
+  ]);
+  const log = join(root, 'fake.json');
+  const ctx = ctxFor(root, { FAKE_CLAUDE: 'ok:RUNNER: waiting 1 question', FAKE_CLAUDE_LEDGER_APPEND: ops, FAKE_CLAUDE_LOG: log }, {
+    skill: 'verify-and-fix', args: '', ledgers: { ledger: VF, only: 'verify', from: 0 },
+  });
+  const it = await runIssue(ctx, item({ key: 'feat-x' }));
+  assert.equal(it.status, 'waiting');
+  assert.equal(it.reason, '1 question');
+  assert.match(events(root), / feat-x verify waiting 1 question$/m);
+  assert.deepEqual(pendingQuestions(root, 'feat-x', ctx.ledgers), [Q]);
+
+  // the answers resume the verify session, even though the ledger ends with Done:
+  writeFileSync(join(ctx.dir, 'answers-feat-x.md'), 'A\n');
+  Object.assign(it, { status: 'queued', answersFile: 'answers-feat-x.md' });
+  await runIssue(ctx, it);
+  const seen = JSON.parse(readFileSync(log, 'utf8'));
+  assert.deepEqual(seen.argv.slice(-2), ['--resume', 's-1']);
+  assert.match(seen.stdin, /phase verify\.\n\nThe user's answers, copied exactly:\nA\n$/);
+  assert.equal(it.status, 'done');
+  assert.deepEqual(it.sessions.map((s) => s.phase), ['verify', 'verify']);
+});
+
+test('runIssue: a ship-plan ledger at Phase: done with a pending batch is waiting, not done', async () => {
+  const root = repo({ issue: [issueFirst(6)], plan: [planFirst('done'), 'Outcome: Done', 'Asked: merge the lessons PR? — pending'] });
+  const it = await runIssue(ctxFor(root, { FAKE_CLAUDE: 'crash' }), item({ sessions: [{ phase: 'close', sessionId: 's-7', costUsd: 0, turns: 1, minutes: 0 }] }));
+  assert.deepEqual([it.status, it.reason], ['waiting', '1 question']);
+  assert.match(events(root), / BILL-7 close waiting 1 question$/m);
+});
+
+test('runIssue: Progress: task <n> parked counts as handled; 7 tasks, task 3 parked -> next chunk 6–7', async () => {
+  const done = (n) => `Progress: task ${n} done`;
+  const root = repo({ issue: [issueFirst(6)], plan: [planFirst('2'), done(1), done(2), 'Progress: task 3 parked', done(4), done(5)], tasks: 7 });
+  const log = join(root, 'fake.json');
+  await runIssue(ctxFor(root, { FAKE_CLAUDE: 'ok:RUNNER: phase-done', FAKE_CLAUDE_LOG: log }), item());
+  assert.match(JSON.parse(readFileSync(log, 'utf8')).stdin, /plan tasks 6–7\.$/);
+});
+
+test('runIssue: a plan with no ### Task headings runs implement once over the whole plan', async () => {
+  const root = repo({ issue: [issueFirst(6)], plan: [planFirst('2')], tasks: 1 });
+  writeFileSync(join(root, 'docs/plan.md'), '# Plan\n\n1. do a\n2. do b\n');
+  const log = join(root, 'fake.json');
+  const ops = ledgerOps([{ file: PLAN_LEDGER, firstLine: planFirst('done') }]);
+  const it = await runIssue(ctxFor(root, { FAKE_CLAUDE: 'ok:RUNNER: phase-done', FAKE_CLAUDE_LOG: log, FAKE_CLAUDE_LEDGER_APPEND: ops }), item());
+  assert.equal(it.status, 'done');
+  assert.match(JSON.parse(readFileSync(log, 'utf8')).stdin, /phase implement, the whole plan \(it has no ### Task headings\)\.$/);
+  assert.match(events(root), / BILL-7 implement start implement, the whole plan$/m);
+});
+
+test('runIssue: RUNNER: done with the ledgers unchanged -> done (already finished), not blocked', async () => {
+  const root = repo();
+  const it = await runIssue(ctxFor(root, { FAKE_CLAUDE: 'ok:RUNNER: done issue already in Done' }), item());
+  assert.deepEqual([it.status, it.reason], ['done', 'issue already in Done']);
+  assert.match(events(root), / BILL-7 spec done issue already in Done$/m);
+});
+
+test('tailProgress: stop() never throws on an unreadable ledger', () => {
+  const root = repo();
+  let path = null;
+  const stop = tailProgress(root, 'x', () => {}, 60000, { ledger: () => path });
+  path = root; // a directory: reading it fails with EISDIR
+  assert.doesNotThrow(() => stop());
+});

@@ -119,9 +119,9 @@ function readLedgers(root, key, opts = {}) {
   const pendingLines = all.filter((l) => PENDING.test(l));
   const pending = pendingLines.length;
   const blockedLines = all.map((l) => BLOCKED.exec(l)).filter(Boolean);
-  const doneTasks = new Set();
+  const doneTasks = new Set(); // handled: done, or parked (its question waits in the batch)
   for (const l of planBody ?? []) {
-    const m = /^Progress: task (\d+) done\b/.exec(l);
+    const m = /^Progress: task (\d+) (?:done|parked)\b/.exec(l);
     if (m) doneTasks.add(Number(m[1]));
   }
   const planDoc = planFields.Plan || issueFields.Plan || opts.planDoc;
@@ -182,8 +182,11 @@ export function phaseFromLedgers(root, key, opts = {}) {
   return { phase, waiting, blocked };
 }
 
+// chunk: { from, to } for a task range, { whole: true } for a plan without task headings.
+const rangeText = (chunk) => (!chunk ? '' : chunk.whole ? ', the whole plan' : `, plan tasks ${chunk.from}–${chunk.to}`);
+
 export function phasePrompt({ skill, args, phase, chunk, answers }) {
-  const range = chunk ? `, plan tasks ${chunk.from}–${chunk.to}` : '';
+  const range = chunk?.whole ? `${rangeText(chunk)} (it has no ### Task headings)` : rangeText(chunk);
   let prompt = `Invoke the ai-skills:${skill} skill with the Skill tool, with the arguments "${args}". ` +
     `You are a ship-runner child: nobody is watching; follow the skill's Runner mode for phase ${phase}${range}.`;
   if (answers) prompt += `\n\nThe user's answers, copied exactly:\n${answers}`;
@@ -206,12 +209,15 @@ function taskGroups(planPath, size) {
   return groups;
 }
 
-// The first chunk with a task the ship-plan ledger has no `Progress: task <n> done` line for,
-// or null (no plan file, or every chunk done: the child finishes the phase's other work).
+// The first chunk with a task the ship-plan ledger has no `Progress: task <n> done|parked` line
+// for; { whole: true } when the plan has no `### Task` headings (one child does all of it); or null
+// (no plan file, or every chunk done: the child finishes the phase's other work).
 function nextChunk(ledgers, size) {
   if (!ledgers.planDoc || !existsSync(ledgers.planDoc)) return null;
+  const groups = taskGroups(ledgers.planDoc, size);
+  if (!groups.length) return { whole: true };
   // the chunk's own task numbers, so a gap (tasks 1, 2, 5) never looks undone
-  const group = taskGroups(ledgers.planDoc, size).find((g) => g.some((n) => !ledgers.doneTasks.has(n)));
+  const group = groups.find((g) => g.some((n) => !ledgers.doneTasks.has(n)));
   return group ? { from: group[0], to: group.at(-1) } : null;
 }
 
@@ -245,7 +251,11 @@ export function tailProgress(root, key, onLine, intervalMs = 5000, opts = {}) {
   timer.unref?.();
   return () => {
     clearInterval(timer);
-    read(true);
+    try {
+      read(true);
+    } catch {
+      // as above: a last read that fails loses only progress lines, never the run
+    }
   };
 }
 
@@ -274,15 +284,18 @@ export async function runIssue(ctx, item) {
 
   for (;;) {
     const before = readLedgers(root, key, ctx.ledgers);
-    if (before.phase === 'finished') {
+    const finished = before.phase === 'finished';
+    if (finished && !before.waiting) {
       item.phase = 'finished';
-      const reason = before.waiting ? 'questions pending' : '';
-      return end('done', reason, 'finished', 'done', reason || 'all phases done');
+      return end('done', '', 'finished', 'done', 'all phases done');
     }
     if (before.unknown) return end('blocked', before.unknown, before.phase, 'blocked', before.unknown);
-    if (before.waiting && !answers) return end('waiting', plural(before.questions), before.phase, 'waiting', plural(before.questions));
+    // Finished but asking (verify-and-fix's closing Done:, a close-out batch): the answers go to
+    // the phase that asked, the last one run.
+    const phase = finished ? item.sessions.at(-1)?.phase ?? ctx.ledgers?.only ?? 'close' : before.phase;
+    if (finished) item.phase = phase;
+    if (before.waiting && !answers) return end('waiting', plural(before.questions), phase, 'waiting', plural(before.questions));
 
-    const phase = before.phase;
     const row = PHASE_ROWS[phase];
     const pick = ctx.models?.[row];
     if (!pick) return end('blocked', `no ## Models row "${row}"`, phase, 'blocked', `no ## Models row "${row}"`);
@@ -293,7 +306,7 @@ export async function runIssue(ctx, item) {
     item.phase = phase;
     item.status = 'running';
     ctx.save?.(item);
-    emit(dir, key, phase, 'start', chunk ? `${phase}, plan tasks ${chunk.from}–${chunk.to}` : phase);
+    emit(dir, key, phase, 'start', `${phase}${rangeText(chunk)}`);
 
     const opts = {
       dir, cwd: root, key, phase, prompt, model: pick.model, effort: pick.effort,
@@ -331,6 +344,11 @@ export async function runIssue(ctx, item) {
     if (after.signature === before.signature) {
       // No ledger change: without a RUNNER: line the child did not finish (crash, cut stream).
       if (!r.marker) return end('cut off', 'no RUNNER: line', phase, 'cutoff', 'no RUNNER: line');
+      // nothing to do: the issue was finished already (ship-issue I0's first row)
+      if (r.marker.status === 'done') {
+        const why = r.marker.text || 'already done';
+        return end('done', why, phase, 'done', why);
+      }
       const why = `phase ${phase} ended without progress`;
       return end('blocked', why, phase, 'blocked', why);
     }
