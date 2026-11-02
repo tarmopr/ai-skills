@@ -27,6 +27,7 @@ files' shape. These scenarios pin behaviour.
 | S14 | [S14-validate-deploy.md](S14-validate-deploy.md) | Four runs: validating the deploy at `Hosted URL:`: the run signs in, a failure that leads to `red-base.md`, no sign-in, a refused sign-in |
 | S15 | [S15-loop-behaviors.md](S15-loop-behaviors.md) | Implementer context, prerequisites first, reviewers run no gates, gates after a base-branch merge, the key in a branch name, a handoff |
 | S16 | [S16-github-issues.md](S16-github-issues.md) | GitHub with GitHub Issues: the tracker question, labels as status, no closing keyword, close only when Done means is met |
+| S17 | [S17-ship-queue.md](S17-ship-queue.md) | Four runs: ship-queue order, the loop and its outcomes, queued mode in ship-issue and ship-plan, resume with answers |
 
 ## How to run one
 
@@ -37,7 +38,7 @@ files' shape. These scenarios pin behaviour.
    folder.
 2. Dispatch one fresh `general-purpose` subagent per prompt. Its prompt is
    the text of the scenario's `## Prompt` section (S7 has five, `## Prompt
-   S7a` … `## Prompt S7e`, each its own run), with every `SKILLDIR` replaced by
+   S7a` … `## Prompt S7e`, each its own run; S17 has four, and pastes its shared repo block where a prompt says **[The repo]**), with every `SKILLDIR` replaced by
    the path from step 1, followed by the whole **Answer format** section below.
    Never give it the **Pass if** lines, this README's table, or the spec and
    plan: a runner that knows what is being tested answers to the test.

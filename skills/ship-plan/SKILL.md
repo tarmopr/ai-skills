@@ -544,6 +544,25 @@ these rules say:
 During the run, write lessons in the ledger as `Lesson:` lines. Editing the
 log files on the feature branch mixes them into the product PR.
 
+## Queued mode (ship-queue)
+
+**A run is queued** when it was started by ship-queue in this session
+(ship-queue invoked ship-issue, which invoked this skill, or ship-queue invoked
+it directly with answers) and a ship-queue ledger in this checkout
+(`.superpowers/ship-queue/*/ledger.md`) has a `Current: <KEY> started …` line
+naming this run's issue (its ledger's first-line `Issue:`, or the plan's
+`From ship-issue` block before the ledger exists), with no `Result: <KEY>` line
+after it. A leftover queue ledger alone does not make a run the user started
+queued. Nobody is watching the run. Everything above applies, with these
+changes:
+
+- **Several open runs** (section 0, step 2): the queue's other sub-issues can each hold one. Resume the one whose `Issue:` is the `Current:` key; never ask which. When ship-queue passes answers for a run already `Phase: done` with an `Asked: … — pending` line, that done ledger is the one: apply the answers as section 0, step 2 says for a done ledger, even though other runs are open.
+- **Outcome line:** at close-out (section 7, step 1), write `Outcome: <Done|Base branch red|Awaiting review|Not merged>`, the outcome whose template the closing comment used, under the first line. ship-queue reads it; `Base branch red` stops the queue.
+- **Ask nothing: never `AskUserQuestion`, and never wait for a reply** (section 0, step 10; section 3, step 5; section 7, step 7). The batch goes into `questions.md` and the ledger as unqueued (`Asked: … — pending`), and as one comment: the tracker's *Comment*, or with no issue the host's *PR comment* (no PR either: the ledger only). Number the questions, each with its options and the recommendation first, and end with the answer line **"Answer with `/ship-queue <parent> <KEY>: <your answers>`."** (`<parent>` is the queue ledger's `Parent:`). The queue resumes this run with them in the form `/ship-queue <parent> <KEY>: <answers>`. Carry on with everything the answers do not block, as unqueued; the run then ends at section 7 as it would.
+- **Review wait** (section 4R): when the PR's checks are green and only a person's approval, or a person's unresolved thread, is missing, hand off at once (step 5) instead of waiting the `Review wait:` window. The wait for an AI review (at most 20 minutes) and every CI wait stay. The queue polls once more after its last sub-issue.
+- **No handoffs of this run's own:** neither the session-end handoff (the ledger section) nor a next part's (section 7, step 3). The queue writes one for the whole queue, and the queue is the next part.
+- **Lessons** (section 8): the branch is `docs/ship-plan-lessons-<yyyy-mm-dd>-<KEY-n>`, so a queue's runs on one day do not collide on one branch name. Write `Lessons branch: <name>` when you create it, and `Docs branch: <name>` when docs-pr.md creates the docs branch; the queue reads them to know the branch is its own. The `Lessons PR:` line is written as unqueued. Everything else in section 8 is unchanged.
+
 ## Red flags
 
 | Thought | Reality |

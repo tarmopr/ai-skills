@@ -44,6 +44,10 @@ Do not assume an integration closes the issue. You apply the done transition, on
 
 **When the issue has a parent story** (ship-issue, I2 step 2), also list the parent's sub-tasks created since the base commit (`searchJiraIssuesUsingJql`: `parent = <story> AND created >= "<base commit date>"`) into `issue.md`: a sibling filed minutes earlier can already cover part of this issue.
 
+## List sub-issues
+
+Used by ship-queue. `searchJiraIssuesUsingJql` with `cloudId` from `Site:`, the JQL `parent = <key> ORDER BY rank`, and the fields `summary, status, assignee, priority, issuelinks, created`. An inward "is blocked by" issue link names a hard dependency. A status in the done status category is done. Tracker order: rank, as the query returns it.
+
 ## Where a new issue goes
 
 Asked when a run has no Jira issue key, as templates-issue.md's "Issue question"

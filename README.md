@@ -4,6 +4,7 @@ Claude Code skills by Tarmo Protsin.
 
 | Skill | What it does |
 | :- | :- |
+| `ship-queue` | Ships every sub-issue of a parent issue with `ship-issue`, one after another; logs what could not finish, moves on, and ends with a summary of what you need to do. Linear or Jira |
 | `ship-issue` | Takes an issue or a described problem through design, spec and plan to a merged PR (runs `ship-plan`). Works on GitHub, GitHub Enterprise or Azure DevOps, with Jira, Linear, GitHub Issues or no tracker |
 | `ship-plan` | Carries a written implementation plan, unsupervised, to a merged PR on a green base branch. Works on GitHub, GitHub Enterprise or Azure DevOps, with Jira, Linear, GitHub Issues or no tracker |
 | `verify-and-fix` | Brings a branch or PR to merge-ready: runs the repo's gates, UI scenarios and review rounds until clean, and answers the PR's review comments, from people and Copilot. Works on GitHub, GitHub Enterprise or Azure DevOps |

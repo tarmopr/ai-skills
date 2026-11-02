@@ -11,6 +11,7 @@ dependencies and the files the config's `## Worktree` `Copy:` lists.
 | Main checkout, on this issue's branch | Stay. |
 | Main checkout, on another branch or dirty (another agent or the user is working) | New worktree (recipe). Never switch, stash or commit someone else's tree, and never run its tests. |
 | A worktree on this issue's branch | Stay. |
+| The ship-queue worktree, on `<base>` or detached `origin/<base>`, clean | Branch there. |
 | A worktree holding other work | New worktree (recipe). Don't rename or reuse this one. |
 
 From a worktree-isolated session, git cannot read the main checkout: `git -C`

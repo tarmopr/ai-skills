@@ -49,6 +49,10 @@ Otherwise return candidates only: `gh issue list -R <Repo> --state open --search
 
 `gh issue view <n> -R <Repo> --json number,title,body,state,labels,milestone,assignees,comments`. Issues the body or the comments name as related or blocking (`#<m>`, or an issue URL) are read the same way. `state: CLOSED` counts as a done status category. The issue body may be the plan; with GitHub Issues unavailable there is no plan, so park it and ask now.
 
+## List sub-issues
+
+ship-queue does not support GitHub Issues: this tracker file uses no sub-issues (see *Link two issues*). ship-queue stops with one line.
+
 ## Where a new issue goes
 
 The config's `Repo:`. One place to choose, the milestone, and only when the repo has open milestones: `gh api repos/<owner>/<name>/milestones --hostname <host>` (the API returns open milestones only; never add a `?` query, which the shell expands). The question is "If a new issue: add it to a milestone? (optional)": "No milestone" first, then up to 3 open milestones, soonest `due_on` first (none set: most recently created). No open milestones: no question. If an answer names a related issue, or the new issue must wait for another, link them as "Link two issues" says.
