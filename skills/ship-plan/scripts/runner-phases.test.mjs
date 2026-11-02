@@ -289,3 +289,31 @@ test('runIssue { ledgers }: plan run starts at implement with the plan doc, ship
   assert.equal(it.status, 'done');
   assert.match(JSON.parse(readFileSync(log, 'utf8')).stdin, /ai-skills:ship-plan skill .* "docs\/plan\.md".*phase implement, plan tasks 1–2\.$/);
 });
+
+test('runIssue { ledger, only: verify }: Blocked: then the closing Done: ends blocked, not done', async () => {
+  const root = repo();
+  const VF = '.superpowers/verify-and-fix/feat-x/ledger.md';
+  mkdirSync(dirname(join(root, VF)), { recursive: true });
+  writeFileSync(join(root, VF), 'Blocked: old\nDone: abc — clean\n'); // an earlier run, before the snapshot
+  const ops = ledgerOps([{ file: VF, append: ['Blocked: gate e2e could not run', 'Done: def — not clean: gate e2e could not run'] }]);
+  const ctx = ctxFor(root, { FAKE_CLAUDE: 'ok:RUNNER: blocked gate e2e could not run', FAKE_CLAUDE_LEDGER_APPEND: ops }, {
+    skill: 'verify-and-fix', args: '', ledgers: { ledger: VF, only: 'verify', from: 2 },
+  });
+  const it = await runIssue(ctx, item({ key: 'feat-x' }));
+  assert.equal(it.status, 'blocked');
+  assert.equal(it.reason, 'gate e2e could not run');
+  assert.match(events(root), /feat-x verify blocked gate e2e could not run/);
+});
+
+test('runIssue { ledger, only: verify }: a clean Done: with no new Blocked: ends done', async () => {
+  const root = repo();
+  const VF = '.superpowers/verify-and-fix/feat-x/ledger.md';
+  mkdirSync(dirname(join(root, VF)), { recursive: true });
+  writeFileSync(join(root, VF), 'Blocked: old\n');
+  const ops = ledgerOps([{ file: VF, append: ['Done: def — clean'] }]);
+  const ctx = ctxFor(root, { FAKE_CLAUDE: 'ok:RUNNER: done clean', FAKE_CLAUDE_LEDGER_APPEND: ops }, {
+    skill: 'verify-and-fix', args: '', ledgers: { ledger: VF, only: 'verify', from: 1 },
+  });
+  const it = await runIssue(ctx, item({ key: 'feat-x' }));
+  assert.equal(it.status, 'done');
+});

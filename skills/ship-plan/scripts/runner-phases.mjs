@@ -316,6 +316,11 @@ export async function runIssue(ctx, item) {
     if (!r.ok) return end('cut off', r.error, phase, 'cutoff', r.error);
     // The ledgers win over the marker.
     const after = readLedgers(root, key, ctx.ledgers);
+    // A direct ledger (verify-and-fix) ends with a Done: line even when the run is blocked:
+    // a Blocked: line this child wrote wins over that Done:.
+    if (ctx.ledgers?.ledger !== undefined && after.blockedCount > before.blockedCount) {
+      return end('blocked', after.blocked, phase, 'blocked', after.blocked);
+    }
     if (after.phase === 'finished' || after.unknown) continue;
     if (after.waiting) return end('waiting', plural(after.questions), phase, 'waiting', plural(after.questions));
     if (r.marker?.status === 'blocked') {
