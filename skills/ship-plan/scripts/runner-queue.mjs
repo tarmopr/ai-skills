@@ -41,7 +41,7 @@ export function nextItem(state) {
   if (!next) {
     // only a cycle is left: each waits on a queued item that waits on it
     for (const i of items.filter((x) => x.status === 'queued')) {
-      const d = i.deps.find((k) => byKey.get(k)?.status !== 'done');
+      const d = (i.deps ?? []).find((k) => byKey.get(k)?.status !== 'done');
       hold(i, d, byKey.get(d).status);
     }
   }

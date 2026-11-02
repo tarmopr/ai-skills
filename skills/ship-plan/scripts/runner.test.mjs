@@ -55,7 +55,7 @@ const starts = (dir) => [...events(dir).matchAll(/ (\S+) \S+ start /g)].map((m) 
 const deadPid = () => spawnSync(process.execPath, ['-e', '']).pid;
 
 test('parseConfig: ## Runner chunk, ## Queue mode, ## Models rows over defaults', () => {
-  assert.deepEqual(parseConfig(''), { chunkSize: 5, mode: 'auto', models: MODEL_DEFAULTS });
+  assert.deepEqual(parseConfig(''), { chunkSize: 5, mode: 'auto', models: MODEL_DEFAULTS, baseBranch: 'main' });
   assert.deepEqual(MODEL_DEFAULTS['Phase: close'], { model: 'sonnet', effort: 'medium' });
   const cfg = parseConfig([
     '## runner ', 'Mode: runner', 'Implement chunk: 3', '',
@@ -130,14 +130,15 @@ test('answer while running: stored, no second child started', () => {
   const file = join(root, 'answers.txt');
   writeFileSync(file, '1. postgres `$(whoami)`\n');
 
+  const before = readFileSync(join(dir, 'state.json'), 'utf8');
   const r = cli(root, ['answer', dir, 'A-2', file]);
   assert.equal(r.status, 0, r.stderr);
   assert.equal(readFileSync(join(dir, 'answers-A-2.md'), 'utf8'), '1. postgres `$(whoami)`\n');
-  const s = readState(dir);
-  assert.deepEqual([byKey(s, 'A-2').status, byKey(s, 'A-2').answersFile], ['queued', 'answers-A-2.md']);
-  assert.equal(byKey(s, 'A-1').status, 'running');
+  // the file is the record: state.json is the runner's alone, so no runner write can be lost
+  assert.equal(readFileSync(join(dir, 'state.json'), 'utf8'), before);
   assert.match(events(dir), / A-2 verify progress answers received$/m);
   assert.deepEqual(children(dir), []);
+  assert.match(cli(root, ['status', dir]).stdout, /^A-2 +waiting +verify +1 question; answers received /m);
 
   // a second runner on the same run dir is refused while the first holds the lock
   const again = cli(root, ['start', 'queue', 'P-1', 'A-1,A-2'], { FAKE_CLAUDE_BY_KEY: JSON.stringify({ 'A-1': ships('A-1'), 'A-2': ships('A-2') }) });
@@ -311,4 +312,85 @@ test('start plan: ship-plan child at implement; start verify: verify-and-fix alo
   const other = cli(root, ['start', 'verify', 'feat/y']);
   assert.equal(other.status, 2);
   assert.match(other.stderr, /feat\/x/);
+});
+
+test('killed during an answered child: the rerun resumes with the consumed answers, no crash', () => {
+  const root = repo();
+  atVerify(root, 'R-1');
+  put(root, planLedger('R-1'), [planFirst('R-1', '3'), Q]); // the question is still pending
+  const dir = runDir(root, 'issue', 'R-1');
+  writeState(dir, {
+    kind: 'issue', id: 'R-1', current: 'R-1', stopped: null,
+    items: [{ key: 'R-1', phase: 'verify', status: 'running', reason: '', deps: [], answersFile: 'answers-R-1-1.md',
+      sessions: [{ phase: 'verify', sessionId: 's-3', costUsd: 0.1, turns: 1, minutes: 0 }] }],
+  });
+  writeFileSync(join(dir, 'answers-R-1-1.md'), 'postgres\n'); // consumed; answers-R-1.md is gone
+  writeFileSync(join(dir, 'lock'), JSON.stringify({ runner: deadPid(), child: deadPid() }));
+  const log = join(root, 'r.json');
+  const r = cli(root, ['start', 'issue', 'R-1'], waitsThenShips('R-1', { FAKE_CLAUDE_LOG: log }));
+  assert.equal(r.status, 0, r.stderr);
+  const seen = JSON.parse(readFileSync(log, 'utf8'));
+  assert.deepEqual(seen.argv.slice(-2), ['--resume', 's-3']);
+  assert.match(seen.stdin, /copied exactly:\npostgres\n$/);
+  assert.deepEqual([readState(dir).items[0].status, readState(dir).items[0].answersFile], ['done', null]);
+
+  // killed after the child answered the ledger: a rerun drops the consumed answers
+  const root2 = repo();
+  atVerify(root2, 'R-1');
+  const dir2 = runDir(root2, 'issue', 'R-1');
+  writeState(dir2, { ...readState(dir), root: root2, stopped: null, items: [{ ...readState(dir).items[0], status: 'running', answersFile: 'answers-R-1-1.md' }] });
+  writeFileSync(join(dir2, 'answers-R-1-1.md'), 'postgres\n');
+  const log2 = join(root2, 'r.json');
+  assert.equal(cli(root2, ['start', 'issue', 'R-1'], { ...ships('R-1'), FAKE_CLAUDE_LOG: log2 }).status, 0);
+  const seen2 = JSON.parse(readFileSync(log2, 'utf8'));
+  assert.ok(!seen2.argv.includes('--resume'));
+  assert.doesNotMatch(seen2.stdin, /copied exactly/);
+});
+
+test('rerun re-queues a blocked item', () => {
+  const root = repo();
+  atVerify(root, 'X-1', 'X-2');
+  const run = (x1) => cli(root, ['start', 'queue', 'P-1', 'X-1,X-2'], { FAKE_CLAUDE_BY_KEY: JSON.stringify({ 'X-1': x1, 'X-2': ships('X-2') }) });
+  assert.equal(run({ FAKE_CLAUDE: 'ok:RUNNER: blocked CI secret missing' }).status, 0);
+  const dir = runDir(root, 'queue', 'P-1');
+  assert.deepEqual(readState(dir).items.map((i) => i.status), ['blocked', 'done']);
+  assert.equal(run(ships('X-1')).status, 0);
+  assert.deepEqual(readState(dir).items.map((i) => i.status), ['done', 'done']);
+  assert.deepEqual(children(dir), ['X-1-verify-1.jsonl', 'X-1-verify-2.jsonl', 'X-2-verify-1.jsonl']);
+});
+
+test('child permission mode: only from the base branch committed config; invalid or unreadable -> auto', () => {
+  const root = repo();
+  const git = (...a) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd: root, stdio: 'pipe' });
+  git('init', '-q', '-b', 'main');
+  const cfg = (mode, base = '') => ['## Repo', base, '## Queue', `- Child permission mode: ${mode}`, '## Models', '| Role | Model | Effort |', '|---|---|---|', '| Phase: verify | haiku | low |'];
+  const log = join(root, 'm.json');
+  const runOnce = (k) => {
+    atVerify(root, k);
+    assert.equal(cli(root, ['start', 'issue', k], { ...ships(k), FAKE_CLAUDE_LOG: log }).status, 0);
+    const argv = JSON.parse(readFileSync(log, 'utf8')).argv;
+    return { mode: argv[argv.indexOf('--permission-mode') + 1], model: argv[argv.indexOf('--model') + 1], events: events(runDir(root, 'issue', k)) };
+  };
+  // no origin/main: auto
+  put(root, '.claude/ship-plan.md', cfg('acceptEdits'));
+  assert.equal(runOnce('M-1').mode, 'auto');
+  // committed on origin/main: used; a working-tree edit to bypassPermissions is ignored, its Models row is not
+  git('add', '.claude/ship-plan.md');
+  git('commit', '-q', '-m', 'cfg');
+  git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+  put(root, '.claude/ship-plan.md', cfg('bypassPermissions'));
+  const m2 = runOnce('M-2');
+  assert.deepEqual([m2.mode, m2.model], ['acceptEdits', 'haiku']);
+  assert.match(m2.events, / M-2 - progress child permission mode: acceptEdits \(from origin\/main\)$/m);
+  // an invalid committed value: auto
+  put(root, '.claude/ship-plan.md', cfg('yolo'));
+  git('commit', '-q', '-am', 'bad');
+  git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+  assert.equal(runOnce('M-3').mode, 'auto');
+  // Base branch: from ## Repo
+  put(root, '.claude/ship-plan.md', cfg('dontAsk', '- Base branch: dev'));
+  git('commit', '-q', '-am', 'dev');
+  git('update-ref', 'refs/remotes/origin/dev', 'HEAD');
+  assert.equal(runOnce('M-4').mode, 'dontAsk');
+  assert.equal(parseConfig('## Queue\nChild permission mode: yolo\n').mode, 'auto');
 });

@@ -27,9 +27,12 @@ export const MODEL_DEFAULTS = {
 
 const strip = (v) => v.replace(/`/g, '').trim();
 
+export const CHILD_MODES = ['auto', 'acceptEdits', 'dontAsk', 'bypassPermissions'];
+
 /**
  * What the runner reads from `.claude/ship-plan.md`: `## Runner` `Implement chunk:` (default 5),
- * `## Queue` `Child permission mode:` (default auto), `## Models` rows over MODEL_DEFAULTS.
+ * `## Queue` `Child permission mode:` (default auto; an unknown value is auto), `## Models` rows
+ * over MODEL_DEFAULTS, `## Repo` `Base branch:` (default main).
  * Headings match case-insensitively; a field line may start with `- `.
  */
 export function parseConfig(text) {
@@ -55,16 +58,34 @@ export function parseConfig(text) {
     if (!role || !model || role.toLowerCase() === 'role' || /^-+$/.test(role)) continue;
     models[role] = { model, effort: effort || MODEL_DEFAULTS[role]?.effort || 'high' };
   }
-  return { chunkSize: chunk > 0 ? chunk : 5, mode: field('queue', 'Child permission mode') || 'auto', models };
+  const mode = field('queue', 'Child permission mode');
+  return {
+    chunkSize: chunk > 0 ? chunk : 5,
+    mode: CHILD_MODES.includes(mode) ? mode : 'auto',
+    models,
+    baseBranch: field('repo', 'Base branch') || 'main',
+  };
 }
 
+// Models and Implement chunk come from the working tree. The permission mode comes only from the
+// base branch's committed config: a child can edit the working tree, and must not raise the next
+// child's mode. Any read failure: auto.
 function readConfig(root) {
+  let cfg;
   try {
-    return parseConfig(readFileSync(join(root, '.claude', 'ship-plan.md'), 'utf8'));
+    cfg = parseConfig(readFileSync(join(root, '.claude', 'ship-plan.md'), 'utf8'));
   } catch (e) {
-    if (e.code === 'ENOENT') return parseConfig('');
-    throw e;
+    if (e.code !== 'ENOENT') throw e;
+    cfg = parseConfig('');
   }
+  const ref = `origin/${cfg.baseBranch}`;
+  let mode = 'auto';
+  try {
+    mode = parseConfig(git(root, 'show', `${ref}:.claude/ship-plan.md`)).mode;
+  } catch {
+    // no git, no such ref, or no committed config
+  }
+  return { ...cfg, mode, modeFrom: ref };
 }
 
 function git(root, ...args) {
@@ -189,10 +210,11 @@ async function start(rest) {
   else {
     // resume from files: what was cut short runs again; the ledgers say where
     for (const i of state.items) {
-      if (['running', 'cut off', 'not started'].includes(i.status)) Object.assign(i, { status: 'queued', reason: '' });
+      if (['running', 'cut off', 'not started', 'blocked'].includes(i.status)) Object.assign(i, { status: 'queued', reason: '' });
       if (i.status === 'waiting' && !phaseFromLedgers(root, i.key, ledgerOpts(root, state, i)).waiting) Object.assign(i, { status: 'queued', reason: '' });
     }
   }
+  state.root = root;
   state.current = null;
   state.stopped = null;
   const save = () => {
@@ -205,6 +227,7 @@ async function start(rest) {
   const base = { root, dir, models: cfg.models, mode: cfg.mode, env: {}, chunkSize: cfg.chunkSize, skill: run.skill, args: run.args, save };
   const pollMs = Number(process.env.SHIP_RUNNER_POLL_MS) || 30000;
   const slug = state.id.replaceAll('/', '-');
+  emit(dir, slug, '-', 'progress', `child permission mode: ${cfg.mode} (from ${cfg.modeFrom})`);
   try {
     for (;;) {
       syncAnswers(state, dir);
@@ -221,13 +244,20 @@ async function start(rest) {
       }
       const ledgers = ledgerOpts(root, state, item);
       if (item.answersFile) {
-        const used = consumeAnswers(dir, item.key);
-        if (phaseFromLedgers(root, item.key, ledgers).waiting) item.answersFile = used;
-        else {
-          // nothing is waiting for them: never hand answers to a child that asked nothing
-          Object.assign(item, { answersFile: null, answersUnused: used });
-          emit(dir, item.key, item.phase ?? '-', 'progress', `answers not used, no question pending (${used})`);
+        const waits = phaseFromLedgers(root, item.key, ledgers).waiting;
+        if (existsSync(join(dir, answersName(item.key)))) {
+          const used = consumeAnswers(dir, item.key);
+          if (waits) item.answersFile = used;
+          else {
+            // nothing is waiting for them: never hand answers to a child that asked nothing
+            Object.assign(item, { answersFile: null, answersUnused: used });
+            emit(dir, item.key, item.phase ?? '-', 'progress', `answers not used, no question pending (${used})`);
+          }
+        } else if (!waits || !existsSync(join(dir, item.answersFile))) {
+          // consumed by a run killed mid-child: its questions are answered already, or the file is gone
+          item.answersFile = null;
         }
+        // else: consumed by a run killed mid-child and the ledgers still wait: resume with it again
       }
       state.current = item.key;
       save();
@@ -259,11 +289,11 @@ function answer([dirArg, key, file]) {
   if (!state) return usage(`answer: no run at ${dirArg}`);
   const item = state.items.find((i) => i.key === key);
   if (!item) return usage(`answer: ${key} is not in this run`);
+  // The file alone is the record: the runner (now, or on the next start) puts the item back in
+  // line from it. Writing state.json here could lose a write of a runner that holds the lock.
   const tmp = join(dir, `${answersName(key)}.${process.pid}.tmp`);
   writeFileSync(tmp, readFileSync(file));
   renameSync(tmp, join(dir, answersName(key)));
-  if (state.current !== key) Object.assign(item, { status: 'queued', reason: '', answersFile: answersName(key) });
-  writeState(dir, state);
   emit(dir, key, item.phase ?? '-', 'progress', 'answers received');
   console.log(`answers stored: ${join(dir, answersName(key))}`);
   return 0;
@@ -274,10 +304,14 @@ function status([dirArg]) {
   const dir = resolve(dirArg);
   const state = readState(dir);
   if (!state) return usage(`status: no run at ${dirArg}`);
-  const root = resolve(dir, '..', '..', '..'); // <root>/.superpowers/ship-runner/<run>/
+  const root = state.root ?? resolve(dir, '..', '..', '..'); // <root>/.superpowers/ship-runner/<run>/
   const rows = [['key', 'status', 'phase', 'reason', 'cost', 'minutes']];
   for (const i of state.items) {
-    const reason = [i.reason, i.answersUnused ? `answers not used (${i.answersUnused})` : ''].filter(Boolean).join('; ');
+    const reason = [
+      i.reason,
+      existsSync(join(dir, answersName(i.key))) ? 'answers received' : '',
+      i.answersUnused ? `answers not used (${i.answersUnused})` : '',
+    ].filter(Boolean).join('; ');
     rows.push([i.key, i.status, i.phase ?? '-', reason, `$${costOf(i).toFixed(2)}`, String(minutesOf(i))]);
   }
   const widths = rows[0].map((_, c) => Math.max(...rows.map((r) => r[c].length)));
@@ -296,5 +330,10 @@ export async function main(argv) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
-  process.exitCode = await main(process.argv.slice(2));
+  try {
+    process.exitCode = await main(process.argv.slice(2));
+  } catch (e) {
+    console.error(`runner: ${e.message}`);
+    process.exitCode = 1;
+  }
 }
