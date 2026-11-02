@@ -3,6 +3,7 @@ name: verify-and-fix
 description: Use when a branch or PR on GitHub, GitHub Enterprise or Azure DevOps must be brought to merge-ready without supervision, or when asked to "verify", "review and fix", "get CI green", "triage the PR comments" or "address the reviewer comments", in a repo configured for ship-plan (.claude/ship-plan.md). Also use to resume such a loop after a context compaction.
 argument-hint: '[base branch name, default the config''s Base branch] [--comments]'
 allowed-tools:
+  - Bash(printenv SHIP_RUNNER)
   - Bash(git fetch origin *)
   - Bash(git status *)
   - Bash(git diff *)
@@ -353,6 +354,22 @@ target file (`.claude/ship-plan/blockers.md` for a blocker). ship-plan's section
 Run on its own, leave these edits uncommitted and say so.
 
 A blocker you got past but did not write down will stop the next run too.
+
+## Runner mode (ship-runner)
+
+**A run is in Runner mode** when the ship runner started it as a child
+(`printenv SHIP_RUNNER` prints the runner's folder) and that folder's
+`state.json` has a `current` field equal to the checked-out branch's name with
+every `/` written as `-`. Under `ship-plan` it never is: the runner's `current`
+is then the issue. The runner's prompt names phase `verify`, the only one.
+Nobody is watching. Everything above applies, with these changes:
+
+- **Ask nothing: never `AskUserQuestion`, and never wait for a reply,** at every point this skill would ask (section 1's one message, the stops of section 6). Write each question to this skill's ledger as `Asked: <the question, its options, the recommendation first> — pending`. With an open PR, also post them as one comment (the host's *PR comment*), numbered, ending with the answer line **"Answer in the session that started the run."** Without a PR, the ledger only. An outward-facing or destructive action is such a question, with its exact command; never run it. Carry on with everything the answers do not block (section 6).
+- **Answers** come back in a later runner prompt, after "The user's answers, copied exactly:". Rewrite each answered `Asked: … — pending` line in place with its answer, never as a second line: the runner counts every line that still ends in `— pending`.
+- **Progress lines:** at each milestone write `Progress: <text>` to the ledger: `review round <n>` (with each `Reviewed:` line), `CI <green|red>` (each time the PR's checks are read).
+- **Blocked:** when the loop ends `not clean` and no question waits for the user, write `Blocked: <reason>` to the ledger, the reason as the status line gives it.
+- **The `Done:` line** is still the ledger's last line, every time (section 7).
+- **The final reply ends with exactly one line** `RUNNER: <phase-done|waiting|blocked|done> <text>`, and nothing after it: `waiting` when an `Asked: … — pending` line waits for the user; `blocked` with the reason of the `Blocked:` line; otherwise `done <the status line>`.
 
 ## Red flags
 
