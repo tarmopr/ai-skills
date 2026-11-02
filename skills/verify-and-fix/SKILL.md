@@ -371,6 +371,10 @@ Nobody is watching. Everything above applies, with these changes:
 - **The `Done:` line** is still the ledger's last line, every time (section 7).
 - **The final reply ends with exactly one line** `RUNNER: <phase-done|waiting|blocked|done> <text>`, and nothing after it: `waiting` when an `Asked: … — pending` line waits for the user; `blocked` with the reason of the `Blocked:` line; otherwise `done <the status line>`.
 
+## Runner or session
+
+With `## Runner` `Mode: runner`, or the argument `--runner`, the ship runner runs the phases and this session only watches and relays: read [../ship-plan/runner-session.md](../ship-plan/runner-session.md) and follow it with `start verify <branch>`. Otherwise ignore this section; the skill runs as above.
+
 ## Red flags
 
 | Thought | Reality |

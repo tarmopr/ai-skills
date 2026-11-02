@@ -358,6 +358,10 @@ applies, with these changes:
 - **A question before the ledger's folder is known** (section 0, steps 5 and 6): there is no ledger to write it to. End at once, with the question in the `RUNNER:` line as `blocked`.
 - **The final reply ends with exactly one line** `RUNNER: <phase-done|waiting|blocked|done> <text>`, and nothing after it: `phase-done` when the ledger's first line has moved to the next phase or the range's tasks are done; `waiting` when an `Asked: … — pending` line waits for the user; `blocked` with the reason of the `Blocked:` line; `done` when the ledger says `Phase: done`.
 
+## Runner or session
+
+With `## Runner` `Mode: runner`, or the argument `--runner`, the ship runner runs the phases and this session only watches and relays: read [runner-session.md](runner-session.md) and follow it with `start plan <path>`. Otherwise ignore this section; the skill runs as above.
+
 ## Red flags
 
 | Thought | Reality |

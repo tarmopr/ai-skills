@@ -243,6 +243,10 @@ Queued mode above applies, with these changes:
 - **Blocked:** when nothing in the phase can go on and no question waits for the user (a stage that reports `blocked` with nothing to ask), write `Blocked: <reason>` to this ledger.
 - **The final reply ends with exactly one line** `RUNNER: <phase-done|waiting|blocked|done> <text>`, and nothing after it: `phase-done` when the ledger's first line has moved to the next phase; `waiting` when an `Asked: … — pending` line or the `Waiting: batch …` line waits for the user; `blocked` with the reason of the `Blocked:` line; `done` when the issue is in status category Done and nothing ships (I0's first row).
 
+## Runner or session
+
+With `## Runner` `Mode: runner`, or the argument `--runner`, the ship runner runs the phases and this session only watches and relays: read [../ship-plan/runner-session.md](../ship-plan/runner-session.md) and follow it with `start issue <KEY>`. Otherwise ignore this section; the skill runs as above.
+
 ## Red flags
 
 | Thought | Reality |
