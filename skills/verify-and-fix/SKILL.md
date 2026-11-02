@@ -77,7 +77,7 @@ digraph loop {
   "Gates: run all, read every tail" [shape=box];
   "All gates green?" [shape=diamond];
   "Fix gate failure, test first" [shape=box];
-  "Review round: agents on the whole diff" [shape=box, label="Review round: agents and security on the whole diff"];
+  "Review round: agents on the whole diff" [shape=box, label="Review round: agents and security; round 1 the whole diff, later rounds the fixes"];
   "Critical or Important found?" [shape=diamond, label="Critical or Important found,\nor a comment unanswered?"];
   "Triage, fix each with a failing test, commit the round" [shape=box];
   "Report" [shape=doublecircle];
@@ -149,16 +149,37 @@ click through.
 
 ## 4. Review round
 
-Scope: `git diff origin/<base>...HEAD`. Launch these in parallel, each on the
-whole diff, each with the `model` and `effort` of the config's `## Models`
-`Review round` row ([format](../ship-plan/config-format.md); default `opus`,
-`high`) passed explicitly. Agents whose definition says `model: inherit` would
-otherwise take whatever model the session runs on.
+Launch the round's reviews in parallel. Every agent gets the `model` and
+`effort` of its `## Models` row ([format](../ship-plan/config-format.md))
+passed explicitly: round 1's `code-reviewer` the `Final review` row (default
+`opus`, `xhigh`), as it is the run's whole-branch review; every other agent,
+every round, the `Review round` row (default `opus`, `high`). Agents whose
+definition says `model: inherit` would otherwise take whatever model the
+session runs on.
 
-- Always: `pr-review-toolkit:code-reviewer` and `pr-review-toolkit:silent-failure-hunter`.
-- When tests changed: `pr-review-toolkit:pr-test-analyzer`. When comments or docs changed: `pr-review-toolkit:comment-analyzer`. When types were added: `pr-review-toolkit:type-design-analyzer`.
-- The agents from the config's `## Reviewers by path` whose globs the diff touches.
-- **Security, every round:** run the `security-review` skill on the branch, from the checkout under review. When the session's working directory is another repository, the skill reviews that repository's diff instead: do its review yourself against this checklist, and mark it "self-review" (below). Check these yourself too, because no gate does:
+**The full panel:**
+
+- `pr-review-toolkit:code-reviewer` and `pr-review-toolkit:silent-failure-hunter`;
+- when tests changed: `pr-review-toolkit:pr-test-analyzer`. When comments or docs changed: `pr-review-toolkit:comment-analyzer`. When types were added: `pr-review-toolkit:type-design-analyzer`;
+- the agents from the config's `## Reviewers by path` whose globs the diff touches;
+- the security review (below).
+
+**Round 1:** scope `git diff origin/<base>...HEAD`. A **small diff**, where
+`git diff --shortstat origin/<base>...HEAD` reports at most 200 lines inserted
+plus deleted and no file matches the config's `## Risk paths`, gets
+`code-reviewer`, the `## Reviewers by path` agents and the security review.
+Any other diff gets the full panel.
+
+**Round 2 and later:** scope `git diff <the last Reviewed: sha>..HEAD`, the
+fixes since the last round. `code-reviewer`, the security review, and the
+agent whose finding each fix addressed. Tell each reviewer to read the whole
+files the delta touches, not only its hunks, and give it the previous round's
+findings and fixes. A delta of more than 200 lines, or one that touches
+`## Risk paths`: the full panel on `git diff origin/<base>...HEAD`.
+
+After each round, write `Reviewed: <HEAD sha> — round <n>, <full|delta>, <the agents>` in the ledger.
+
+**Security, every round:** run the `security-review` skill on the branch, from the checkout under review. When the session's working directory is another repository, the skill reviews that repository's diff instead: do its review yourself against this checklist, and mark it "self-review" (below). Check these yourself too, because no gate does:
   - **Authorization:** every new endpoint, route, handler or RPC checks who calls it, the same way its siblings do. Quote the sibling.
   - **Tenancy and ownership:** every new query that reads or writes user data is scoped to the caller the way existing queries are.
   - **Input:** no query built by string concatenation; no untrusted input in raw HTML, a URL, a file path, a shell command or an object key without validation.
