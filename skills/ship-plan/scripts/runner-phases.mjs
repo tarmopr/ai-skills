@@ -103,6 +103,12 @@ function readLedgers(root, key) {
   };
 }
 
+/**
+ * Where the issue stands, from its ledgers.
+ * `.blocked` is the last `Blocked:` line ever written to either ledger (or an unknown-phase
+ * reason); it may be left over from an earlier attempt, so callers that want "blocked by this
+ * run" must compare against a snapshot taken before the run, as runIssue does.
+ */
 export function phaseFromLedgers(root, key) {
   const { phase, waiting, blocked } = readLedgers(root, key);
   return { phase, waiting, blocked };
@@ -118,26 +124,27 @@ export function phasePrompt({ skill, args, phase, chunk, answers }) {
 
 // The plan's `### Task <n>` headings in groups of `size`, as task-number ranges.
 export function implementChunks(planPath, size = 5) {
+  return taskGroups(planPath, size).map((group) => ({ from: group[0], to: group.at(-1) }));
+}
+
+// The plan's task numbers (heading number, or ordinal when a heading has none) in groups of size.
+function taskGroups(planPath, size) {
   const numbers = [];
   for (const m of readFileSync(planPath, 'utf8').matchAll(/^### Task (\d+)?/gm)) {
     numbers.push(m[1] === undefined ? numbers.length + 1 : Number(m[1]));
   }
-  const chunks = [];
-  for (let i = 0; i < numbers.length; i += size) {
-    const group = numbers.slice(i, i + size);
-    chunks.push({ from: group[0], to: group.at(-1) });
-  }
-  return chunks;
+  const groups = [];
+  for (let i = 0; i < numbers.length; i += size) groups.push(numbers.slice(i, i + size));
+  return groups;
 }
 
 // The first chunk with a task the ship-plan ledger has no `Progress: task <n> done` line for,
 // or null (no plan file, or every chunk done: the child finishes the phase's other work).
 function nextChunk(ledgers, size) {
   if (!ledgers.planDoc || !existsSync(ledgers.planDoc)) return null;
-  for (const c of implementChunks(ledgers.planDoc, size)) {
-    for (let n = c.from; n <= c.to; n++) if (!ledgers.doneTasks.has(n)) return c;
-  }
-  return null;
+  // the chunk's own task numbers, so a gap (tasks 1, 2, 5) never looks undone
+  const group = taskGroups(ledgers.planDoc, size).find((g) => g.some((n) => !ledgers.doneTasks.has(n)));
+  return group ? { from: group[0], to: group.at(-1) } : null;
 }
 
 // Poll both ledgers every intervalMs; call onLine for new `Progress:` lines and for
@@ -161,7 +168,13 @@ export function tailProgress(root, key, onLine, intervalMs = 5000) {
     }
   };
   read(false);
-  const timer = setInterval(() => read(true), intervalMs);
+  const timer = setInterval(() => {
+    try {
+      read(true);
+    } catch {
+      // a ledger mid-rewrite or unreadable: try again next tick; never crash the runner
+    }
+  }, intervalMs);
   timer.unref?.();
   return () => {
     clearInterval(timer);
@@ -243,6 +256,8 @@ export async function runIssue(ctx, item) {
     }
     if (after.blockedCount > before.blockedCount) return end('blocked', after.blocked, phase, 'blocked', after.blocked);
     if (after.signature === before.signature) {
+      // No ledger change: without a RUNNER: line the child did not finish (crash, cut stream).
+      if (!r.marker) return end('cut off', 'no RUNNER: line', phase, 'cutoff', 'no RUNNER: line');
       const why = `phase ${phase} ended without progress`;
       return end('blocked', why, phase, 'blocked', why);
     }

@@ -125,17 +125,41 @@ test('runIssue: marker says phase-done but ledger unchanged -> blocked, no secon
 
 test('runIssue: no marker but ledger advanced -> continues (Review Focus 2)', async () => {
   const root = repo({ issue: [issueFirst(5)] });
+  // unmarked children: the plan child advances to verify, the verify child finishes
   const ops = ledgerOps([
-    { file: ISSUE, firstLine: issueFirst(6) },
-    { file: PLAN_LEDGER, firstLine: planFirst('done'), append: ['Outcome: Done'] },
+    { when: 'for phase plan.', file: ISSUE, firstLine: issueFirst(6) },
+    { when: 'for phase plan.', file: PLAN_LEDGER, firstLine: planFirst('3') },
+    { when: 'for phase verify.', file: PLAN_LEDGER, firstLine: planFirst('done'), append: ['Outcome: Done'] },
   ]);
   const saved = [];
   const it = await runIssue(ctxFor(root, { FAKE_CLAUDE: 'ok:', FAKE_CLAUDE_LEDGER_APPEND: ops }, { save: (i) => saved.push(i.status) }), item());
   assert.equal(it.status, 'done');
-  assert.deepEqual(it.sessions, [{ phase: 'plan', sessionId: 's-1', costUsd: 0.42, turns: 3, minutes: 3 }]);
+  assert.deepEqual(it.sessions, [
+    { phase: 'plan', sessionId: 's-1', costUsd: 0.42, turns: 3, minutes: 3 },
+    { phase: 'verify', sessionId: 's-1', costUsd: 0.42, turns: 3, minutes: 3 },
+  ]);
   assert.ok(saved.length >= 1);
   assert.match(events(root), / BILL-7 plan start /);
+  assert.match(events(root), / BILL-7 verify start /);
   assert.match(events(root), / BILL-7 finished done /);
+});
+
+test('runIssue: no marker and ledger unchanged -> cut off, no RUNNER: line', async () => {
+  const root = repo({ issue: [issueFirst(2)] });
+  const it = await runIssue(ctxFor(root, { FAKE_CLAUDE: 'ok:' }), item());
+  assert.equal(it.status, 'cut off');
+  assert.equal(it.reason, 'no RUNNER: line');
+  assert.equal(it.sessions.length, 1);
+  assert.match(events(root), / BILL-7 spec cutoff no RUNNER: line$/m);
+});
+
+test('runIssue: implement chunks follow heading numbers, gaps are not undone tasks', async () => {
+  const root = repo({ issue: [issueFirst(6)], plan: [planFirst('2'), 'Progress: task 1 done', 'Progress: task 2 done', 'Progress: task 5 done'], tasks: 1 });
+  writeFileSync(join(root, 'docs/plan.md'), '### Task 1: a\n### Task 2: b\n### Task 5: c\n### Task 6: d\n');
+  const log = join(root, 'fake.json');
+  await runIssue(ctxFor(root, { FAKE_CLAUDE: 'ok:RUNNER: phase-done', FAKE_CLAUDE_LOG: log }, { chunkSize: 3 }), item());
+  // chunks [1,2,5] and [6]: the first is done, so the child gets tasks 6–6
+  assert.match(JSON.parse(readFileSync(log, 'utf8')).stdin, /plan tasks 6–6\.$/);
 });
 
 test('runIssue: child ok:false -> cut off', async () => {
