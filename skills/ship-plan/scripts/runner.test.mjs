@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,8 +20,17 @@ const issueFirst = (k) => `Phase: I6 | Issue: ${k} | Branch: feat/${k} | Plan: d
 const planFirst = (k, p) => `Phase: ${p} | Plan: docs/plan.md | Issue: ${k} | PR: #4`;
 const Q = 'Asked: which db? — pending';
 
+// git in a test repo: no hooks, no signing, whatever the user's global config says
+const git = (root, ...a) => execFileSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=t', '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', ...a], { cwd: root, stdio: 'pipe', encoding: 'utf8' });
+// Commit every change, so the checkout is clean again.
+const commit = (root) => { git(root, 'add', '-A'); git(root, 'commit', '-q', '--no-verify', '-m', 'x'); };
+// A git checkout on main, clean; the tests' own logs and answer files (*.json, *.txt) are ignored.
 function repo() {
-  return mkdtempSync(join(tmpdir(), 'runner-cli-'));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'runner-cli-')));
+  git(root, 'init', '-q', '-b', 'main');
+  writeFileSync(join(root, '.gitignore'), '*.json\n*.txt\n');
+  commit(root);
+  return root;
 }
 function put(root, rel, lines) {
   mkdirSync(dirname(join(root, rel)), { recursive: true });
@@ -282,6 +291,7 @@ test('status prints the table and pending questions', () => {
 test('start plan: ship-plan child at implement; start verify: verify-and-fix alone on the checked-out branch', () => {
   const root = repo();
   put(root, 'docs/plan.md', ['# Plan', '### Task 1: a', '### Task 2: b']);
+  commit(root);
   const pl = '.superpowers/ship-plan/feat-x/ledger.md';
   const log = join(root, 'p.json');
   const r = cli(root, ['start', 'plan', 'docs/plan.md'], {
@@ -294,8 +304,7 @@ test('start plan: ship-plan child at implement; start verify: verify-and-fix alo
   assert.deepEqual(seen.argv.slice(4, 8), ['--model', 'sonnet', '--effort', 'high']);
   assert.equal(readState(runDir(root, 'plan', 'docs/plan.md')).items[0].status, 'done');
 
-  const git = (...a) => execFileSync('git', a, { cwd: root, stdio: 'pipe' });
-  git('init', '-q', '-b', 'feat/x');
+  git(root, 'switch', '-q', '-c', 'feat/x');
   const vf = '.superpowers/verify-and-fix/feat-x/ledger.md';
   put(root, vf, ['Round 1: old', 'Done: abc — clean']); // an earlier run's end line does not end this one
   const v = cli(root, ['start', 'verify', 'feat/x'], {
@@ -363,6 +372,7 @@ test('child permission mode: --permission-mode only; bypass needs SHIP_RUNNER_AL
   const root = repo();
   // the config's mode line is not read
   put(root, '.claude/ship-plan.md', ['## Queue', '- Child permission mode: bypassPermissions']);
+  commit(root);
   const log = join(root, 'm.json');
   const runOnce = (k, flags, env = {}) => {
     atVerify(root, k);
@@ -392,4 +402,60 @@ test('child permission mode: --permission-mode only; bypass needs SHIP_RUNNER_AL
   assert.equal(allowed.mode, 'bypassPermissions');
   assert.equal(allowed.allowBypass, null); // stripped from the child's env
   assert.doesNotMatch(allowed.events, /refused/);
+});
+
+test('start refuses a checkout that is dirty or not on the base branch; verify needs its branch', () => {
+  const root = repo();
+  atVerify(root, 'C-1'); // ledgers under .superpowers/ do not make it dirty
+  put(root, 'src/wip.js', ['x']);
+  let r = cli(root, ['start', 'issue', 'C-1'], ships('C-1'));
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /^runner: start: the checkout must be clean and on main \(it is on main, with uncommitted changes\)\n$/);
+  assert.equal(existsSync(runDir(root, 'issue', 'C-1')), false);
+  commit(root);
+  git(root, 'switch', '-q', '-c', 'feat/other');
+  r = cli(root, ['start', 'queue', 'P-1', 'C-1'], { FAKE_CLAUDE_BY_KEY: JSON.stringify({ 'C-1': ships('C-1') }) });
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /it is on feat\/other\)/);
+  // the base branch is origin/HEAD's when there is one
+  git(root, 'update-ref', 'refs/remotes/origin/feat/other', 'HEAD');
+  git(root, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/feat/other');
+  r = cli(root, ['start', 'issue', 'C-1'], ships('C-1'));
+  assert.equal(r.status, 0, r.stderr);
+  // not a git checkout at all: refused
+  const bare = realpathSync(mkdtempSync(join(tmpdir(), 'runner-cli-')));
+  r = cli(bare, ['start', 'issue', 'C-2']);
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /the checkout must be clean and on main/);
+});
+
+test('start queue: each item after the first starts on the base branch; a dirty checkout stops the queue', () => {
+  const root = repo();
+  atVerify(root, 'G-1', 'G-2', 'G-3');
+  const logs = (k) => join(root, `${k}.json`);
+  // G-1's child leaves the checkout on its own branch, clean
+  const env = {
+    'G-1': { ...ships('G-1'), FAKE_CLAUDE_GIT: ops([['switch', '-q', '-c', 'feat/g1']]) },
+    'G-2': { ...ships('G-2'), FAKE_CLAUDE_LOG: logs('G-2') },
+    'G-3': { ...ships('G-3'), FAKE_CLAUDE_LOG: logs('G-3') },
+  };
+  let r = cli(root, ['start', 'queue', 'P-1', 'G-1,G-2,G-3'], { FAKE_CLAUDE_BY_KEY: JSON.stringify(env) });
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(readState(runDir(root, 'queue', 'P-1')).items.map((i) => i.status), ['done', 'done', 'done']);
+  for (const k of ['G-2', 'G-3']) assert.equal(JSON.parse(readFileSync(logs(k), 'utf8')).head, 'ref: refs/heads/main');
+  assert.equal(git(root, 'symbolic-ref', '--short', 'HEAD').trim(), 'main');
+
+  // H-1's child leaves uncommitted work: nothing else starts
+  const root2 = repo();
+  atVerify(root2, 'H-1', 'H-2', 'H-3');
+  const env2 = {
+    'H-1': { ...ships('H-1'), FAKE_CLAUDE_LEDGER_APPEND: ops([{ file: planLedger('H-1'), firstLine: planFirst('H-1', 'done') }, { file: 'src/wip.js', append: ['x'] }]) },
+    'H-2': ships('H-2'), 'H-3': ships('H-3'),
+  };
+  r = cli(root2, ['start', 'queue', 'P-1', 'H-1,H-2,H-3'], { FAKE_CLAUDE_BY_KEY: JSON.stringify(env2) });
+  assert.equal(r.status, 0, r.stderr);
+  const dir = runDir(root2, 'queue', 'P-1');
+  assert.deepEqual(readState(dir).items.map((i) => [i.status, i.reason]), [['done', ''], ['not started', 'checkout busy'], ['not started', 'checkout busy']]);
+  assert.deepEqual(starts(dir), ['H-1']);
+  assert.match(events(dir), / H-2 - blocked checkout busy: src\/; queue stopped$/m);
 });

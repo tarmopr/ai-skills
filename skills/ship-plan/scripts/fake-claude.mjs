@@ -11,8 +11,11 @@
 //   the output: file is relative to cwd; an op runs only when the prompt contains `when` (if set);
 //   firstLine replaces line 1, replace [[old, new], …] swaps every line equal to old, append adds
 //   lines at the end.
+// FAKE_CLAUDE_GIT: JSON [[<git arg>, …], …], each run as `git <args>` in cwd after the ledger ops.
 // FAKE_CLAUDE_BY_KEY: JSON {<key>: {<env var>: <value>}}; the key is the prompt's
 //   `with the arguments "<key>"`; its values override the env vars above for that child.
+// The log's `head` is cwd's .git/HEAD (the branch the child started on), or null.
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
@@ -22,7 +25,8 @@ const stdin = Buffer.concat(chunks).toString('utf8');
 const argv = process.argv.slice(2);
 const promptKey = /with the arguments "([^"]*)"/.exec(stdin)?.[1];
 Object.assign(process.env, JSON.parse(process.env.FAKE_CLAUDE_BY_KEY || '{}')[promptKey] ?? {});
-if (process.env.FAKE_CLAUDE_LOG) writeFileSync(process.env.FAKE_CLAUDE_LOG, JSON.stringify({ argv, stdin, shipRunner: process.env.SHIP_RUNNER, allowBypass: process.env.SHIP_RUNNER_ALLOW_BYPASS ?? null }));
+const head = existsSync('.git/HEAD') ? readFileSync('.git/HEAD', 'utf8').trim() : null;
+if (process.env.FAKE_CLAUDE_LOG) writeFileSync(process.env.FAKE_CLAUDE_LOG, JSON.stringify({ argv, stdin, head, shipRunner: process.env.SHIP_RUNNER, allowBypass: process.env.SHIP_RUNNER_ALLOW_BYPASS ?? null }));
 
 for (const op of JSON.parse(process.env.FAKE_CLAUDE_LEDGER_APPEND || '[]')) {
   if (op.when && !stdin.includes(op.when)) continue;
@@ -33,6 +37,7 @@ for (const op of JSON.parse(process.env.FAKE_CLAUDE_LEDGER_APPEND || '[]')) {
   mkdirSync(dirname(op.file), { recursive: true });
   writeFileSync(op.file, lines.join('\n') + '\n');
 }
+for (const args of JSON.parse(process.env.FAKE_CLAUDE_GIT || '[]')) execFileSync('git', args, { stdio: 'ignore' });
 
 const mode = process.env.FAKE_CLAUDE || 'ok:RUNNER: done';
 const session_id = 's-1';

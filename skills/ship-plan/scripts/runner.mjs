@@ -6,6 +6,7 @@
 //   node runner.mjs start queue <PARENT> <KEY>,<KEY>… [--deps <KEY>:<DEP>,…]   (<KEY> waits for <DEP>)
 //   node runner.mjs start plan <path>          ship-plan from implement
 //   node runner.mjs start verify <branch>      verify-and-fix alone, on the checked-out branch
+// Every start but verify needs a clean checkout on the base branch (.superpowers/ aside).
 //   node runner.mjs answer <run-dir> <KEY> <file>
 //   node runner.mjs status <run-dir>
 // Exit: 0 done, 2 usage error, 3 the run dir's lock is held.
@@ -74,6 +75,35 @@ function readConfig(root) {
 
 function git(root, ...args) {
   return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+}
+
+// origin/HEAD's branch, else main.
+function baseBranch(root) {
+  try {
+    return git(root, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD').replace(/^origin\//, '');
+  } catch {
+    return 'main';
+  }
+}
+
+function headBranch(root) {
+  try {
+    return git(root, 'symbolic-ref', '--short', 'HEAD');
+  } catch {
+    return '(detached or not a git checkout)';
+  }
+}
+
+// Changed or untracked paths, .superpowers/ left out (the runner's and the skills' own files);
+// null when git cannot tell.
+function changedPaths(root) {
+  let out;
+  try {
+    out = execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  } catch {
+    return null;
+  }
+  return out.split('\n').filter(Boolean).map((l) => l.slice(3)).filter((p) => !/^"?\.superpowers(\/|"?$)/.test(p));
 }
 
 function checkoutRoot() {
@@ -151,12 +181,7 @@ function parseStart(root, [what, ...a]) {
     return { kind: 'plan', id: a[0], items: [newItem(basename(a[0]).replace(/\.md$/, ''))], skill: 'ship-plan', args: a[0] };
   }
   if (what === 'verify') {
-    let head = '';
-    try {
-      head = git(root, 'symbolic-ref', '--short', 'HEAD');
-    } catch {
-      head = '(detached or not a git checkout)';
-    }
+    const head = headBranch(root);
     if (head !== a[0]) return `start verify: the checkout is on ${head}, not ${a[0]}`;
     const item = newItem(a[0].replaceAll('/', '-'));
     try {
@@ -188,6 +213,14 @@ async function start(rest) {
   delete process.env.SHIP_RUNNER_ALLOW_BYPASS;
   const run = parseStart(root, args);
   if (typeof run === 'string') return usage(run);
+  const baseName = baseBranch(root);
+  if (run.kind !== 'verify') {
+    const head = headBranch(root);
+    const changed = changedPaths(root);
+    if (head !== baseName || !changed || changed.length) {
+      return usage(`start: the checkout must be clean and on ${baseName} (it is on ${head}${changed?.length ? ', with uncommitted changes' : ''})`);
+    }
+  }
   const dir = runDir(root, run.kind, run.id);
 
   // A child left running by a dead runner still writes the ledgers: never start a second one.
@@ -229,11 +262,13 @@ async function start(rest) {
   const slug = state.id.replaceAll('/', '-');
   if (refused) emit(dir, slug, '-', 'progress', 'bypassPermissions refused: set SHIP_RUNNER_ALLOW_BYPASS=1');
   emit(dir, slug, '-', 'progress', `child permission mode: ${mode} (${modeFrom})`);
+  let ran = false; // a queue item has run in this start
   try {
     for (;;) {
       syncAnswers(state, dir);
       const item = nextItem(state);
       save();
+      if (item && ran && state.kind === 'queue' && !restoreCheckout(root, baseName, state, item, dir)) break;
       if (!item) {
         // a single issue waits for its answers instead of ending
         const only = state.items[0];
@@ -261,6 +296,7 @@ async function start(rest) {
         // else: consumed by a run killed mid-child and the ledgers still wait: resume with it again
       }
       state.current = item.key;
+      ran = true;
       save();
       try {
         await runIssue({ ...base, ledgers }, item);
@@ -281,6 +317,25 @@ async function start(rest) {
     releaseLock(dir);
   }
   return 0;
+}
+
+// Before a queue item after the first: back to the base branch when the checkout is clean.
+// Dirty (or git fails): this item and every queued one are not started, and false stops the queue.
+function restoreCheckout(root, baseName, state, item, dir) {
+  const changed = changedPaths(root);
+  let why = !changed ? 'git status failed' : changed.length ? changed.slice(0, 5).join(', ') : '';
+  if (!why) {
+    try {
+      git(root, 'switch', '-q', baseName);
+      return true;
+    } catch {
+      why = `git switch ${baseName} failed`;
+    }
+  }
+  item.status = 'queued';
+  for (const i of state.items) if (i.status === 'queued') Object.assign(i, { status: 'not started', reason: 'checkout busy' });
+  emit(dir, item.key, '-', 'blocked', `checkout busy: ${why}; queue stopped`);
+  return false;
 }
 
 function answer([dirArg, key, file]) {
