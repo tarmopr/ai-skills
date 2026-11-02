@@ -3,6 +3,7 @@ name: ship-plan
 description: Use when a written implementation plan exists and the user wants it carried, unsupervised, all the way to a merged PR on a green base branch in a GitHub, GitHub Enterprise or Azure DevOps repo that tracks work in Jira, in Linear, in GitHub Issues or in no tracker (config .claude/ship-plan.md) — "ship the plan", "ship this", "implement and merge", "take this plan to the base branch". Also use to resume such a run after a context compaction.
 argument-hint: '[plan file path, or issue key]'
 allowed-tools:
+  - Bash(printenv SHIP_QUEUE_PARENT)
   - Bash(git switch -c feature/*)
   - Bash(git switch -c fix/*)
   - Bash(git switch -c docs/*)
@@ -94,15 +95,15 @@ allowed-tools:
   - Bash(az devops invoke --area git --resource pullRequestThreads *)
   - Bash(az devops invoke --area git --resource pullRequestThreadComments *)
   - Bash(git merge-base *)
-  - mcp__plugin_engineering_linear__get_user
-  - mcp__plugin_engineering_linear__get_issue
-  - mcp__plugin_engineering_linear__list_issues
-  - mcp__plugin_engineering_linear__list_comments
-  - mcp__plugin_engineering_linear__list_issue_statuses
-  - mcp__plugin_engineering_linear__list_teams
-  - mcp__plugin_engineering_linear__list_projects
-  - mcp__plugin_engineering_linear__save_issue
-  - mcp__plugin_engineering_linear__save_comment
+  - mcp__plugin_linear_linear__get_user
+  - mcp__plugin_linear_linear__get_issue
+  - mcp__plugin_linear_linear__list_issues
+  - mcp__plugin_linear_linear__list_comments
+  - mcp__plugin_linear_linear__list_issue_statuses
+  - mcp__plugin_linear_linear__list_teams
+  - mcp__plugin_linear_linear__list_projects
+  - mcp__plugin_linear_linear__save_issue
+  - mcp__plugin_linear_linear__save_comment
   - mcp__plugin_engineering_slack__slack_add_reaction
   - mcp__plugin_engineering_slack__slack_search_users
   - Bash(gh issue view *)
@@ -256,6 +257,18 @@ digraph ship {
 The run ends at section 7 and nowhere else. Waiting on CI is not an end, and
 neither is a pending question when other work remains.
 
+**This session reads little itself.** Every turn re-reads its whole context,
+so what it reads stays expensive until the next compaction: one session ran
+about 360 `grep`, `sed` and `cat` calls of its own at a median context of
+300k tokens. It reads the ledgers, the config, `questions.md`, the plan text of
+the task it dispatches, `git status`, `git log`, `git diff --stat`, and the
+last 60 lines of a gate or CI log. Anything wider (a source file, `grep` or
+`git grep` over the code, a full CI log, any file over 300 lines) goes to an
+`Explore` agent at the `## Models` `Research` row (default `sonnet`,
+`medium`), whose prompt asks for at most 30 lines with file:line quotes.
+`blockers.md` and `interruptions.md` are read in full once per session; after
+a compaction, `grep -n` them for the tool or gate at hand.
+
 ### The ledger
 
 `.superpowers/ship-plan/<branch>/ledger.md`, with every `/` in the branch name written as `-` (`feature/x` → `feature-x`), so section 0, step 2's `*/ledger.md` listing finds it (`.superpowers/` goes in
@@ -343,7 +356,7 @@ for this plan, stay on it; if its name does not start with one of the five types
 
 ## 2. Implement
 
-**REQUIRED SUB-SKILL:** superpowers:subagent-driven-development, on the branch from section 1. Nine adjustments:
+**REQUIRED SUB-SKILL:** superpowers:subagent-driven-development, on the branch from section 1. Eleven adjustments:
 
 - **Prerequisites first:** run the config's `## Prerequisites` before the first implementer dispatch, as `verify-and-fix`'s setup runs them (in order, each one's `Ready when` awaited, background rows with `run_in_background`); not from a draft the user has not confirmed. When `verify-and-fix` reaches its setup, it does not start a row again whose `Ready when` already passes. Background rows started here are stopped with TaskStop at close-out, right before the report (section 7, step 5).
 - **Every implementer dispatch carries the repo's rules:** the config's `## Fix rules`, `## Never do` and `## Security extras`, verbatim, and the paths of the override files that apply to the task, always `.claude/ship-plan/ship-plan/SKILL.md` when it exists, and the rule "never edit `## Allowed` in `.claude/ship-plan.md`". An implementer sees only its own prompt.
@@ -351,14 +364,16 @@ for this plan, stay on it; if its name does not start with one of the five types
 - **Every implementer dispatch carries the plan's `## Global Constraints`,** verbatim, when the plan has that section. The task brief holds only the task's own text, so a step that takes a value "from Global Constraints" sent an implementer to read the whole plan.
 - **Its pre-flight concerns and rulings** follow its own "Rulings, not stalls" rule. Anything it would stop for goes into `questions.md` (section 3). The run goes on with the tasks that don't depend on it.
 - **Before it deletes its workspace,** copy every `Ruling:` line from its `progress.md` into this ledger. They go to the user in the report and the closing comment.
+- **Every implementer and fixer prompt ends with** "Report in at most 20 lines: status, commits, tests run with their result, concerns." The session keeps every report until it compacts.
+- **Skip its final whole-branch review.** `verify-and-fix`'s review round 1 is the whole-branch review (its `code-reviewer` at the `Final review` row), and it runs after the simplify pass, on the simplified code. Running both reviewed the same diff twice.
 - **Skip its last step,** `finishing-a-development-branch`. Its menu is the question this skill already answered. Go to section 2b.
 - **Every implementer dispatch carries the commit trailers verbatim,** with the words "copy them exactly; do not substitute your own model name". Implementers given the lines without that sentence have written their own trailer, and a haiku implementer did so even with it.
 - **Check the trailers before each task review**, while the commits are still unpushed: `git log --format='%h %s%n%(trailers:only)' <BASE>..HEAD`, where `<BASE>` is the commit recorded before the dispatch. Fix any commit whose trailers differ from the session's with one command: `git rebase <BASE> -x 'git -c trailer.ifexists=replace commit --amend --no-edit --trailer "<trailer line 1>" --trailer "<trailer line 2>"'`. It replaces a wrong trailer, leaves a right one as it is, and changes only this task's commits. Record a `Ruling:`. A wrong trailer that is already pushed stays: fixing it needs a force-push, which this skill never does.
-- **Every dispatch passes `model` and `effort`,** from the config's `## Models` ([config-format.md](config-format.md)): the implementer row the task's `Tier:` line picks (`Implementer (mechanical)`, `Implementer`, `Implementer (complex)`; untagged is `Implementer`), `Task review` for its spec and quality reviewers, `Escalation` for fix rounds 4–5 and any re-dispatch of a stuck implementer, `Final review` for the whole-branch review. These replace its Model Selection tiers. Never leave either out: an omitted model inherits this session's. **A tier may be raised, never lowered:** when a task turns out harder than its tag (a mechanical task that touches an authorization check), dispatch it a tier up and record a `Ruling:` with the reason. **A batch** (its "Batch small same-shape work") takes the highest tier among its tasks.
+- **Every dispatch passes `model` and `effort`,** from the config's `## Models` ([config-format.md](config-format.md)): the implementer row the task's `Tier:` line picks (`Implementer (mechanical)`, `Implementer`, `Implementer (complex)`; untagged is `Implementer`), `Task review` for its spec and quality reviewers, `Escalation` for fix rounds 4–5 and any re-dispatch of a stuck implementer. These replace its Model Selection tiers. Never leave either out: an omitted model inherits this session's. **A tier may be raised, never lowered:** when a task turns out harder than its tag (a mechanical task that touches an authorization check), dispatch it a tier up and record a `Ruling:` with the reason. **A batch** (its "Batch small same-shape work") takes the highest tier among its tasks.
 
 ## 2b. Simplify
 
-One pass over the whole branch, after the last task and its final review, and
+One pass over the whole branch, after the last task's review, and
 before `verify-and-fix`. The per-task reviewers each see one task, so code
 duplicated across tasks only shows here. It runs before verification, not in
 the review round: it edits code, and the review agents read the code in
@@ -548,10 +563,11 @@ log files on the feature branch mixes them into the product PR.
 
 ## Queued mode (ship-queue)
 
-**A run is queued** when it was started by ship-queue in this session
-(ship-queue invoked ship-issue, which invoked this skill, or ship-queue invoked
-it directly with answers) and a ship-queue ledger in this checkout
-(`.superpowers/ship-queue/*/ledger.md`) has a `Current: <KEY> started …` line
+**A run is queued** when it was started by ship-queue as its child session
+(`printenv SHIP_QUEUE_PARENT` prints a parent key; the child ran ship-issue,
+which invoked this skill, or ran this skill directly with answers) and that
+parent's ship-queue ledger in this checkout
+(`.superpowers/ship-queue/<parent>/ledger.md`) has a `Current: <KEY> started …` line
 naming this run's issue (its ledger's first-line `Issue:`, or the plan's
 `From ship-issue` block before the ledger exists), with no `Result: <KEY>` line
 after it. A leftover queue ledger alone does not make a run the user started

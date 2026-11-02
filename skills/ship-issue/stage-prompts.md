@@ -5,6 +5,9 @@ at its own model and effort, and this session never changes its own. Dispatch
 with the Agent tool: `subagent_type: general-purpose`, `model` and `effort`
 from the config's `## Models` row, and the prompt below with every `<…>`
 filled in. Paths are absolute. `<skill dir>` is this skill's base directory.
+`<check model>` and `<check effort>` come from the `Spec check` row; `<row>`
+is `small` when the dispatch uses the `Spec stage (small)` row, else
+`standard`.
 
 A stage cannot ask the user anything. It returns its questions in its report,
 and this session asks them in the I3 batch.
@@ -21,7 +24,13 @@ Working directory: <checkout>. First run `pwd` and
 and report "wrong checkout: <what you saw>". Work only there. Branch
 <branch> is checked out. Do not commit, push, switch branches or write to the tracker.
 
-Mode: <new | revise>.
+Mode: <new | revise>. Row: <row>.
+
+When Row is `small` and the change turns out to cross modules or services, to
+widen access, change money, need a migration, or do something a follow-up
+commit cannot undo, write no spec. An open choice that nothing quotable
+decides is a question (below), not a reason to resize. On a resize: end with the
+stage report, `File: none`, and the line `Resize: standard — <reason>`.
 
 Read first, in full: the issue <ledger dir>/issue.md; the repo config
 <checkout>/.claude/ship-plan.md; <skill dir>/evidence.md, then
@@ -38,6 +47,11 @@ Lesson: and write the spec for the state you see now, not the state the ledger
 describes.
 
 ## Research (mode new)
+Budget: read with `git grep -n` and line ranges (`sed -n <a>,<b>p`), never a
+whole file over 300 lines. Stop researching once every claim the spec will
+make has its quote. Past about 80 tool calls, write the spec with what you
+have: a claim still unproved goes in as a `Parked:` line, or a `Ruling:` with
+its cost if wrong. A spec stage once ran 240 turns and filled its context.
 Before designing, confirm the problem is real and find its edges. Every claim
 in the spec quotes its evidence: code with file:line, a log count, a measured
 response. When the issue asserts something, verify it; don't copy it. Write
@@ -106,7 +120,7 @@ meant to allow.
 ## Design and spec
 REQUIRED SUB-SKILL: superpowers:brainstorming, for its approaches, design
 sections, spec format, self-review and builder check. Run its builder-check
-subagent with model <spec model> and effort <spec effort>. Its approval stops
+subagent with model <check model> and effort <check effort>. Its approval stops
 and its "no spec file" outcome are overridden by ship-issue: write one
 `Ruling:` line for each stop you skip. Draft 2–3 approaches with a
 recommendation, then apply this confidence test to each open choice: it
@@ -218,6 +232,7 @@ formats, and only these headings:
 ## Stage report: <spec | plan>
 File: <absolute path written, or "none">
 Status: <done | wrong checkout: … | blocked: <what, and the exact error>>
+Resize: <only from a small-row Spec stage that wrote no spec: standard — <reason>>
 Skills: <every skill you called with the Skill tool, comma-separated, or "none">
 ### Rulings
 Ruling: <decision> — <evidence quoted> — <cost if wrong>

@@ -3,7 +3,7 @@
 How the three skills do each tracker operation when the repo's tracker is Linear.
 
 MCP tool names depend on how a connector is installed. The Linear tools are
-listed as `mcp__plugin_engineering_linear__*`. A repo whose connector has
+listed as `mcp__plugin_linear_linear__*`. A repo whose connector has
 another name gets permission prompts. Record the name in `blockers.md` and
 propose the allow line, as for any refused command.
 

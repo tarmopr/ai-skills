@@ -3,6 +3,7 @@ name: ship-issue
 description: Use when the user wants an issue, or a problem described in words, taken all the way from idea to a merged PR on a green base branch without supervision, including the design, spec and plan — "ship PROJ-123 end to end", "from issue to merge", "brainstorm, plan and ship this". Also use to resume such a run after a context compaction.
 argument-hint: '[issue key | a description of the problem] [answers to a parked batch]'
 allowed-tools:
+  - Bash(printenv SHIP_QUEUE_PARENT)
   - Bash(git switch -c feature/*)
   - Bash(git switch -c fix/*)
   - Bash(git switch -c docs/*)
@@ -39,15 +40,15 @@ allowed-tools:
   - Bash(gh pr view *)
   - Bash(az repos pr show *)
   - Bash(az devops configure --list)
-  - mcp__plugin_engineering_linear__get_user
-  - mcp__plugin_engineering_linear__get_issue
-  - mcp__plugin_engineering_linear__list_issues
-  - mcp__plugin_engineering_linear__list_comments
-  - mcp__plugin_engineering_linear__list_issue_statuses
-  - mcp__plugin_engineering_linear__list_teams
-  - mcp__plugin_engineering_linear__list_projects
-  - mcp__plugin_engineering_linear__save_issue
-  - mcp__plugin_engineering_linear__save_comment
+  - mcp__plugin_linear_linear__get_user
+  - mcp__plugin_linear_linear__get_issue
+  - mcp__plugin_linear_linear__list_issues
+  - mcp__plugin_linear_linear__list_comments
+  - mcp__plugin_linear_linear__list_issue_statuses
+  - mcp__plugin_linear_linear__list_teams
+  - mcp__plugin_linear_linear__list_projects
+  - mcp__plugin_linear_linear__save_issue
+  - mcp__plugin_linear_linear__save_comment
   - Bash(gh repo view *)
   - Bash(gh issue view *)
   - Bash(gh issue list *)
@@ -100,7 +101,9 @@ the Plan stage, each from a fresh context at the model and effort of its
 `## Models` row, by [stage-prompts.md](stage-prompts.md). This session never
 changes its own model or effort, which would invalidate its prompt cache: start
 it on Opus at high effort. It does the routing, the tracker, the checkout, the batch,
-the commits and ship-plan.
+the commits and ship-plan, and it reads little itself, by ship-plan's rule
+"This session reads little itself" (its section "The run"): code and long
+logs go to an `Explore` agent at the `Research` row.
 
 **All work is tracked in an issue in the repo's tracker.** With `Tracker: none`,
 the PR is the record: there is no issue and no issue question. With a tracker
@@ -146,7 +149,7 @@ Below it, one line per event, in ship-plan's formats (its section 3):
 — <options, recommendation> — <what it blocks>`, `Asked: <question> — <answer, or
 "pending">` for every question put to the user, and `Lesson: <what> — <the
 step that would have caught it>`. When the batch is sent, the last line is
-`Waiting: batch of <n>, sent <date>; heads: #<pr> <sha>, …`, with the head of every open PR the issue depends on, so a resumed run can see whether one moved while the batch waited. Each stage writes
+`Waiting: batch of <n>, sent <date>; heads: #<pr> <sha>, …`, with the head of every open PR the issue depends on, so a resumed run can see whether one moved while the batch waited. I1 writes `Size: <small|standard> — <reason>`, and a raised size a second one. Each stage writes
 `Stage: <spec|plan> <new|revise> dispatched <date>` before its dispatch and
 `Stage: <spec|plan> done <path> — skills: <its Skills: line>` once its report is copied in.
 
@@ -205,6 +208,13 @@ Every tracker call is made as the tracker's file says. A tracker call that fails
 
 These are the only questions asked before research.
 
+**Size the issue,** from what I1 read; it picks the Spec stage's `## Models` row (I2 step 4):
+
+- `small`: one module or service, and either a bug with a reproduction or a change the issue spells out, and nothing on the confidence test's fail list (it widens access, changes money, a migration, anything a follow-up commit cannot undo);
+- `standard`: everything else, and any doubt.
+
+Write `Size: <small|standard> — <the issue's words that decide it, quoted>` in the ledger once the checkout is chosen. A size may be raised, never lowered.
+
 Then choose the checkout (section W) before writing anything.
 
 ## I2. Research and spec: the Spec stage
@@ -216,9 +226,9 @@ Then choose the checkout (section W) before writing anything.
    - **Otherwise:** `<checkout>/docs/superpowers/specs/<yyyy-mm-dd>-<KEY-n>-<slug>-design.md`, committed on the feature branch.
    - **The key in a file name** (the spec, the plan) is written the way the config's `Branch:` pattern writes it; titles, commit subjects and text keep the tracker's form.
    - **Never a second worktree for the spec or the docs.** A worktree-isolated session's stage cannot write to one or enter it, and a docs PR opened before the code PR merges falls behind the base branch and loses its approval. The docs branch is made later, in this same checkout.
-4. **Dispatch the Spec stage** ([stage-prompts.md](stage-prompts.md), mode `new`, with `<spec path>` from step 3) with the `Spec stage` row of `## Models` (default `opus`, `xhigh`). It researches (code, history, the running system, read-only by [evidence.md](evidence.md)), records the baseline, drafts the approaches, rules where the confidence test passes, and writes the spec with each open choice marked `[pending Q<n>: …]`.
+4. **Dispatch the Spec stage** ([stage-prompts.md](stage-prompts.md), mode `new`, with `<spec path>` from step 3) with the `Spec stage (small)` row of `## Models` when the ledger's last `Size:` line says `small` (default `sonnet`, `high`), otherwise the `Spec stage` row (default `opus`, `high`); its builder check runs at the `Spec check` row (default `sonnet`, `high`). It researches (code, history, the running system, read-only by [evidence.md](evidence.md)), records the baseline, drafts the approaches, rules where the confidence test passes, and writes the spec with each open choice marked `[pending Q<n>: …]`.
 5. **Meanwhile, check the environment** for the later ship-plan run yourself: the Prerequisites (can they run in the chosen checkout?), auth (the host's *Auth check* (the auth status only, not your login); the tracker's *Auth*, unless the tracker is `none`; any auth check a Prerequisites row or `## Evidence` names), and **the base branch's last CI runs**: the host's *Find the base-branch run* (the base branch's last runs). A red base branch from someone else's work will fail this PR's checks too; it goes in the spec (step 6) and ship-plan section 5, step 2 says how the run handles it. A command that would write to a shared environment goes in the batch instead.
-6. **Take the report in.** `Status:` other than `done`: a wrong checkout is a bug in this run (fix the path and dispatch again); `blocked` goes in the batch. Otherwise check its `Skills:` line names the stage's required sub-skill (`superpowers:brainstorming` for the Spec stage in mode `new`, `superpowers:writing-plans` for the Plan stage); if it does not, write `Lesson: <stage> stage did not call <skill> — the stage prompt's REQUIRED SUB-SKILL line`. Then copy its `Ruling:`, `Parked:` and `Lesson:` lines into the ledger, its `Q<n>` lines into the I3 batch, and the step 5 findings into the spec. Check the file it names exists, then commit the spec on the branch, unless step 3 held it for a docs PR. Never re-check its research yourself: that would load into this session the context the stage exists to keep out of it.
+6. **Take the report in.** A `Resize: standard — <reason>` line (a small-row stage that found the change crosses modules or hits the fail list; it wrote no spec): write `Size: standard — <its reason>` and dispatch the Spec stage again, mode `new`, at the `Spec stage` row. `Status:` other than `done`: a wrong checkout is a bug in this run (fix the path and dispatch again); `blocked` goes in the batch. Otherwise check its `Skills:` line names the stage's required sub-skill (`superpowers:brainstorming` for the Spec stage in mode `new`, `superpowers:writing-plans` for the Plan stage); if it does not, write `Lesson: <stage> stage did not call <skill> — the stage prompt's REQUIRED SUB-SKILL line`. Then copy its `Ruling:`, `Parked:` and `Lesson:` lines into the ledger, its `Q<n>` lines into the I3 batch, and the step 5 findings into the spec. Check the file it names exists, then commit the spec on the branch, unless step 3 held it for a docs PR. Never re-check its research yourself: that would load into this session the context the stage exists to keep out of it.
 
 ## I3. The one question batch
 
@@ -301,18 +311,18 @@ main checkout or a worktree): stay. **When the current checkout is dirty or on a
 
 ## Queued mode (ship-queue)
 
-**A run is queued** when it was started by ship-queue in this session
-(ship-queue invoked this skill from its loop or its review sweep) and a
-ship-queue ledger in this checkout (`.superpowers/ship-queue/*/ledger.md`) has
-a `Current: <KEY> started …` line naming this run's issue, with no
-`Result: <KEY>` line after it. A leftover queue ledger alone does not make a
+**A run is queued** when it was started by ship-queue as its child session
+(`printenv SHIP_QUEUE_PARENT` prints a parent key: ship-queue's *Child
+sessions* sets it) and that parent's ship-queue ledger in this checkout
+(`.superpowers/ship-queue/<parent>/ledger.md`) has a `Current: <KEY> started …`
+line naming this run's issue, with no `Result: <KEY>` line after it. A leftover queue ledger alone does not make a
 run the user started queued: such a run asks as unqueued. The queue
 started this run and waits for it to end; nobody is watching it. Everything
 above applies, with these changes:
 
 - **Ask nothing: never `AskUserQuestion`, and never wait for a reply,** at every point this skill would ask: I1's questions, the I3 batch, a question found after the batch. Write the ledger lines exactly as unqueued (`Asked: … — pending`, `Parked:`, and for I3 the `Waiting: batch …` line). Then post the batch as one comment on the issue (the tracker's *Comment*): the questions numbered, each with its options and the recommendation first, ending with the answer line **"Answer with `/ship-queue <parent> <KEY>: <your answers>`."** (`<parent>` is the queue ledger's `Parent:`), so the user's answers resume the queue, not this run alone; the queue's resume form is `/ship-queue <parent> <KEY>: <answers>`. Carry on with everything the answers do not block (the Spec stage and its commit), then end the run.
 - **A question before the issue is read** (a tracker call failing at I1) has no issue to comment on: write it to the ledger with its exact error, and end the run.
-- **I0's live-run row** does not apply to this run's own issue's ledgers in the queue ledger's `Checkout:`: the queue that names it in `Current:` is this session, and its own Q0 step 4 already checked that no other session holds the queue. A ledger for the issue in any other checkout still counts.
+- **I0's live-run row** does not apply to this run's own issue's ledgers in the queue ledger's `Checkout:`: the queue that names it in `Current:` is this run's parent session, which started this child after its own Q0 step 4 checked that no other session holds the queue, and whose earlier child of this sub-issue (a cut-off run being resumed) has ended. A ledger for the issue in any other checkout still counts.
 - **No session-end handoff** of this run's own: the queue writes one for the whole queue.
 - **ship-plan** runs in its own queued mode (its "Queued mode (ship-queue)" section), found the same way.
 
@@ -338,6 +348,7 @@ above applies, with these changes:
 | "The spec exists, but I'd design it differently" | Existing work counts as approved. Route per I0. |
 | "It's quicker to write the spec or plan here" | The stages run as subagents so this session stays small and keeps one effort level. Dispatch them. |
 | "Raise this session's effort for the spec" | That invalidates its prompt cache. The Spec stage sets its own effort. |
+| "Small issue, but I'll give the spec Opus to be safe" | The `Size:` line picks the row. When in doubt the size is `standard`; a small-row stage that finds more returns `Resize:`. |
 | "Let me double-check the stage's research" | That loads into this session what the stage kept out. Take its report; a gap goes back as a `revise` dispatch. |
 | "No `## Evidence`, so I'll query production to be sure" | Only read-only sources the config names. Without them, the baseline is a reproduction. |
 | "Queued, but this one question is quick" | Nobody is watching. Post it as an issue comment with the queue's answer line, and end the run. |

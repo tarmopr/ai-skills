@@ -26,11 +26,13 @@ allowed-tools:
   - Bash(az account show)
   - Bash(az devops configure --list)
   - Bash(az repos pr list *)
-  - mcp__plugin_engineering_linear__get_user
-  - mcp__plugin_engineering_linear__get_issue
-  - mcp__plugin_engineering_linear__list_issues
-  - mcp__plugin_engineering_linear__list_comments
-  - mcp__plugin_engineering_linear__save_comment
+  - Bash(SHIP_QUEUE_PARENT=* claude -p *)
+  - Bash(jq * .superpowers/ship-queue/*)
+  - mcp__plugin_linear_linear__get_user
+  - mcp__plugin_linear_linear__get_issue
+  - mcp__plugin_linear_linear__list_issues
+  - mcp__plugin_linear_linear__list_comments
+  - mcp__plugin_linear_linear__save_comment
   - mcp__plugin_atlassian_atlassian__getAccessibleAtlassianResources
   - mcp__plugin_atlassian_atlassian__atlassianUserInfo
   - mcp__plugin_atlassian_atlassian__getJiraIssue
@@ -70,7 +72,7 @@ applied, and the summary names it.
 
 ## What invoking this skill authorizes
 
-- invoking ship-issue for each queued sub-issue. Each of those runs has exactly the authorization ship-issue and ship-plan give it, nothing more;
+- running ship-issue for each queued sub-issue in a child session (*Child sessions*). Each of those runs has exactly the authorization ship-issue and ship-plan give it, nothing more;
 - reading the parent and its sub-issues, with comments and relations;
 - comments on the parent and on the sub-issues (the tracker's *Comment*);
 - the checkout switches *Checkout* names, and one worktree for the whole queue.
@@ -94,6 +96,7 @@ Below it, one line per event:
 - `Depends: <key> on <key> — <evidence quoted>`, one per hard dependency;
 - `Ruling: <decision> — <evidence quoted> — <cost if wrong>` and `Asked: <question> — <answer, or "pending">`, as ship-plan writes them;
 - `Current: <KEY> started <time>` before each sub-issue's run;
+- `Child: <KEY> run <n> <output file>` when its child session starts, and `Cost: <KEY> run <n> — $<total_cost_usd>, <num_turns> turns, <minutes> min` when it ends;
 - `Ledger: <KEY> <ship-issue ledger path> <ship-plan ledger path or "none">` once known;
 - `Result: <KEY> <outcome> — <reason quoted> — next: <action>` when it ends;
 - `Lesson: <what> — <the step that would have caught it>`.
@@ -119,7 +122,8 @@ that would stop every sub-issue is found now.
 4. **A live queue.** Look for this parent's ledger in this checkout and in every checkout `git worktree list` shows.
    - **Found in another checkout:** stop with one line, "Resume with `/ship-queue <parent>` from a session in `<that checkout>`." Make nothing: no ledger, no worktree.
    - **Ended:** its last line is `Summary: posted <time>` (Q4) or `Stopped: <reason>` (a stop): not live. Resume; after a `Stopped:` at `Phase: preflight`, run pre-flight again from step 1.
-   - **Live, held by another session:** any of these changed in the last 30 minutes, or in the last 2 hours with its last line saying it waits (`stat -f %Sm <file>` on macOS, `stat -c %y <file>` on Linux): the queue ledger, or the ship-issue or ship-plan ledger of its open `Current:` sub-issue (a `Current:` with no `Result:` after it; the paths from its `Ledger:` line, else ship-issue's and ship-plan's usual paths). A sub-issue's run takes hours and writes only its own ledgers, so the queue ledger's age alone does not show it. Stop and report, and say that answers given now are taken by `/ship-queue <parent> <KEY>: <answers>` once that session's summary is posted. **Not when this session wrote it:** a queue this session resumes after its own compaction is its own.
+   - **A child this session started is still running** (its background task has not ended): wait for it, as Q2 step 4 says. Never start a second child for the same sub-issue.
+   - **Live, held by another session:** any of these changed in the last 30 minutes, or in the last 2 hours with its last line saying it waits (`stat -f %Sm <file>` on macOS, `stat -c %y <file>` on Linux): the queue ledger, or the ship-issue or ship-plan ledger of its open `Current:` sub-issue (a `Current:` with no `Result:` after it; the paths from its `Ledger:` line, else ship-issue's and ship-plan's usual paths). A sub-issue's run takes hours and writes only its own ledgers, so the queue ledger's age alone does not show it. Stop and report, and say that answers given now are taken by `/ship-queue <parent> <KEY>: <answers>` once that session's summary is posted. **Not when this session wrote it:** a queue this session resumes after its own compaction is its own, and so are the ledgers its own children wrote.
    - **Otherwise:** resume. When the open `Current:` has no `Result:` after it, the session died during that run: write a `Lesson:`.
 5. **The checkout** (*Checkout*). Then write the ledger. A resume keeps the ledger's `Checkout:`; it does not choose again.
 6. **Read the parent** (the tracker's *Read an issue*, with comments and relations) **and its sub-issues** (the tracker's *List sub-issues*, then *Read an issue* for each). A parent with no sub-issues: stop with one line, "<parent> has no sub-issues."
@@ -162,7 +166,7 @@ For each sub-issue in order:
 1. **Dependencies.** A hard dependency whose last `Result:` is not `done` (or `already done`): the outcome is `waits for <KEY>`: write its `Result:` line. Comment once on the sub-issue (the tracker's *Comment*): what it waits for, and that `/ship-queue <parent>` runs it once that one is done. Next sub-issue.
 2. **The checkout back to `<base>`** (*Checkout*).
 3. **Write `Current: <KEY> started <time>`** and rewrite the first line's `Current:`.
-4. **Invoke `ship-issue <KEY>`** through the Skill tool, with this sub-issue's answers from the argument, if any (`ship-issue <KEY> <answers>`). It runs as it always does, in its queued mode (ship-issue's and ship-plan's "Queued mode (ship-queue)" sections): it never waits for the user, and ends when it can do nothing more.
+4. **Run `ship-issue <KEY>` in a child session** (*Child sessions*), with this sub-issue's answers from the argument, if any (`ship-issue <KEY> <answers>`). It runs as it always does, in its queued mode (ship-issue's and ship-plan's "Queued mode (ship-queue)" sections): it never waits for the user, and ends when it can do nothing more. Wait for the child's completion notification, then write the `Cost:` line.
 5. **Read the outcome from the ledgers, not from memory:** ship-issue's `.superpowers/ship-issue/<KEY-n>/ledger.md` (first and last line) in this checkout, and the ship-plan ledger its first line names, once it exists. Write the `Ledger:` line. Take the first row of the table below that matches.
 6. **Write `Result: <KEY> <outcome> — <reason quoted from the ledger> — next: <action>`,** and rewrite the first line's `Current:` to `none`.
 7. **When the outcome is not `done`,** comment on the sub-issue: the outcome, the reason, and the exact next action. Skip it when the comment for that outcome is already there: ship-issue's queued batch comment, or ship-plan's close-out comment ("Issue comment: not merged", "awaiting review", "base branch red").
@@ -170,6 +174,7 @@ For each sub-issue in order:
 
 | Outcome | How it is read | Next action in the summary |
 |---|---|---|
+| `cut off` | the child's output file has `"is_error": true`, or is missing or not JSON (a usage limit, a crash), and the run reached no end: its ship-plan ledger has no `Phase: done`, no `Outcome:` line, no `Phase: 4R awaiting review` and no `Phase: 5 awaiting merge`, and its ship-issue ledger does not end `Waiting: batch …`. An `Asked: … — pending` line or a stage `blocked` in a run that was still working does not count: the run is `cut off` | rerun `/ship-queue <parent>` once the limit resets; **the queue stops** (below) |
 | `done, questions pending` | ship-plan ledger `Phase: done`, with an `Asked: … — pending` line (its close-out batch: a sign-in, a follow-up, a lessons answer) | the questions; answer with `/ship-queue <parent> <KEY>: <answers>`. Counts as `done` for dependencies; the queue's `Phase: done` waits for the answers |
 | `done` | ship-plan ledger `Phase: done` | none |
 | `base branch red` | ship-plan ledger `Outcome: Base branch red` (its queued close-out line) | its report's reason; **the queue stops** (below) |
@@ -180,7 +185,7 @@ For each sub-issue in order:
 | `blocked` | a stage reported `blocked`; a tracker call failed; ship-issue I0 stopped (another session holds it, a branch checked out elsewhere); the work is not code (a setting in a vendor dashboard); Q0 step 7 | what the user must do, quoted |
 | `waits for <KEY>` | step 1 | finish `<KEY>` first |
 | `already done` | the tracker's status | none |
-| `not started` | the queue stopped before it: base branch red, a busy checkout, the session ended | fix what the summary names, then `/ship-queue <parent>` |
+| `not started` | the queue stopped before it: base branch red, a cut-off child, a busy checkout, the session ended | fix what the summary names, then `/ship-queue <parent>` |
 | `not in this queue` | the argument listed other keys (Q1 step 1) | `/ship-queue <parent> <keys>` |
 
 **Base branch red** after a sub-issue: every later PR would fail on the same
@@ -188,11 +193,16 @@ red base, and ship-plan never merges red. **The queue stops:** every sub-issue
 not yet run is `not started: base branch red`, and Q4 is written at once. A
 later `/ship-queue <parent>` continues once the base branch is green.
 
+**Cut off:** a usage limit applies to every child, so the next one would be
+cut off too. **The queue stops:** every sub-issue not yet run is
+`not started: session limit`, then Q4 and a handoff (*Resume and session end*).
+The cut-off sub-issue resumes from its own ledgers on the next `/ship-queue <parent>`.
+
 ## Q3. The review sweep
 
 After the loop's last sub-issue, before the summary. For each sub-issue whose
-last `Result:` is `awaiting review`, in queue order: write `Current: <KEY> started <time>` (Q2 step 3, so the run is queued), then invoke `ship-issue <KEY>`
-once. ship-plan polls once (its section 4R, step 6) and merges when the review
+last `Result:` is `awaiting review`, in queue order: write `Current: <KEY> started <time>` (Q2 step 3, so the run is queued), then run `ship-issue <KEY>`
+once in a child session (*Child sessions*). ship-plan polls once (its section 4R, step 6) and merges when the review
 rules are now met; read the outcome again (Q2 steps 5–7). A sub-issue that
 becomes `done` here may unblock `waits for` sub-issues: run them now through
 Q2, then sweep again. **Stop when a sweep changes no outcome.** No sleeping
@@ -221,17 +231,45 @@ The whole queue runs in one checkout, one sub-issue at a time.
 - **Between sub-issues,** before each run: a branch is **the queue's own** when a ledger the queue's `Ledger:` lines name records it: ship-issue's first-line `Branch:`, ship-plan's `Branch:`, `Lessons branch:` or `Docs branch:` line (a queued ship-plan writes the last two when it creates those branches). A branch named `docs/ship-plan-lessons-<yyyy-mm-dd>-<KEY-n>` for a key in `Order:` is the queue's own too, as ship-plan's queued lessons branch. On the queue's own branch with a clean tree: `git switch <base>` in the main checkout, or `git fetch origin <base>` then `git switch --detach origin/<base>` in the queue's worktree. Already there: nothing. **Anything else** (a dirty tree, a branch no ledger names): stop the queue, every sub-issue not yet run is `not started: checkout busy`, and the summary names the branch and the files. Never `git switch -f`, `--discard-changes`, stash, commit or reset.
 - **Resuming a sub-issue whose branch exists** (its ship-issue ledger's first line names one, and the branch is not merged): switch to that branch before invoking ship-issue, so ship-issue's section W finds "on this issue's branch: stay".
 
+## Child sessions
+
+Each run of ship-issue (and, on a resume, of ship-plan) starts in its own
+headless session, so this session stays small: one queue session carried five
+full runs through seven compactions, and every turn re-read all of it. A child
+starts with a fresh context and its own model.
+
+1. Write `Child: <KEY> run <n> <output file>`, where `<n>` counts this sub-issue's children (1 for the first) and the output file is `.superpowers/ship-queue/<parent>/<KEY>-run<n>.json`. Then write the child's prompt, with the Write tool, to `.superpowers/ship-queue/<parent>/<KEY>-run<n>.prompt.md`:
+
+   ```text
+   Invoke the ai-skills:<skill> skill with the Skill tool, with the arguments "<arguments>". You are a ship-queue child run: nobody is watching; follow the skill's Queued mode.
+   ```
+
+   `<skill>` is `ship-issue` (or `ship-plan`), `<arguments>` what this skill would have passed it, the user's answers copied exactly. Never put the arguments on the command line: a backtick or `$(` in an answer would run in the shell.
+2. Start it from the queue's checkout, with `run_in_background`:
+
+   ```bash
+   SHIP_QUEUE_PARENT=<parent> claude -p --output-format json --model <model> --effort <effort> --permission-mode <mode> < .superpowers/ship-queue/<parent>/<KEY>-run<n>.prompt.md > .superpowers/ship-queue/<parent>/<KEY>-run<n>.json
+   ```
+
+   Keep every flag, `--output-format json` above all: without it the file holds plain text and the `Cost:` line cannot be written. The prompt comes from the file on stdin (`<`). `<model>` and `<effort>` come from the config's `## Models` `Queue run` row (default `opus`, `high`), `<mode>` from `## Queue` `Child permission mode:` (default `auto`).
+3. **Wait for its completion notification.** No `sleep` and no polling: the harness wakes this session when the child exits. A child runs for hours.
+4. Read the result: `jq '{is_error, subtype, num_turns, total_cost_usd, duration_ms, result: ((.result // "") | .[0:400])}' <output file>`. Write `Cost: <KEY> run <n> — $<total_cost_usd>, <num_turns> turns, <duration_ms / 60000, rounded> min`. Then read the outcome from the ledgers (Q2 step 5); the JSON decides only `cut off`.
+
+The child's queued test is `printenv SHIP_QUEUE_PARENT` plus this ledger's
+`Current:` line (ship-issue's "Queued mode (ship-queue)"). It writes no
+handoff of its own; the queue writes one for the whole queue.
+
 ## Resume and session end
 
 - **When the session ends before the queue does** (a usage limit, the context running out): bring the ledger up to date, then write one handoff: the `handoff` skill when it is available, otherwise a `HANDOFF.md` next to the ledger. It names the checkout, the current sub-issue, and the resume line `/ship-queue <parent>`. The queued ship-issue and ship-plan runs write none of their own.
 - **`/ship-queue <parent>` with this parent's ledger present** is a resume. Read the first line.
-  - **A `Current: <KEY>` with no `Result:` after it:** that sub-issue's run was cut off. Invoke `ship-issue <KEY>` again with no argument; it resumes from its own ledger. Its I0 live-run check sees a ledger this same queue wrote minutes ago: in this checkout, after a compaction, that is this session, not another one. Then go on with the loop.
+  - **A `Current: <KEY>` with no `Result:` after it:** that sub-issue's run was cut off. Run `ship-issue <KEY>` again in a child session (*Child sessions*), with no argument; it resumes from its own ledger. Its I0 live-run check sees a ledger this queue's previous child wrote: the queued run's exemption covers it (ship-issue's "Queued mode (ship-queue)"). Then go on with the loop.
   - **Re-read the sub-issues.** With a worked-out order, new sub-issues join at the end in analysis order, and the recorded order is kept. With an argument-given order, nothing is added.
   - **Run the loop again** over every sub-issue whose last `Result:` is not `done` or `already done`:
     - `waiting for answers` with answers in this argument: `ship-issue <KEY> <answers>`, its resume form. With none: it stays as it is, and is not invoked.
-    - `done, questions pending` with answers: write `Current: <KEY> started <time>`, then invoke **ship-plan** with the answers (`ship-plan <answers>`); ship-issue would stop at its I0 row for a Done issue. ship-plan's queued mode takes this run's done ledger, and its section 0, step 2 applies the answers. Read the outcome again (Q2 steps 5–7). With none: it stays as it is.
+    - `done, questions pending` with answers: write `Current: <KEY> started <time>`, then run **ship-plan** in a child session with the answers (`ship-plan <answers>`); ship-issue would stop at its I0 row for a Done issue. ship-plan's queued mode takes this run's done ledger, and its section 0, step 2 applies the answers. Read the outcome again (Q2 steps 5–7). With none: it stays as it is.
     - `awaiting review`: not in the loop; the review sweep (Q3) polls it once, passing this argument's answers for it if any (`ship-issue <KEY> <answers>`).
-    - `awaiting merge`, `not merged`, `blocked`: invoke `ship-issue <KEY>`; it routes to ship-plan, which resumes from its ledger.
+    - `awaiting merge`, `not merged`, `blocked`, `cut off`: run `ship-issue <KEY>` in a child session; it routes to ship-plan, which resumes from its ledger. With answers for it in this argument: `ship-issue <KEY> <answers>`.
     - `waits for <KEY>`, `not started`: as new.
   - **Answers for a key with no pending question** (no `Waiting: batch` and no `Asked: … — pending` in its ledgers: already done before the queue, not in the queue, not a sub-issue): report them in the summary as not used, and never pass them to ship-issue: a run that is done is never resumed with answers it did not ask for.
   - Then Q3 and Q4 as usual.
@@ -240,6 +278,8 @@ The whole queue runs in one checkout, one sub-issue at a time.
 
 | Thought | Reality |
 |---|---|
+| "I'll invoke ship-issue here with the Skill tool, it's quicker" | Each sub-issue runs in a child session (*Child sessions*), so this session stays small. Start the child and wait for its notification. |
+| "The child hit the usage limit; I'll mark it blocked and start the next" | The limit applies to every child. `cut off`: the queue stops. |
 | "I'll ask the user this now, the queue can wait" | Only Q0 and `show order` ask. After that: log it, comment, move on. |
 | "This sub-issue looks independent, I'll run it although its blocker failed" | Only when no hard dependency names the blocker. A dependency means `waits for <KEY>`. |
 | "They touch the same files, so one depends on the other" | Not a dependency. Serial order handles it. |

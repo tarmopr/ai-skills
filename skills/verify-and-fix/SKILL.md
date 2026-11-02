@@ -47,8 +47,8 @@ allowed-tools:
   - Bash(az repos policy list *)
   - Bash(gh pr list *)
   - Bash(gh pr diff *)
-  - mcp__plugin_engineering_linear__get_issue
-  - mcp__plugin_engineering_linear__save_comment
+  - mcp__plugin_linear_linear__get_issue
+  - mcp__plugin_linear_linear__save_comment
   - Bash(gh issue view *)
   - Bash(gh issue comment *)
 ---
@@ -77,7 +77,7 @@ digraph loop {
   "Gates: run all, read every tail" [shape=box];
   "All gates green?" [shape=diamond];
   "Fix gate failure, test first" [shape=box];
-  "Review round: agents on the whole diff" [shape=box, label="Review round: agents and security on the whole diff"];
+  "Review round: agents on the whole diff" [shape=box, label="Review round: agents and security; round 1 the whole diff, later rounds the fixes"];
   "Critical or Important found?" [shape=diamond, label="Critical or Important found,\nor a comment unanswered?"];
   "Triage, fix each with a failing test, commit the round" [shape=box];
   "Report" [shape=doublecircle];
@@ -119,7 +119,7 @@ regressions: a later round often finds bugs an earlier round's fixes introduced.
 
 ## 2. Gates
 
-- Run every `## Gates` row whose `Only when changed` globs match `git diff --name-only origin/<base>...HEAD` (no globs: always). Run each with `CI=true` in its environment and its output sent to `.superpowers/verify-and-fix/<branch>/<gate>.log`, then read the tail. Long output left in context crowds out the rest of the loop.
+- Run every `## Gates` row whose `Only when changed` globs match `git diff --name-only origin/<base>...HEAD` (no globs: always). Run each with `CI=true` in its environment and its output sent to `.superpowers/verify-and-fix/<branch>/<gate>.log`, then read its last 60 lines. Long output left in context crowds out the rest of the loop. When the cause is not in those lines, an `Explore` agent at the `## Models` `Research` row reads the log and reports at most 30 lines; so does any search of the code a fix needs (ship-plan's "This session reads little itself").
 - Run the command **exactly as configured.** A variant you think is better (an extra flag, a one-shot form) is a proposed config change, not something you run as the gate.
 - Follow the row's `Notes` as part of the gate: a precondition, a second run under another setup, a known local-only failure. A note may change how the gate is judged; when it changes the result, the gate table names the note. A note never silently turns a fail or a skip into a pass. Empty: nothing extra.
 - Each gate has one result: **pass, fail, skipped, or could not run.** Read the tail for skip counts and the file each skip is in. The row's `Allowed skips` is a number or `files: <globs>`:
@@ -149,16 +149,39 @@ click through.
 
 ## 4. Review round
 
-Scope: `git diff origin/<base>...HEAD`. Launch these in parallel, each on the
-whole diff, each with the `model` and `effort` of the config's `## Models`
-`Review round` row ([format](../ship-plan/config-format.md); default `opus`,
-`high`) passed explicitly. Agents whose definition says `model: inherit` would
-otherwise take whatever model the session runs on.
+Launch the round's reviews in parallel. Every agent gets the `model` and
+`effort` of its `## Models` row ([format](../ship-plan/config-format.md))
+passed explicitly: round 1's `code-reviewer` the `Final review` row (default
+`opus`, `xhigh`), as it is the run's whole-branch review (not in `--comments`
+mode: [review-comments.md](review-comments.md)); every other agent,
+every round, the `Review round` row (default `opus`, `high`). Agents whose
+definition says `model: inherit` would otherwise take whatever model the
+session runs on.
 
-- Always: `pr-review-toolkit:code-reviewer` and `pr-review-toolkit:silent-failure-hunter`.
-- When tests changed: `pr-review-toolkit:pr-test-analyzer`. When comments or docs changed: `pr-review-toolkit:comment-analyzer`. When types were added: `pr-review-toolkit:type-design-analyzer`.
-- The agents from the config's `## Reviewers by path` whose globs the diff touches.
-- **Security, every round:** run the `security-review` skill on the branch, from the checkout under review. When the session's working directory is another repository, the skill reviews that repository's diff instead: do its review yourself against this checklist, and mark it "self-review" (below). Check these yourself too, because no gate does:
+**The full panel:**
+
+- `pr-review-toolkit:code-reviewer` and `pr-review-toolkit:silent-failure-hunter`;
+- when tests changed: `pr-review-toolkit:pr-test-analyzer`. When comments or docs changed: `pr-review-toolkit:comment-analyzer`. When types were added: `pr-review-toolkit:type-design-analyzer`;
+- the agents from the config's `## Reviewers by path` whose globs the diff touches;
+- the security review (below).
+
+**Round 1:** scope `git diff origin/<base>...HEAD`. A **small diff**, where
+`git diff --shortstat origin/<base>...HEAD` reports at most 200 lines inserted
+plus deleted and no file matches the config's `## Risk paths`, gets
+`code-reviewer`, the `## Reviewers by path` agents and the security review.
+Any other diff gets the full panel.
+
+**Round 2 and later:** scope `git diff <the last Reviewed: sha>..HEAD`, the
+fixes since the last round. `code-reviewer`, the security review, and the
+agent whose finding each fix addressed. Tell each reviewer to read the whole
+files the delta touches, not only its hunks, and give it the previous round's
+findings and fixes. A delta of more than 200 lines, or a branch whose diff
+(`origin/<base>...HEAD`) touches `## Risk paths`: the full panel on
+`git diff origin/<base>...HEAD`, every round.
+
+After each round, write `Reviewed: <HEAD sha> — round <n>, <full|delta>, <the agents>` in the ledger.
+
+**Security, every round:** run the `security-review` skill on the branch, from the checkout under review. When the session's working directory is another repository, the skill reviews that repository's diff instead: do its review yourself against this checklist, and mark it "self-review" (below). Check these yourself too, because no gate does:
   - **Authorization:** every new endpoint, route, handler or RPC checks who calls it, the same way its siblings do. Quote the sibling.
   - **Tenancy and ownership:** every new query that reads or writes user data is scoped to the caller the way existing queries are.
   - **Input:** no query built by string concatenation; no untrusted input in raw HTML, a URL, a file path, a shell command or an object key without validation.
@@ -194,6 +217,8 @@ report.
 
 Give each reviewer the ledger's `Ruling:` lines, so settled questions are not
 raised again as new findings.
+
+**Every reviewer's prompt asks for findings only:** one line each (file:line, grade, what, why), at most 25 lines, and no summary of the diff.
 
 **Tell every reviewer, in its prompt: never run a gate or test command in this
 working tree, and never edit it.** Gates hold fixed resources, and a second run
@@ -271,6 +296,10 @@ could not run locally (the config or the environment could not provide them)
 and were deferred, the status is **"clean before merge; N scenarios pending"**.
 Name those scenarios, and never call that result clean. Anything else is
 **"not clean: <reason>"**. The status line uses exactly one of these three forms.
+
+**Last ledger line:** `Done: <HEAD sha> — <status>`, every time this skill
+ends (also in `--comments` mode). The plugin's dispatch hook reads it as "this
+run has ended".
 
 **Everything that was not tested gets its own section at the end of the
 report**, with the scenarios, what was missing, and whether the user declined
