@@ -63,10 +63,13 @@ export function acquireLock(dir, pid) {
   return { ok: false, holder: held ? held.runner : -1 };
 }
 
+// Temp file, then rename, like writeState: a reader never sees half a lock.
 export function setChildPid(dir, pid) {
   const held = readLock(dir);
   if (!held) return;
-  writeFileSync(join(dir, 'lock'), JSON.stringify({ ...held, child: pid }));
+  const tmp = join(dir, `lock.${process.pid}.tmp`);
+  writeFileSync(tmp, JSON.stringify({ ...held, child: pid }));
+  renameSync(tmp, join(dir, 'lock'));
 }
 
 export function releaseLock(dir) {

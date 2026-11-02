@@ -317,6 +317,13 @@ test('start plan: ship-plan child at implement; start verify: verify-and-fix alo
   assert.deepEqual(vs.argv.slice(4, 8), ['--model', 'opus', '--effort', 'high']);
   const st = readState(runDir(root, 'verify', 'feat/x'));
   assert.deepEqual(st.items.map((i) => [i.status, i.sessions.length]), [['done', 1]]);
+  // verify again later: a new run, from a fresh snapshot of the ledger (4 lines now)
+  const again = cli(root, ['start', 'verify', 'feat/x'], {
+    FAKE_CLAUDE: 'ok:RUNNER: done', FAKE_CLAUDE_LEDGER_APPEND: ops([{ file: vf, append: ['Round 3: green', 'Done: ghi — clean'] }]),
+  });
+  assert.equal(again.status, 0, again.stderr);
+  const st2 = readState(runDir(root, 'verify', 'feat/x'));
+  assert.deepEqual(st2.items.map((i) => [i.status, i.sessions.length, i.from]), [['done', 2, 4]]);
   // another branch checked out: refused
   const other = cli(root, ['start', 'verify', 'feat/y']);
   assert.equal(other.status, 2);
@@ -485,4 +492,16 @@ test('start verify: a question before the closing Done: waits; the answer resume
   const seen = JSON.parse(readFileSync(log, 'utf8'));
   assert.deepEqual(seen.argv.slice(-2), ['--resume', 's-1']);
   assert.deepEqual(readState(dir).items.map((i) => i.status), ['done']);
+});
+
+test('start queue: an item whose close-out says Base branch red stops the queue', () => {
+  const root = repo();
+  atVerify(root, 'R-1', 'R-2', 'R-3');
+  const red = { FAKE_CLAUDE: 'ok:RUNNER: done', FAKE_CLAUDE_LEDGER_APPEND: ops([{ file: planLedger('R-1'), firstLine: planFirst('R-1', 'done'), append: ['Outcome: Base branch red'] }]) };
+  const r = cli(root, ['start', 'queue', 'P-1', 'R-1,R-2,R-3'], { FAKE_CLAUDE_BY_KEY: JSON.stringify({ 'R-1': red, 'R-2': ships('R-2'), 'R-3': ships('R-3') }) });
+  assert.equal(r.status, 0, r.stderr);
+  const dir = runDir(root, 'queue', 'P-1');
+  assert.deepEqual(readState(dir).items.map((i) => [i.status, i.reason]), [['done', ''], ['not started', 'base branch red'], ['not started', 'base branch red']]);
+  assert.deepEqual(starts(dir), ['R-1']);
+  assert.match(events(dir), / R-1 finished blocked base branch red; queue stopped$/m);
 });

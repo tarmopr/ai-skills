@@ -125,7 +125,9 @@ function readLedgers(root, key, opts = {}) {
     if (m) doneTasks.add(Number(m[1]));
   }
   const planDoc = planFields.Plan || issueFields.Plan || opts.planDoc;
+  const outcome = (planBody ?? []).map((l) => /^Outcome: (.+)$/.exec(l)?.[1]).filter(Boolean).at(-1) ?? null;
   return {
+    outcome,
     phase: unknown ? 'unknown' : phase,
     unknown,
     waiting: Boolean(batch) || pending > 0,
@@ -163,6 +165,11 @@ export function findPlanLedger(root, planPath) {
     done ??= file;
   }
   return done;
+}
+
+// The ship-plan ledger's last `Outcome:` (written at close-out), or null.
+export function ledgerOutcome(root, key, opts = {}) {
+  return readLedgers(root, key, opts).outcome;
 }
 
 // Every `Asked: … — pending` line of the run's ledgers.

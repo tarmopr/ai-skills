@@ -15,7 +15,7 @@ import { existsSync, readFileSync, realpathSync, renameSync, writeFileSync } fro
 import { basename, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { acquireLock, alive, emit, readLock, readState, releaseLock, runDir, writeState } from './runner-lib.mjs';
-import { findPlanLedger, pendingQuestions, phaseFromLedgers, runIssue } from './runner-phases.mjs';
+import { findPlanLedger, ledgerOutcome, pendingQuestions, phaseFromLedgers, runIssue } from './runner-phases.mjs';
 import { nextItem } from './runner-queue.mjs';
 
 // `## Models` rows the runner's children use, with their defaults.
@@ -240,6 +240,10 @@ async function start(rest) {
   if (!state) state = { kind: run.kind, id: run.id, items: run.items, current: null, stopped: null };
   else {
     // resume from files: what was cut short runs again; the ledgers say where
+    // verify again on a branch verified before: a new run, from a fresh snapshot of its ledger
+    if (state.kind === 'verify') {
+      for (const i of state.items) if (i.status === 'done') Object.assign(i, { status: 'queued', reason: '', phase: null, from: run.items[0].from, answersUnused: undefined });
+    }
     for (const i of state.items) {
       if (['running', 'cut off', 'not started', 'blocked'].includes(i.status)) Object.assign(i, { status: 'queued', reason: '' });
       if (i.status === 'waiting' && !phaseFromLedgers(root, i.key, ledgerOpts(root, state, i)).waiting) Object.assign(i, { status: 'queued', reason: '' });
@@ -306,6 +310,12 @@ async function start(rest) {
       }
       if (item.status === 'cut off') {
         for (const i of state.items) if (i.status === 'queued') Object.assign(i, { status: 'not started', reason: 'session limit' });
+        break;
+      }
+      // ship-plan's close-out found the base branch red: the next item would fail on it too
+      if (/^Base branch red\b/.test(ledgerOutcome(root, item.key, ledgers) ?? '')) {
+        for (const i of state.items) if (i.status === 'queued') Object.assign(i, { status: 'not started', reason: 'base branch red' });
+        emit(dir, item.key, item.phase ?? '-', 'blocked', 'base branch red; queue stopped');
         break;
       }
     }

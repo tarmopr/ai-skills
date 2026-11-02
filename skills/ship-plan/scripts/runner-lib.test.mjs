@@ -1,7 +1,7 @@
 // Tests for the ship runner state, lock and event log. Run: node --test skills/ship-plan/scripts/
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { acquireLock, emit, readState, releaseLock, runDir, setChildPid, writeState } from './runner-lib.mjs';
@@ -60,4 +60,14 @@ test('emit: one line per call, newline in text flattened', () => {
   assert.equal(lines.length, 3);
   assert.match(lines[0], /^\S+ BILL-1 spec waiting a b$/);
   assert.equal(lines[2], '');
+});
+
+test('setChildPid replaces the lock by rename, never writing it in place', () => {
+  const dir = fresh();
+  assert.equal(acquireLock(dir, process.pid).ok, true);
+  // a read-only lock file: an in-place write fails, a rename over it does not
+  chmodSync(join(dir, 'lock'), 0o444);
+  setChildPid(dir, 4242);
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, 'lock'), 'utf8')), { runner: process.pid, child: 4242 });
+  assert.deepEqual(readdirSync(dir), ['lock']); // no temp file left behind
 });
