@@ -54,8 +54,8 @@ const children = (dir) => readdirSync(dir).filter((f) => f.endsWith('.jsonl')).s
 const starts = (dir) => [...events(dir).matchAll(/ (\S+) \S+ start /g)].map((m) => m[1]);
 const deadPid = () => spawnSync(process.execPath, ['-e', '']).pid;
 
-test('parseConfig: ## Runner chunk, ## Queue mode, ## Models rows over defaults', () => {
-  assert.deepEqual(parseConfig(''), { chunkSize: 5, mode: 'auto', models: MODEL_DEFAULTS, baseBranch: 'main' });
+test('parseConfig: ## Runner chunk, ## Models rows over defaults; never a permission mode', () => {
+  assert.deepEqual(parseConfig(''), { chunkSize: 5, models: MODEL_DEFAULTS });
   assert.deepEqual(MODEL_DEFAULTS['Phase: close'], { model: 'sonnet', effort: 'medium' });
   const cfg = parseConfig([
     '## runner ', 'Mode: runner', 'Implement chunk: 3', '',
@@ -65,7 +65,7 @@ test('parseConfig: ## Runner chunk, ## Queue mode, ## Models rows over defaults'
     '## Repo', 'Implement chunk: 9',
   ].join('\n'));
   assert.equal(cfg.chunkSize, 3);
-  assert.equal(cfg.mode, 'acceptEdits');
+  assert.equal(cfg.mode, undefined);
   assert.deepEqual(cfg.models['Phase: verify'], { model: 'sonnet', effort: 'xhigh' });
   assert.deepEqual(cfg.models['Phase: merge'], { model: 'haiku', effort: 'high' }); // only a model: default effort
   assert.deepEqual(cfg.models['Spec stage'], { model: 'opus', effort: 'high' });
@@ -359,49 +359,37 @@ test('rerun re-queues a blocked item', () => {
   assert.deepEqual(children(dir), ['X-1-verify-1.jsonl', 'X-1-verify-2.jsonl', 'X-2-verify-1.jsonl']);
 });
 
-test('child permission mode: only from the base branch committed config; invalid or unreadable -> auto', () => {
+test('child permission mode: --permission-mode only; bypass needs SHIP_RUNNER_ALLOW_BYPASS=1, never passed on', () => {
   const root = repo();
-  const git = (...a) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd: root, stdio: 'pipe' });
-  git('init', '-q', '-b', 'main');
-  const cfg = (mode, base = '') => ['## Repo', base, '## Queue', `- Child permission mode: ${mode}`, '## Models', '| Role | Model | Effort |', '|---|---|---|', '| Phase: verify | haiku | low |'];
+  // the config's mode line is not read
+  put(root, '.claude/ship-plan.md', ['## Queue', '- Child permission mode: bypassPermissions']);
   const log = join(root, 'm.json');
-  const runOnce = (k) => {
+  const runOnce = (k, flags, env = {}) => {
     atVerify(root, k);
-    assert.equal(cli(root, ['start', 'issue', k], { ...ships(k), FAKE_CLAUDE_LOG: log }).status, 0);
-    const argv = JSON.parse(readFileSync(log, 'utf8')).argv;
-    return { mode: argv[argv.indexOf('--permission-mode') + 1], model: argv[argv.indexOf('--model') + 1], events: events(runDir(root, 'issue', k)) };
+    const r = cli(root, ['start', ...flags, 'issue', k], { ...ships(k), FAKE_CLAUDE_LOG: log, ...env });
+    assert.equal(r.status, 0, r.stderr);
+    const seen = JSON.parse(readFileSync(log, 'utf8'));
+    return { mode: seen.argv[seen.argv.indexOf('--permission-mode') + 1], allowBypass: seen.allowBypass, events: events(runDir(root, 'issue', k)) };
   };
-  // no origin/main: auto
-  put(root, '.claude/ship-plan.md', cfg('acceptEdits'));
-  assert.equal(runOnce('M-1').mode, 'auto');
-  // committed on origin/main: used; a working-tree edit to bypassPermissions is ignored, its Models row is not
-  git('add', '.claude/ship-plan.md');
-  git('commit', '-q', '-m', 'cfg');
-  git('update-ref', 'refs/remotes/origin/main', 'HEAD');
-  put(root, '.claude/ship-plan.md', cfg('bypassPermissions'));
-  const m2 = runOnce('M-2');
-  assert.deepEqual([m2.mode, m2.model], ['acceptEdits', 'haiku']);
-  assert.match(m2.events, / M-2 - progress child permission mode: acceptEdits \(from origin\/main\)$/m);
-  // an invalid committed value: auto
-  put(root, '.claude/ship-plan.md', cfg('yolo'));
-  git('commit', '-q', '-am', 'bad');
-  git('update-ref', 'refs/remotes/origin/main', 'HEAD');
-  assert.equal(runOnce('M-3').mode, 'auto');
-  // the base comes from origin/HEAD, never from the working tree's Base branch:
-  put(root, '.claude/ship-plan.md', cfg('dontAsk'));
-  git('commit', '-q', '-am', 'dev');
-  git('update-ref', 'refs/remotes/origin/dev', 'HEAD');
-  git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/dev');
-  put(root, '.claude/ship-plan.md', cfg('bypassPermissions', '- Base branch: evil'));
-  git('commit', '-q', '-am', 'evil');
-  git('update-ref', 'refs/remotes/origin/evil', 'HEAD'); // origin/evil's committed config says bypassPermissions
-  const m4 = runOnce('M-4');
-  assert.equal(m4.mode, 'dontAsk');
-  assert.match(m4.events, /progress child permission mode: dontAsk \(from origin\/dev\)$/m);
-  git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main');
-  git('update-ref', 'refs/remotes/origin/main', 'refs/remotes/origin/dev');
-  const m5 = runOnce('M-5'); // working tree still says Base branch: evil
-  assert.equal(m5.mode, 'dontAsk');
-  assert.match(m5.events, /\(from origin\/main\)$/m);
-  assert.equal(parseConfig('## Queue\nChild permission mode: yolo\n').mode, 'auto');
+  const d = runOnce('M-1', []);
+  assert.equal(d.mode, 'auto');
+  assert.match(d.events, / M-1 - progress child permission mode: auto \(default\)$/m);
+  const f = runOnce('M-2', ['--permission-mode', 'acceptEdits']);
+  assert.equal(f.mode, 'acceptEdits');
+  assert.match(f.events, /child permission mode: acceptEdits \(flag\)$/m);
+
+  const bad = cli(root, ['start', '--permission-mode', 'yolo', 'issue', 'M-3']);
+  assert.equal(bad.status, 2);
+  assert.match(bad.stderr, /^runner: start: --permission-mode must be one of auto, acceptEdits, dontAsk, bypassPermissions\n$/);
+  assert.equal(existsSync(runDir(root, 'issue', 'M-3')), false);
+
+  const refused = runOnce('M-4', ['--permission-mode', 'bypassPermissions'], { SHIP_RUNNER_ALLOW_BYPASS: '' });
+  assert.equal(refused.mode, 'auto');
+  assert.match(refused.events, / M-4 - progress bypassPermissions refused: set SHIP_RUNNER_ALLOW_BYPASS=1$/m);
+  assert.match(refused.events, /child permission mode: auto \(flag\)$/m);
+
+  const allowed = runOnce('M-5', ['--permission-mode', 'bypassPermissions'], { SHIP_RUNNER_ALLOW_BYPASS: '1' });
+  assert.equal(allowed.mode, 'bypassPermissions');
+  assert.equal(allowed.allowBypass, null); // stripped from the child's env
+  assert.doesNotMatch(allowed.events, /refused/);
 });

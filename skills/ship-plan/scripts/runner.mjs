@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 // The ship runner's CLI. Run from the checkout:
+//   node runner.mjs start [--permission-mode auto|acceptEdits|dontAsk|bypassPermissions] <run>, <run> one of:
+//   (bypassPermissions only with SHIP_RUNNER_ALLOW_BYPASS=1 in the runner's env; never passed to children)
 //   node runner.mjs start issue <KEY>
 //   node runner.mjs start queue <PARENT> <KEY>,<KEY>… [--deps <KEY>:<DEP>,…]   (<KEY> waits for <DEP>)
 //   node runner.mjs start plan <path>          ship-plan from implement
@@ -30,9 +32,9 @@ const strip = (v) => v.replace(/`/g, '').trim();
 export const CHILD_MODES = ['auto', 'acceptEdits', 'dontAsk', 'bypassPermissions'];
 
 /**
- * What the runner reads from `.claude/ship-plan.md`: `## Runner` `Implement chunk:` (default 5),
- * `## Queue` `Child permission mode:` (default auto; an unknown value is auto), `## Models` rows
- * over MODEL_DEFAULTS, `## Repo` `Base branch:` (default main).
+ * What the runner reads from `.claude/ship-plan.md`: `## Runner` `Implement chunk:` (default 5) and
+ * `## Models` rows over MODEL_DEFAULTS. Never the permission mode: a child can edit the working
+ * tree and every local git ref, so the mode comes only from `start --permission-mode`.
  * Headings match case-insensitively; a field line may start with `- `.
  */
 export function parseConfig(text) {
@@ -58,41 +60,16 @@ export function parseConfig(text) {
     if (!role || !model || role.toLowerCase() === 'role' || /^-+$/.test(role)) continue;
     models[role] = { model, effort: effort || MODEL_DEFAULTS[role]?.effort || 'high' };
   }
-  const mode = field('queue', 'Child permission mode');
-  return {
-    chunkSize: chunk > 0 ? chunk : 5,
-    mode: CHILD_MODES.includes(mode) ? mode : 'auto',
-    models,
-    baseBranch: field('repo', 'Base branch') || 'main',
-  };
+  return { chunkSize: chunk > 0 ? chunk : 5, models };
 }
 
-// Models and Implement chunk come from the working tree. The permission mode comes only from the
-// committed config of origin/HEAD's branch (main when unset): a child can edit the working tree, and must not raise the next
-// child's mode. Any read failure: auto.
 function readConfig(root) {
-  let cfg;
   try {
-    cfg = parseConfig(readFileSync(join(root, '.claude', 'ship-plan.md'), 'utf8'));
+    return parseConfig(readFileSync(join(root, '.claude', 'ship-plan.md'), 'utf8'));
   } catch (e) {
     if (e.code !== 'ENOENT') throw e;
-    cfg = parseConfig('');
+    return parseConfig('');
   }
-  // the base name from the remote, never from the working tree a child can edit
-  let base = 'main';
-  try {
-    base = git(root, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD').replace(/^origin\//, '') || 'main';
-  } catch {
-    // no origin/HEAD: main
-  }
-  const ref = `origin/${base}`;
-  let mode = 'auto';
-  try {
-    mode = parseConfig(git(root, 'show', `${ref}:.claude/ship-plan.md`)).mode;
-  } catch {
-    // no git, no such ref, or no committed config
-  }
-  return { ...cfg, mode, modeFrom: ref };
 }
 
 function git(root, ...args) {
@@ -195,7 +172,21 @@ function parseStart(root, [what, ...a]) {
 
 async function start(rest) {
   const root = checkoutRoot();
-  const run = parseStart(root, rest);
+  // --permission-mode <m>: the only source of the children's mode
+  const args = [...rest];
+  let mode = 'auto';
+  let modeFrom = 'default';
+  const at = args.indexOf('--permission-mode');
+  if (at !== -1) {
+    mode = args[at + 1];
+    modeFrom = 'flag';
+    args.splice(at, 2);
+    if (!CHILD_MODES.includes(mode)) return usage(`start: --permission-mode must be one of ${CHILD_MODES.join(', ')}`);
+  }
+  // read once, never passed on: children inherit process.env
+  const allowBypass = process.env.SHIP_RUNNER_ALLOW_BYPASS === '1';
+  delete process.env.SHIP_RUNNER_ALLOW_BYPASS;
+  const run = parseStart(root, args);
   if (typeof run === 'string') return usage(run);
   const dir = runDir(root, run.kind, run.id);
 
@@ -231,10 +222,13 @@ async function start(rest) {
   save();
 
   const cfg = readConfig(root);
-  const base = { root, dir, models: cfg.models, mode: cfg.mode, env: {}, chunkSize: cfg.chunkSize, skill: run.skill, args: run.args, save };
+  const refused = mode === 'bypassPermissions' && !allowBypass;
+  if (refused) mode = 'auto';
+  const base = { root, dir, models: cfg.models, mode, env: {}, chunkSize: cfg.chunkSize, skill: run.skill, args: run.args, save };
   const pollMs = Number(process.env.SHIP_RUNNER_POLL_MS) || 30000;
   const slug = state.id.replaceAll('/', '-');
-  emit(dir, slug, '-', 'progress', `child permission mode: ${cfg.mode} (from ${cfg.modeFrom})`);
+  if (refused) emit(dir, slug, '-', 'progress', 'bypassPermissions refused: set SHIP_RUNNER_ALLOW_BYPASS=1');
+  emit(dir, slug, '-', 'progress', `child permission mode: ${mode} (${modeFrom})`);
   try {
     for (;;) {
       syncAnswers(state, dir);

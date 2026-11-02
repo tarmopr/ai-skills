@@ -6,7 +6,7 @@
 //   crash             exit 1, no output
 //   noresume          with --resume: the CLI's "No conversation found" result line, exit 1;
 //                     otherwise like ok (marker from FAKE_CLAUDE_MARKER)
-// FAKE_CLAUDE_LOG: when set, argv, stdin and SHIP_RUNNER are written there as JSON.
+// FAKE_CLAUDE_LOG: when set, argv, stdin, SHIP_RUNNER and SHIP_RUNNER_ALLOW_BYPASS are written there as JSON.
 // FAKE_CLAUDE_LEDGER_APPEND: JSON [{file, when?, firstLine?, append?: string[]}], applied before
 //   the output: file is relative to cwd; an op runs only when the prompt contains `when` (if set);
 //   firstLine replaces line 1, replace [[old, new], …] swaps every line equal to old, append adds
@@ -22,7 +22,7 @@ const stdin = Buffer.concat(chunks).toString('utf8');
 const argv = process.argv.slice(2);
 const promptKey = /with the arguments "([^"]*)"/.exec(stdin)?.[1];
 Object.assign(process.env, JSON.parse(process.env.FAKE_CLAUDE_BY_KEY || '{}')[promptKey] ?? {});
-if (process.env.FAKE_CLAUDE_LOG) writeFileSync(process.env.FAKE_CLAUDE_LOG, JSON.stringify({ argv, stdin, shipRunner: process.env.SHIP_RUNNER }));
+if (process.env.FAKE_CLAUDE_LOG) writeFileSync(process.env.FAKE_CLAUDE_LOG, JSON.stringify({ argv, stdin, shipRunner: process.env.SHIP_RUNNER, allowBypass: process.env.SHIP_RUNNER_ALLOW_BYPASS ?? null }));
 
 for (const op of JSON.parse(process.env.FAKE_CLAUDE_LEDGER_APPEND || '[]')) {
   if (op.when && !stdin.includes(op.when)) continue;
