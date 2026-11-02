@@ -28,6 +28,7 @@ files' shape. These scenarios pin behaviour.
 | S15 | [S15-loop-behaviors.md](S15-loop-behaviors.md) | Implementer context, prerequisites first, reviewers run no gates, gates after a base-branch merge, the key in a branch name, a handoff |
 | S16 | [S16-github-issues.md](S16-github-issues.md) | GitHub with GitHub Issues: the tracker question, labels as status, no closing keyword, close only when Done means is met |
 | S17 | [S17-ship-queue.md](S17-ship-queue.md) | Four runs: ship-queue order, the loop and its outcomes, queued mode in ship-issue and ship-plan, resume with answers |
+| S18 | [S18-token-wave-1.md](S18-token-wave-1.md) | Four runs: the issue's size picks the Spec stage's model, review rounds sized and scoped to the diff, what the session reads itself, ship-queue's child sessions |
 
 ## How to run one
 
