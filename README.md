@@ -41,6 +41,17 @@ add steps or make a rule stricter, never widen what a run may do. The config's `
 list, edited only by a person, of the few permissions a repo can switch on, such as a merge that deploys to a
 staging environment. See [config-format.md](skills/ship-plan/config-format.md).
 
+## Models, review size and the dispatch hook
+
+Each subagent role runs at the model and effort of its row in the config's `## Models` (defaults in
+`skills/ship-plan/config-format.md`). `ship-issue` sizes each issue: a `small` one (one module, a clear
+reproduction or a spelled-out change, nothing touching access, money or migrations) gets its spec on
+`Spec stage (small)`, the rest on `Spec stage`. `verify-and-fix` sends a small diff (at most 200 changed lines,
+nothing under `## Risk paths`) to one code reviewer plus the security review, and later rounds review only the
+fixes. `ship-queue` runs each sub-issue in a fresh `claude -p` child session (`## Queue`, `Queue run` row) and
+logs each one's cost. While a ship run is live, the plugin's `PreToolUse` hook refuses any Agent dispatch that
+passes no `model` or no `effort`.
+
 ## Maintaining (author workflow)
 
 This repo is the source of truth. Every machine, the author's included, uses the skills through the

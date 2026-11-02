@@ -1,129 +1,115 @@
 **Files read:**
 1. ship-issue/SKILL.md
 2. ship-plan/config-format.md
-3. ship-plan/hosts/github.md
-4. ship-plan/trackers/jira.md
-5. ship-plan/templates-issue.md
-6. ship-issue/worktree.md
+3. ship-issue/worktree.md
+4. ship-plan/hosts/github.md
+5. ship-plan/trackers/jira.md
+6. ship-plan/templates-issue.md
+
+(`.claude/ship-plan.md`, the interruptions logs, `blockers.md` and the `.claude/ship-plan/...` override files are not under SKILLDIR. Per the paper-exercise rule I use the scenario's config and treat the logs and overrides as absent.)
 
 ### Q1
-
-- **Step:** Read the skill
-- **Command or tool call:** Read `ship-issue/SKILL.md`
-- **Source:** ship-issue/SKILL.md, the skill itself
-- **Told or worked out:** told
-- **Files read for this step:** ship-issue/SKILL.md
-
-- **Step:** Read the config format that SKILL.md links ("Before anything else"; "Repo override files")
-- **Command or tool call:** Read `ship-plan/config-format.md`
-- **Source:** ship-issue/SKILL.md, "Ship an issue" (Before anything else, read in full)
-- **Told or worked out:** told
-- **Files read for this step:** ship-plan/config-format.md
-
-- **Step:** Read the host file (Host: absent, origin is github.com, so github)
-- **Command or tool call:** Read `ship-plan/hosts/github.md`
-- **Source:** ship-issue/SKILL.md, "Ship an issue" (Host and tracker)
-- **Told or worked out:** told
-- **Files read for this step:** ship-plan/hosts/github.md
-
-- **Step:** Read the tracker file (## Jira present, so jira)
-- **Command or tool call:** Read `ship-plan/trackers/jira.md`
-- **Source:** ship-issue/SKILL.md, "Ship an issue" (Host and tracker)
-- **Told or worked out:** told
-- **Files read for this step:** ship-plan/trackers/jira.md
-
-- **Step:** Read the issue templates (Tracker is not none)
-- **Command or tool call:** Read `ship-plan/templates-issue.md`
-- **Source:** ship-issue/SKILL.md, "Ship an issue" (Host and tracker, last sentence)
-- **Told or worked out:** told
-- **Files read for this step:** ship-plan/templates-issue.md
-
-- **Step:** Read the worktree recipe (checkout is dirty and on another branch)
-- **Command or tool call:** Read `ship-issue/worktree.md`
-- **Source:** ship-issue/SKILL.md, "W. Which checkout" (When the current checkout is dirty or on another branch, read worktree.md)
-- **Told or worked out:** told
-- **Files read for this step:** ship-issue/worktree.md
-
-(Repo override files under `.claude/ship-plan/...` are not under SKILLDIR, so not read here. config-drafting.md not read: the config exists and needs no draft.)
+- **Step:** Read the skill files, in the order the skill pulls them in. I opened worktree.md third; the skill needs it only at W, after the tracker files.
+- **Command or tool call:** Read tool on each file, in this order:
+  1. ship-issue/SKILL.md
+  2. ship-plan/config-format.md (SKILL.md "Before anything else, read in full" and "Host and tracker")
+  3. ship-plan/hosts/github.md (`origin` is `git@github.com:acme/billing-api.git`, so `Host:` is github; config-format.md `## Repo`)
+  4. ship-plan/trackers/jira.md (the config has `## Jira`, so `Tracker:` is jira)
+  5. ship-plan/templates-issue.md ("When `Tracker:` is not `none` ... read templates-issue.md")
+  6. ship-issue/worktree.md (SKILL.md section W: "When the current checkout is dirty or on another branch, read worktree.md")
+- **Source:** ship-issue/SKILL.md, headings "Ship an issue" (Host and tracker bullet) and "W. Which checkout".
+- **Told or worked out:** told.
+- **Files read for this step:** the six above.
 
 ### Q2
-
-- **Step:** Decide the checkout: a new worktree, not the main checkout
-- **Command or tool call:** none, a decision (a read of the table in worktree.md)
-- **Source:** ship-issue/worktree.md, "W. Which checkout" table, row "Main checkout, on another branch or dirty (another agent or the user is working)": "New worktree (recipe). Never switch, stash or commit someone else's tree, and never run its tests." Why: the main checkout is on `feature/BILL-401-statement-totals` with uncommitted changes, and that is not this issue's branch. Also ship-issue/SKILL.md, Red flags: "The main checkout is on another branch, I'll switch it" -> "Someone is working there. Use the worktree recipe."
-- **Told or worked out:** told
-- **Files read for this step:** none new
+- **Step:** Choose the checkout. The main checkout is dirty and on `feature/BILL-401-statement-totals`, which is not this issue's branch, so BILL-450 works in a new worktree.
+- **Command or tool call:** none, this is a decision. Nothing is asked of the user and nothing is written at this point.
+- **Source:**
+  - ship-issue/worktree.md, heading "W. Which checkout", table row: "Main checkout, on another branch or dirty (another agent or the user is working) | New worktree (recipe). Never switch, stash or commit someone else's tree, and never run its tests."
+  - ship-issue/SKILL.md, heading "W. Which checkout".
+  - ship-issue/SKILL.md, heading "Red flags": "The main checkout is on another branch, I'll switch it | Someone is working there. Use the worktree recipe."
+- **Told or worked out:** told.
+- **Files read for this step:** none new.
 
 ### Q3
+In order. `<main>` is `/work/billing-api`, which the `rev-parse` below confirms.
 
-- **Step:** 0. Check git runs unmodified
+- **Step:** Recipe step 0, check git runs unmodified. Run in the session's cwd, the main checkout, and read-only.
 - **Command or tool call:** `git status`
-- **Source:** ship-issue/worktree.md, "Worktree recipe" step 0
-- **Told or worked out:** told
-- **Files read for this step:** none new
+- **Source:** ship-issue/worktree.md, heading "Worktree recipe", step 0.
+- **Told or worked out:** told.
+- **Files read for this step:** none new.
 
-- **Step:** 1a. Fetch the base branch (origin exists)
+- **Step:** Recipe step 1, fetch the base branch.
 - **Command or tool call:** `git fetch origin main --quiet`
-- **Source:** ship-issue/worktree.md, "Worktree recipe" step 1; base `main` from the config
-- **Told or worked out:** told
-- **Files read for this step:** none new
+- **Source:** ship-issue/worktree.md, "Worktree recipe", step 1.
+- **Told or worked out:** told. `<base>` is `main`, from the scenario config.
+- **Files read for this step:** none new.
 
-- **Step:** 1b. Find the main checkout path
-- **Command or tool call:** `git rev-parse --path-format=absolute --git-common-dir` (prints `/work/billing-api/.git`, so `<main>` is `/work/billing-api`)
-- **Source:** ship-issue/worktree.md, "Worktree recipe" step 1
-- **Told or worked out:** told
-- **Files read for this step:** none new
+- **Step:** Recipe step 1, find the main checkout's path.
+- **Command or tool call:** `git rev-parse --path-format=absolute --git-common-dir`. It prints `/work/billing-api/.git`, so `<main>` is `/work/billing-api`.
+- **Source:** ship-issue/worktree.md, "Worktree recipe", step 1.
+- **Told or worked out:** told.
+- **Files read for this step:** none new.
 
-- **Step:** 1c. Create the detached worktree from origin/main
+- **Step:** Recipe step 1, create the detached worktree from `origin/main`. The path is written out in full.
 - **Command or tool call:** `git worktree add --detach /work/billing-api/.claude/worktrees/BILL-450 origin/main`
-- **Source:** ship-issue/worktree.md, "Worktree recipe" step 1
-- **Told or worked out:** told
-- **Files read for this step:** none new
+- **Source:** ship-issue/worktree.md, "Worktree recipe", step 1.
+- **Told or worked out:** told, with `<KEY-n>` filled as `BILL-450`.
+- **Files read for this step:** none new.
 
-- **Step:** 1d. Enter the worktree
+- **Step:** Recipe step 1, enter the worktree.
 - **Command or tool call:** `EnterWorktree` with `path: /work/billing-api/.claude/worktrees/BILL-450`
-- **Source:** ship-issue/worktree.md, "Worktree recipe" step 1
-- **Told or worked out:** told
-- **Files read for this step:** none new
+- **Source:** ship-issue/worktree.md, "Worktree recipe", step 1.
+- **Told or worked out:** told.
+- **Files read for this step:** none new.
 
-- **Step:** 2. Dependencies: the Prerequisites row with Background no, run in the worktree (in a permission mode that prompts, after the batch answers; otherwise now)
+- **Step:** Recipe step 2, dependencies. This is the only Prerequisites row with `Background: no`. It runs inside the worktree. In a permission mode that prompts, its allow line `Bash(make setup)` goes in the I3 batch and it runs after the answers arrive; otherwise it runs now.
 - **Command or tool call:** `make setup`
-- **Source:** ship-issue/worktree.md, "Worktree recipe" step 2; config `## Prerequisites`
-- **Told or worked out:** told
-- **Files read for this step:** none new
+- **Source:** ship-issue/worktree.md, "Worktree recipe", step 2; the scenario's `## Prerequisites`.
+- **Told or worked out:** told.
+- **Files read for this step:** none new.
 
-- **Step:** 3. Copy the git-ignored file from `## Worktree` `Copy:` (copy, never print)
+- **Step:** Recipe step 3, copy the git-ignored `Copy:` file from the main checkout. Copied, never printed.
 - **Command or tool call:** `cp /work/billing-api/.env /work/billing-api/.claude/worktrees/BILL-450/.env`
-- **Source:** ship-issue/worktree.md, "Worktree recipe" step 3
-- **Told or worked out:** told
-- **Files read for this step:** none new
+- **Source:** ship-issue/worktree.md, "Worktree recipe", step 3; the scenario's `## Worktree` (`Copy: .env`).
+- **Told or worked out:** told.
+- **Files read for this step:** none new.
 
-- **Step:** 4. Shared resources
-- **Command or tool call:** none, the config has no `Shared:` field, so nothing to check
-- **Source:** ship-issue/worktree.md, "Worktree recipe" step 4; ship-plan/config-format.md, `## Worktree`
-- **Told or worked out:** told
-- **Files read for this step:** none new
+- **Step:** Recipe step 4, shared resources. The config has no `Shared:` line, so there is nothing to check.
+- **Command or tool call:** none, the config has no `Shared:` line.
+- **Source:** ship-issue/worktree.md, "Worktree recipe", step 4.
+- **Told or worked out:** told.
+- **Files read for this step:** none new.
 
-- **Step:** 6. Commit hook check, once before the first commit
+- **Step:** Recipe step 6, run the commit hook once before the first commit. I did not use the `/usr/bin/git` fallback, so step 5 does not apply.
 - **Command or tool call:** `git hook run pre-commit`
-- **Source:** ship-issue/worktree.md, "Worktree recipe" step 6
-- **Told or worked out:** told
-- **Files read for this step:** none new
+- **Source:** ship-issue/worktree.md, "Worktree recipe", step 6.
+- **Told or worked out:** told.
+- **Files read for this step:** none new.
 
-(Step 5 of the recipe is a note about the `/usr/bin/git` fallback; it applies only if step 0 failed, so no command.)
+- **Step:** Exclude `.superpowers/` for the ledger. This is ledger setup, not a recipe step. It goes in the shared git dir's exclude file, not `.gitignore`.
+- **Command or tool call:** `Edit` on `/work/billing-api/.git/info/exclude`, adding the line `.superpowers/`
+- **Source:** ship-issue/SKILL.md, heading "The ledger": "Add `.superpowers/` to `<git-common-dir>/info/exclude` ... never to `.gitignore`."
+- **Told or worked out:** worked out. The file says where, not which tool.
+- **Files read for this step:** none new.
 
 ### Q4
-
-- **Step:** Create the feature branch in the new worktree, from its detached origin/main
-- **Command or tool call:** `git switch -c <type>/BILL-450-<slug> origin/main` (`<type>` one of feature, fix, docs, chore, refactor, from the issue; `<slug>` 3-6 words of the issue title in kebab case; the scenario gives neither)
-- **Source:** ship-issue/SKILL.md, "I2. Research and spec" step 1; ship-plan/trackers/jira.md, "Issue keys" (key upper case); ship-plan/config-format.md, `## Repo` (`<type>`, `<slug>`)
-- **Told or worked out:** told (type and slug are placeholders)
-- **Files read for this step:** none new
+- **Step:** Create the BILL-450 branch in the new worktree, from its detached `origin/main`. The `Branch:` pattern is not in the config, so the default `<type>/<id>-<slug>` applies. The key stays upper case.
+- **Command or tool call:** `git switch -c <type>/BILL-450-<slug> origin/main`
+  - `<type>` is one of `feature`, `fix`, `docs`, `chore` or `refactor`. The scenario gives no title or type for BILL-450, so I leave it as a placeholder. `<slug>` is 3 to 6 kebab-case words of the title.
+- **Source:**
+  - ship-issue/SKILL.md, heading "I2. Research and spec: the Spec stage", step 1: "`git switch -c <branch> origin/<base>` in the checkout chosen in section W (in a new worktree, from its detached `origin/<base>`)".
+  - ship-plan/config-format.md, heading "`## Repo`", `Branch:` default.
+  - ship-plan/trackers/jira.md, heading "Issue keys".
+- **Told or worked out:** told. The `<type>` and `<slug>` placeholders are left open.
+- **Files read for this step:** none new.
 
 ### Q5
-
-- **Step:** What never to do to the main checkout (`/work/billing-api`)
-- **Command or tool call:** none. Never switch it, never stash it, never commit in it, and never run its tests.
-- **Source:** ship-issue/worktree.md, "W. Which checkout" table: "Never switch, stash or commit someone else's tree, and never run its tests."
-- **Told or worked out:** told
-- **Files read for this step:** none new
+- **Step:** What never happens to the main checkout.
+- **Command or tool call:** none. I never switch, stash or commit its tree, and never run its tests. My only touches are the read-only `git status` and `git fetch`, and the `cp` that reads `.env` from it.
+- **Source:**
+  - ship-issue/worktree.md, heading "W. Which checkout", table: "Never switch, stash or commit someone else's tree, and never run its tests."
+  - ship-issue/SKILL.md, heading "Red flags": "The main checkout is on another branch, I'll switch it | Someone is working there."
+- **Told or worked out:** told.
+- **Files read for this step:** none new.

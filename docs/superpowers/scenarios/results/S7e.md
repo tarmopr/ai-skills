@@ -2,117 +2,157 @@
 1. ship-plan/SKILL.md
 2. ship-plan/red-base.md
 3. ship-plan/hosts/github.md
-4. ship-plan/config-format.md
-5. ship-plan/docs-pr.md
-6. verify-and-fix/SKILL.md
-7. verify-and-fix/review-comments.md
-8. ship-plan/templates.md
+4. ship-plan/docs-pr.md
+5. verify-and-fix/SKILL.md
+6. ship-plan/config-format.md
+7. ship-plan/templates.md
+8. ship-plan/templates-issue.md
 9. ship-plan/trackers/jira.md
-10. ship-plan/templates-issue.md
+10. verify-and-fix/review-comments.md
+
+(Not readable: the repo override files under `.claude/ship-plan/...` and the skill `superpowers:systematic-debugging`. Both are outside SKILLDIR. Not read: notifiers/slack.md because `Channel: none`, verify-and-fix/ui-testing.md because there is no `## UI testing`, ship-plan/log-formats.md because lessons come after green.)
 
 ### Q1
-
-- **Step:** Files read from this point, in order (ship-plan/SKILL.md, hosts/github.md and config-format.md are already loaded as the resumed run's starting reads; list the new ones)
-- **Command or tool call:** none, reading only. Order: `ship-plan/red-base.md` (section 6, step 3) -> `ship-plan/hosts/github.md` (Read a failed run; Rerun/Watch a run; Open the PR; Wait for checks; Merge; already loaded, no new read) -> `verify-and-fix/SKILL.md` (REQUIRED by section 4, step 1, on the fix branch) -> `verify-and-fix/review-comments.md` (its section 4b: the fix PR is open) -> `ship-plan/templates.md` (PR body for the fix PR; the run has an issue, so `templates-issue.md` is the one the skill sends me to) -> `ship-plan/trackers/jira.md` (tracker operations: Comment, Set status) -> `ship-plan/templates-issue.md` (Issue comment: merged / done / base branch red) -> `ship-plan/docs-pr.md` (section 7, step 2, at close-out).
-  Not read: `ui-testing.md` (no `## UI testing`), `notifiers/slack.md` (`Channel: none`), `config-drafting.md`, `log-formats.md` (neither log is missing; section 8 would read it only if one is).
-- **Source:** ship-plan/SKILL.md, "6. Base-branch CI" step 3, "4. Verify, push, PR" step 1, "7. Close out" step 2; ship-plan/red-base.md step 1; verify-and-fix/SKILL.md "4b. PR review comments"
-- **Told or worked out:** told
-- **Files read for this step:** ship-plan/SKILL.md, ship-plan/red-base.md, ship-plan/hosts/github.md, ship-plan/config-format.md, ship-plan/docs-pr.md, verify-and-fix/SKILL.md, verify-and-fix/review-comments.md, ship-plan/templates.md, ship-plan/trackers/jira.md, ship-plan/templates-issue.md
+- **Step:** Files read from here until base is green, in order. SKILL.md section 6 was already read.
+- **Command or tool call:** none, this is a list.
+  1. ship-plan/red-base.md (SKILL.md section 6, step 3).
+  2. ship-plan/hosts/github.md (*Read a failed run*, *Open the PR*, *Merge the PR*, *Watch a run*).
+  3. verify-and-fix/SKILL.md (red-base "Real" says run `verify-and-fix`).
+  4. ship-plan/config-format.md (linked from verify-and-fix; `Green:` and `## Models` rows).
+  5. ship-plan/templates.md (PR body, section 4 step 3 and section 1).
+  6. ship-plan/templates-issue.md (the run has an issue).
+  7. ship-plan/trackers/jira.md (*Link the PR* is "None"; *Comment* for the "merged" comment, section 5 step 6).
+  8. verify-and-fix/review-comments.md, only once the fix PR is open and feedback arrives (verify-and-fix 4b / `--comments`).
+  - After green: ship-plan/docs-pr.md at section 7 step 2.
+- **Source:** ship-plan/SKILL.md, section 6 step 3 and section 4; ship-plan/red-base.md step 1 "Real".
+- **Told or worked out:** told. The order is worked out from the "read when" lines.
+- **Files read for this step:** none new.
 
 ### Q2
-
-- **Step:** Read the failed base-branch run
+- **Step:** Read the failed run.
 - **Command or tool call:** `gh run view 4300 --log-failed | tail -150`
-- **Source:** ship-plan/hosts/github.md, "Read a failed run" ("A red base-branch run: `gh run view <id> --log-failed | tail -150`"); called from ship-plan/red-base.md step 1 ("Red: the host's *Read a failed run*")
-- **Told or worked out:** told
-- **Files read for this step:** none new
+- **Source:** ship-plan/hosts/github.md, "Read a failed run" ("A red base-branch run: `gh run view <id> --log-failed | tail -150`"); ship-plan/red-base.md step 1 ("**Red:** the host's *Read a failed run*, then classify").
+- **Told or worked out:** told.
+- **Files read for this step:** ship-plan/red-base.md, ship-plan/hosts/github.md.
 
 ### Q3
+- **Step:** Classify the failure.
+- **Command or tool call:** none, a decision. Result: **Real**, so fix forward.
+  - Not a rerun: `blockers.md` lists no transient, and the scenario says it is not an outage.
+  - Not "a new transient": that needs an external service, registry or network fault, and "the same step passed on the PR". Here the failing test is one this PR changed.
+  - The config has no `Merge deploys to:`, so the deploy-rerun branch does not apply.
+  - Quoted rule: "**Real:** fix forward. `git fetch origin <base> --quiet`, then `git switch -c fix/<id-or-slug>-base-after-<pr> origin/<base>` ... Find the root cause (superpowers:systematic-debugging), write a failing test, fix, run `verify-and-fix` on this branch, then do sections 4–6 again with the title "Fix <base> after #<n>: <what>"."
+  - Also quoted, SKILL.md Red flags: "Only a failure listed as transient gets a rerun ... Anything else gets a root cause."
+  - Cycle 1 of at most 3 ("At most 3 fix-forward cycles in one run").
+- **Source:** ship-plan/red-base.md step 1 and step 2; ship-plan/SKILL.md section 6 and Red flags.
+- **Told or worked out:** told.
+- **Files read for this step:** none new.
 
-- **Step:** Classify
-- **Command or tool call:** none, a decision. Result: **Real**, not transient. `blockers.md` lists no transient failures, so the first bullet ("Transient, listed in `blockers.md`") does not apply. The second bullet, "A new transient (an external service down, a registry, the network, and the same step passed on the PR)", needs an external cause; the scenario says "It is not an outage", and the failing test is one this PR changed. That leaves "Real".
-- **Source:** ship-plan/red-base.md step 1, bullets "Transient, listed in `blockers.md`", "A new transient" and "Real": "**Real:** fix forward. `git fetch origin <base> --quiet`, then `git switch -c fix/<id-or-slug>-base-after-<pr> origin/<base>`, with `<id>` written as the config's `Branch:` pattern writes it. Find the root cause (superpowers:systematic-debugging), write a failing test, fix, run `verify-and-fix` on this branch, then do sections 4-6 again with the title "Fix <base> after #<n>: <what>"."
-- **Told or worked out:** told
-- **Files read for this step:** none new
+- **Step:** Record the ruling in the ledger.
+- **Command or tool call:** `echo "Ruling: base run 4300 red is real, fix forward — tests/test_tax.py::test_round_half_even failed on 7d6e5f4, test changed by #62, not an outage, no blockers.md entry — cost if wrong: one extra fix PR (revert if root cause not found in one attempt)" >> .superpowers/ship-plan/feature-BILL-433-tax-rounding/ledger.md`
+- **Source:** ship-plan/SKILL.md, "The ledger" and section 3 step 2 (`Ruling: <decision> — <evidence quoted> — <cost if wrong>`).
+- **Told or worked out:** worked out. The line format is told; the exact command is built.
+- **Files read for this step:** none new.
 
-- **Step:** Record in the ledger (rewrite nothing in line 1; `Phase: 6` stays), add a line
-- **Command or tool call:** edit `.superpowers/ship-plan/feature-BILL-433-tax-rounding/ledger.md`, append: `CI: base run 4300 red at test -> unit, tests/test_tax.py::test_round_half_even; classified Real; fix-forward 1 of 3` (read by its path; the feature branch is gone after the merge)
-- **Source:** ship-plan/SKILL.md, "The ledger" ("one line per event ... CI results") and "5. Merge" step 4 ("read this run's ledger by its path")
-- **Told or worked out:** worked out
-- **Files read for this step:** none new
-
-- **Step:** Fetch the base branch
+- **Step:** Fetch the base branch.
 - **Command or tool call:** `git fetch origin main --quiet`
-- **Source:** ship-plan/red-base.md step 1, "Real"
-- **Told or worked out:** told
-- **Files read for this step:** none new
+- **Source:** ship-plan/red-base.md step 1 "Real".
+- **Told or worked out:** told.
+- **Files read for this step:** none new.
 
-- **Step:** Create the fix branch from origin/main (`<id>` = `BILL-433`, `<pr>` = 62)
+- **Step:** Create the fix branch from origin/main. The `<id>` is written as the `Branch:` pattern writes it, `<type>/<id>-<slug>`.
 - **Command or tool call:** `git switch -c fix/BILL-433-base-after-62 origin/main`
-- **Source:** ship-plan/red-base.md step 1, "Real"; ship-plan/SKILL.md "1. Tracker and branch" (Branch pattern `<type>/<id>-<slug>`, key upper case, per ship-plan/trackers/jira.md "Issue keys")
-- **Told or worked out:** told
-- **Files read for this step:** none new
+- **Source:** ship-plan/red-base.md step 1 "Real"; ship-plan/config-format.md "## Repo" (`Branch:`); ship-plan/trackers/jira.md "Issue keys" (key upper case).
+- **Told or worked out:** told.
+- **Files read for this step:** ship-plan/config-format.md, ship-plan/trackers/jira.md.
 
-- **Step:** Find the root cause
-- **Command or tool call:** `Skill` tool, `skill: "superpowers:systematic-debugging"` (no args); then read the failing test and the rounding code in `tests/test_tax.py` and the module it tests
-- **Source:** ship-plan/red-base.md step 1, "Real" (names superpowers:systematic-debugging)
-- **Told or worked out:** told
-- **Files read for this step:** none new
+- **Step:** Find the root cause with a research agent. I do not read source myself, and the CI tail is already read. The skill `superpowers:systematic-debugging` is named but is not under SKILLDIR.
+- **Command or tool call:** Agent with `subagent_type: "Explore"`, `model: "sonnet"`, `effort: "medium"`, `prompt: "Why does tests/test_tax.py::test_round_half_even fail on main at 7d6e5f4 when it passed on PR #62's head? CI log tail: <paste>. Compare git diff <pr-head-sha>..7d6e5f4 for the tested code and the commits that merged between. Report at most 30 lines with file:line quotes."`
+- **Source:** ship-plan/SKILL.md "This session reads little itself"; ship-plan/config-format.md `## Models` (`Research` row, default sonnet, medium); ship-plan/red-base.md "Real".
+- **Told or worked out:** worked out. The agent prompt is mine.
+- **Files read for this step:** none new.
 
-- **Step:** Write the failing test, then the fix (no command; edits to `tests/test_tax.py` and the code under test, and I watch the test fail before the fix). If the root cause is not found in one attempt, or the fix is not small, I take the revert route instead (`git revert --no-edit <merge sha>` on `fix/revert-62`); assumed here: first fix works.
-- **Command or tool call:** `CI=true make test > .superpowers/verify-and-fix/fix/BILL-433-base-after-62/tests.log 2>&1` (before the fix: expect fail; after: expect pass), run after `mkdir -p .superpowers/verify-and-fix/fix/BILL-433-base-after-62`, then `tail -50 .superpowers/verify-and-fix/fix/BILL-433-base-after-62/tests.log` after each run
-- **Source:** ship-plan/red-base.md step 1; verify-and-fix/SKILL.md "1. Setup" (Ledger) and "2. Gates" ("with `CI=true` ... output sent to `.superpowers/verify-and-fix/<branch>/<gate>.log`, then read the tail"); verify-and-fix/SKILL.md "5. Triage and fix" ("Write a test that reproduces the finding, watch it fail, then fix"); the gate row is `make test`, Only when changed empty, so it always runs
-- **Told or worked out:** worked out (the log file name `tests.log` is mine; the config's Gate is `Tests`)
-- **Files read for this step:** none new
+- **Step:** Create the verify-and-fix ledger directory.
+- **Command or tool call:** `mkdir -p .superpowers/verify-and-fix/fix-BILL-433-base-after-62`
+- **Source:** verify-and-fix/SKILL.md, "1. Setup" (Ledger).
+- **Told or worked out:** told.
+- **Files read for this step:** verify-and-fix/SKILL.md.
 
-- **Step:** Run `verify-and-fix` on the fix branch (Skill tool; its `git fetch origin main --quiet` setup, gate, review round with `pr-review-toolkit:code-reviewer`, `pr-review-toolkit:silent-failure-hunter`, `pr-review-toolkit:pr-test-analyzer` since a test changed, plus the `security-review` skill, each with the `Review round` row `opus`/`high`). Fix any Critical/Important finding with a failing test first, until it reports `clean`.
-- **Command or tool call:** `Skill` tool, `skill: "verify-and-fix"`, `args: "main"`
-- **Source:** ship-plan/red-base.md step 1, "Real"; ship-plan/SKILL.md "4. Verify, push, PR" step 1; verify-and-fix/SKILL.md "4. Review round"
-- **Told or worked out:** told
-- **Files read for this step:** none new
+- **Step:** Write the failing test. The edit is to `tests/test_tax.py`, plus a new case that reproduces the root cause. The exact lines depend on the agent's finding, so none are quoted here.
+- **Command or tool call:** Edit `tests/test_tax.py` with `old_string: <existing case>`, `new_string: <case reproducing the cause>`. Then run the gate:
+  `CI=true make test > .superpowers/verify-and-fix/fix-BILL-433-base-after-62/tests.log 2>&1`
+  then `tail -60 .superpowers/verify-and-fix/fix-BILL-433-base-after-62/tests.log` (it must fail).
+- **Source:** verify-and-fix/SKILL.md, "2. Gates" (exact command, `CI=true`, log to the ledger directory, read the last 60 lines) and "5. Triage and fix" (test first).
+- **Told or worked out:** told for the gate form; worked out for the test edit.
+- **Files read for this step:** none new.
 
-- **Step:** Stage the fix by name
-- **Command or tool call:** `git add tests/test_tax.py <fixed source file>`
-- **Source:** verify-and-fix/SKILL.md "5. Triage and fix" ("Stage only the files you fixed, by name (never `git add -A`)")
-- **Told or worked out:** worked out
-- **Files read for this step:** none new
+- **Step:** Fix the code and rerun the gate. The gate must pass.
+- **Command or tool call:** Edit `<source file>` with `old_string: <buggy lines>`, `new_string: <fix>`. Then `CI=true make test > .superpowers/verify-and-fix/fix-BILL-433-base-after-62/tests.log 2>&1` and `tail -60 .superpowers/verify-and-fix/fix-BILL-433-base-after-62/tests.log`
+- **Source:** verify-and-fix/SKILL.md, "2. Gates"; ship-plan/red-base.md "Real".
+- **Told or worked out:** worked out for the edit; the gate form is told.
+- **Files read for this step:** none new.
 
-- **Step:** Commit with the session's trailers (repo's commit format)
-- **Command or tool call:** `git commit -m "fix: round half even in tax calculation after #62 (BILL-433)" -m "Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"`
-- **Source:** ship-plan/SKILL.md "7. Close out"/"2. Implement" (commit trailers verbatim from the session), "What invoking this skill authorizes" ("commit"); `git add`/`git commit` are pre-approved
-- **Told or worked out:** worked out (message text is a placeholder for the real change)
-- **Files read for this step:** none new
+- **Step:** Commit the fix. Files are staged by name, never `git add -A`. The trailer is copied exactly from the session reminder.
+- **Command or tool call:** `git add tests/test_tax.py <source file>`
+  then `git commit -m "fix: <what> (BILL-433)" -m "Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"`
+- **Source:** verify-and-fix/SKILL.md, "5. Triage and fix" (stage by name, no `--no-verify`); ship-plan/SKILL.md section 2 (trailers).
+- **Told or worked out:** told for the rules; worked out for the commands.
+- **Files read for this step:** none new.
 
-- **Step:** Push the fix branch
+- **Step:** Review round 1 of `verify-and-fix`. Run it unless the fix keeps behaviour; I assume it changes behaviour. Size check first, then the agents.
+- **Command or tool call:**
+  - `git diff --shortstat origin/main...HEAD`. A small diff has at most 200 changed lines and no file under `## Risk paths` (the config has none), so the panel is `code-reviewer` plus the security review.
+  - Agent `subagent_type: "pr-review-toolkit:code-reviewer"`, `model: "opus"`, `effort: "xhigh"` (the `Final review` row), `prompt: "<scope: git diff origin/main...HEAD; ledger Ruling lines; findings only, one line each file:line grade what why, at most 25 lines; never run a gate or test command in this tree and never edit it>"`.
+  - Skill `security-review` on the branch.
+  - Then `echo "Reviewed: <sha> — round 1, full, code-reviewer + security-review" >> .superpowers/verify-and-fix/fix-BILL-433-base-after-62/ledger.md`
+  - If it finds Critical or Important issues, fix each with a failing test first and rerun the gates and a delta round.
+- **Source:** verify-and-fix/SKILL.md, "4. Review round" (Round 1, small diff, security every round, reviewer prompt rules) and "5. Triage and fix"; ship-plan/config-format.md `## Models`.
+- **Told or worked out:** told.
+- **Files read for this step:** none new.
+
+- **Step:** Push the fix branch. Section 4 step 2 names the branch.
 - **Command or tool call:** `git push -u origin fix/BILL-433-base-after-62`
-- **Source:** ship-plan/SKILL.md "4. Verify, push, PR" step 2 ("`git push -u origin <branch>`")
-- **Told or worked out:** told
-- **Files read for this step:** none new
+- **Source:** ship-plan/SKILL.md section 4 step 2 ("**Push:** `git push -u origin <branch>`").
+- **Told or worked out:** told.
+- **Files read for this step:** none new.
 
-- **Step:** Write the PR body to a file (templates.md "PR body": 2-3 sentences with `[BILL-433](<url>)`, What changed, How it was verified table with the `Tests` gate, Simplify pass, Decisions, Not tested, attribution line), in `.superpowers/ship-plan/feature-BILL-433-tax-rounding/fix-pr-body.md`
-- **Command or tool call:** `Write` tool, `file_path: ".superpowers/ship-plan/feature-BILL-433-tax-rounding/fix-pr-body.md"`, content = the PR body, ending with `🤖 Generated with [Claude Code](https://claude.com/claude-code)`
-- **Source:** ship-plan/templates.md "PR body"; ship-plan/SKILL.md "1. Tracker and branch" ("The PR body is in templates.md. When the run has an issue, read templates-issue.md")
-- **Told or worked out:** worked out
-- **Files read for this step:** none new
+- **Step:** Write the PR body to a file. Title: `Fix main after #62: <what> (BILL-433)`. The body follows the templates.md "PR body" shape: the issue link only with no closing keyword, What changed, a gates table with `Tests | pass`, Simplify "no changes" or "None", Decisions, Not tested, and the final line `🤖 Generated with [Claude Code](https://claude.com/claude-code)`. The body names #62 and `7d6e5f4`.
+- **Command or tool call:** Write `file_path: .superpowers/verify-and-fix/fix-BILL-433-base-after-62/pr-body.md`, `content: <that body>`
+- **Source:** ship-plan/templates.md "PR body"; ship-plan/SKILL.md section 1 and section 4 step 3.
+- **Told or worked out:** told for the template; worked out for the path.
+- **Files read for this step:** ship-plan/templates.md, ship-plan/templates-issue.md.
 
-- **Step:** Open the fix PR against main
-- **Command or tool call:** `gh pr create --base main --title "Fix main after #62: round half even in tax calculation (BILL-433)" --body-file .superpowers/ship-plan/feature-BILL-433-tax-rounding/fix-pr-body.md`
-- **Source:** ship-plan/hosts/github.md "Open the PR" (`gh pr create --base <base>`); ship-plan/red-base.md ("title "Fix <base> after #<n>: <what>""); ship-plan/SKILL.md "4. Verify, push, PR" step 3 (title plus ` (<ID>)` when there is an issue)
-- **Told or worked out:** told (the title text and `--body-file` are filled in by me)
-- **Files read for this step:** none new
+- **Step:** Open the fix PR.
+- **Command or tool call:** `gh pr create --base main --title "Fix main after #62: <what> (BILL-433)" --body-file .superpowers/verify-and-fix/fix-BILL-433-base-after-62/pr-body.md`
+- **Source:** ship-plan/hosts/github.md "Open the PR" (`gh pr create --base <base>`); ship-plan/red-base.md "Real" (title); ship-plan/SKILL.md section 4 step 3.
+- **Told or worked out:** told. `--title` and `--body-file` are my choice of flags, and the title merges red-base's "Fix <base> after #<n>: <what>" with section 4 step 3's ` (<ID>)`.
+- **Files read for this step:** none new.
 
-Nothing asked of the user; nothing written to config or logs here.
+Nothing asked of the user. Nothing written but the ledger lines, the verify-and-fix `Reviewed:` line, and the PR body file above.
 
 ### Q4
+- **Step:** Open the docs PR while the base branch is red?
+- **Command or tool call:** none. No.
+  - `docs-pr.md` runs as section 7 step 2: "Read only when the ledger has a `Docs PR:` line and the code PR merged (section 7, step 2 of SKILL.md)".
+  - The flowchart reaches section 7 from a red base only through the fix-forward loop (`Fix-forward branch -> 3 Verify`), so it comes only after 6 and 6b, or after the loop gives up.
+  - SKILL.md Red flags: "The run ends when the base branch is green, the closing comment is written, the docs PR is open (when the ledger has a `Docs PR:` line), and lessons are recorded."
+  - The Red flags row also says: "A held spec reaches the repository only through section 7, step 2. Open the docs PR at close-out."
+  - Opening the docs PR now would also create a PR whose checks may be red only because main is red (section 5 step 2: "never merge red and never fix that here").
+- **Source:** ship-plan/SKILL.md, flowchart, "7. Close out" step 2, Red flags; ship-plan/docs-pr.md header.
+- **Told or worked out:** worked out. The "not while red" reading comes from the ordering, since docs-pr.md only conditions on "the code PR merged".
+- **Files read for this step:** none new.
 
-- **Step:** Docs PR while the base branch is red: **no**
-- **Command or tool call:** none, I do not open it now. The docs PR is opened only at close-out (section 7, step 2), and the run reaches section 7 only after the fix PR has gone through sections 4-6 (checks, review, merge, base-branch run green, then 6b). Rule: "**Docs PR,** when the ledger has a `Docs PR:` line ... and the code PR has merged. Under "Awaiting review" and "Not merged" it waits". Also the red flag: "A held spec reaches the repository only through section 7, step 2. Open the docs PR at close-out." The ledger line `Docs PR: .superpowers/ship-issue/BILL-433/2026-10-19-BILL-433-tax-rounding-design.md -> docs/superpowers/specs/2026-10-19-BILL-433-tax-rounding-design.md; also nothing else` and `Merged: #62 as 7d6e5f4` satisfy the two conditions, but the run has not reached step 2. If 3 fix-forward cycles ran out and the base is still red, the run closes out as "Base branch red" and the docs PR is opened then, in step 2 (the code PR merged; "Base branch red" is not one of the two outcomes that make it wait).
-- **Source:** ship-plan/SKILL.md "7. Close out" step 2; ship-plan/SKILL.md "The run" ("The run ends at section 7"); ship-plan/SKILL.md "Red flags" ("The spec can go in with some later docs change"); ship-plan/docs-pr.md (intro); ship-plan/red-base.md step 2 (at most 3 fix-forward cycles)
-- **Told or worked out:** worked out (the exact timing is inferred from the section order; the file states the conditions)
-- **Files read for this step:** none new
-
-- **Step:** When and which files for the docs PR (in this run: at section 7, step 2, after the closing comment step 1 and before the next-part handoff and lessons)
-- **Command or tool call:** none new to type here. Files read at that point: `ship-plan/docs-pr.md` (the whole procedure: `git fetch origin main`, then `git switch -c docs/BILL-433-tax-rounding origin/main`, copy the held spec to the path the line names, check names with `git grep`, commit `docs: <what> (BILL-433)`, `git push -u origin <branch>`, host's *Open the PR*, *Request an AI review*, merge through sections 5-6 only if the review rule needs no approval, write `Docs PR: #<n> <url>` in the ledger) and `ship-plan/hosts/github.md` (*Open the PR*, *Request an AI review*, *Review state*, *Merge the PR*, already loaded). `notifiers/slack.md` is not read: `Channel: none`.
-- **Source:** ship-plan/SKILL.md "7. Close out" step 2; ship-plan/docs-pr.md steps 1-6
-- **Told or worked out:** told
-- **Files read for this step:** ship-plan/docs-pr.md, ship-plan/hosts/github.md
+- **Step:** When the docs PR is opened, and the files read. It happens in section 7, after the fix PR merges and base run 4300's successor is green (section 6), validation 6b passes (no `## After merge` checks, no `Hosted URL:`), and the "Done" closing comment (section 7 step 1) is written. It comes before the next-part handoff, the lessons (section 8) and the report. The only file read for it is ship-plan/docs-pr.md. hosts/github.md is already read; notifiers/slack.md is skipped because `Channel: none`.
+- **Command or tool call:**
+  1. `git fetch origin main`
+  2. `git switch -c docs/BILL-433-tax-rounding origin/main`
+  3. `cp .superpowers/ship-issue/BILL-433/2026-10-19-BILL-433-tax-rounding-design.md docs/superpowers/specs/2026-10-19-BILL-433-tax-rounding-design.md`, then Edit that file to rewrite only the spec's own "where it lives" line. The `Docs PR:` line lists no other changes ("also nothing else").
+  4. `git grep -n -e <each name, path and test the spec cites> origin/main`. Fix the text, never the code.
+  5. `git add docs/superpowers/specs/2026-10-19-BILL-433-tax-rounding-design.md`, then `git commit -m "docs: tax rounding design spec (BILL-433)" -m "Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"`
+  6. `git push -u origin docs/BILL-433-tax-rounding`
+  7. Write the body file (names #62, its merge SHA `7d6e5f4`, and the attribution line), then `gh pr create --base main --title "docs: tax rounding design spec (BILL-433)" --body-file <file>`
+  8. `gh pr edit <n> --add-reviewer @copilot`. If the review rule needs no approval, merge it through sections 5–6 with `gh pr merge <n> --squash --delete-branch`. Otherwise leave it open and link it in the report as "docs PR, needs approval".
+  9. Ledger line `Docs PR: #<n> <url>`, and name it in the Done comment's follow-ups.
+- **Source:** ship-plan/docs-pr.md steps 1–6; ship-plan/SKILL.md "7. Close out" step 2; ship-plan/hosts/github.md "Open the PR", "Request an AI review", "Merge the PR".
+- **Told or worked out:** told for the sequence. The `cp`, `git add`, `git commit` and body-file commands are worked out. The branch slug `tax-rounding` and `<ID>` `BILL-433` follow the `Branch:` pattern, taken from the feature branch `feature/BILL-433-tax-rounding`.
+- **Files read for this step:** ship-plan/docs-pr.md.
