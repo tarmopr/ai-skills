@@ -68,7 +68,7 @@ export function parseConfig(text) {
 }
 
 // Models and Implement chunk come from the working tree. The permission mode comes only from the
-// base branch's committed config: a child can edit the working tree, and must not raise the next
+// committed config of origin/HEAD's branch (main when unset): a child can edit the working tree, and must not raise the next
 // child's mode. Any read failure: auto.
 function readConfig(root) {
   let cfg;
@@ -78,7 +78,14 @@ function readConfig(root) {
     if (e.code !== 'ENOENT') throw e;
     cfg = parseConfig('');
   }
-  const ref = `origin/${cfg.baseBranch}`;
+  // the base name from the remote, never from the working tree a child can edit
+  let base = 'main';
+  try {
+    base = git(root, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD').replace(/^origin\//, '') || 'main';
+  } catch {
+    // no origin/HEAD: main
+  }
+  const ref = `origin/${base}`;
   let mode = 'auto';
   try {
     mode = parseConfig(git(root, 'show', `${ref}:.claude/ship-plan.md`)).mode;

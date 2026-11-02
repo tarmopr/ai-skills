@@ -387,10 +387,21 @@ test('child permission mode: only from the base branch committed config; invalid
   git('commit', '-q', '-am', 'bad');
   git('update-ref', 'refs/remotes/origin/main', 'HEAD');
   assert.equal(runOnce('M-3').mode, 'auto');
-  // Base branch: from ## Repo
-  put(root, '.claude/ship-plan.md', cfg('dontAsk', '- Base branch: dev'));
+  // the base comes from origin/HEAD, never from the working tree's Base branch:
+  put(root, '.claude/ship-plan.md', cfg('dontAsk'));
   git('commit', '-q', '-am', 'dev');
   git('update-ref', 'refs/remotes/origin/dev', 'HEAD');
-  assert.equal(runOnce('M-4').mode, 'dontAsk');
+  git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/dev');
+  put(root, '.claude/ship-plan.md', cfg('bypassPermissions', '- Base branch: evil'));
+  git('commit', '-q', '-am', 'evil');
+  git('update-ref', 'refs/remotes/origin/evil', 'HEAD'); // origin/evil's committed config says bypassPermissions
+  const m4 = runOnce('M-4');
+  assert.equal(m4.mode, 'dontAsk');
+  assert.match(m4.events, /progress child permission mode: dontAsk \(from origin\/dev\)$/m);
+  git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main');
+  git('update-ref', 'refs/remotes/origin/main', 'refs/remotes/origin/dev');
+  const m5 = runOnce('M-5'); // working tree still says Base branch: evil
+  assert.equal(m5.mode, 'dontAsk');
+  assert.match(m5.events, /\(from origin\/main\)$/m);
   assert.equal(parseConfig('## Queue\nChild permission mode: yolo\n').mode, 'auto');
 });
