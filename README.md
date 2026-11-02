@@ -52,6 +52,14 @@ fixes. `ship-queue` runs each sub-issue in a fresh `claude -p` child session (`#
 logs each one's cost. While a ship run is live, the plugin's `PreToolUse` hook refuses any Agent dispatch that
 passes no `model` or no `effort`.
 
+## Ship runner (opt-in)
+
+Set `## Runner` `Mode: runner` in `.claude/ship-plan.md`, or pass `--runner`, and a dependency-free Node script
+(`skills/ship-plan/scripts/runner.mjs`) runs each phase (spec, plan, implement in chunks, verify, merge, close) as a
+short headless `claude -p` child. The session you started only relays progress and questions, so it works with
+Remote Control on a phone. A question parks only that sub-issue and the queue goes on. The default is
+`Mode: session`, today's single-session path.
+
 ## Maintaining (author workflow)
 
 This repo is the source of truth. Every machine, the author's included, uses the skills through the
