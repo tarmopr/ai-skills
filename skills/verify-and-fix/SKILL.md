@@ -152,7 +152,8 @@ click through.
 Launch the round's reviews in parallel. Every agent gets the `model` and
 `effort` of its `## Models` row ([format](../ship-plan/config-format.md))
 passed explicitly: round 1's `code-reviewer` the `Final review` row (default
-`opus`, `xhigh`), as it is the run's whole-branch review; every other agent,
+`opus`, `xhigh`), as it is the run's whole-branch review (not in `--comments`
+mode: [review-comments.md](review-comments.md)); every other agent,
 every round, the `Review round` row (default `opus`, `high`). Agents whose
 definition says `model: inherit` would otherwise take whatever model the
 session runs on.
@@ -174,8 +175,9 @@ Any other diff gets the full panel.
 fixes since the last round. `code-reviewer`, the security review, and the
 agent whose finding each fix addressed. Tell each reviewer to read the whole
 files the delta touches, not only its hunks, and give it the previous round's
-findings and fixes. A delta of more than 200 lines, or one that touches
-`## Risk paths`: the full panel on `git diff origin/<base>...HEAD`.
+findings and fixes. A delta of more than 200 lines, or a branch whose diff
+(`origin/<base>...HEAD`) touches `## Risk paths`: the full panel on
+`git diff origin/<base>...HEAD`, every round.
 
 After each round, write `Reviewed: <HEAD sha> — round <n>, <full|delta>, <the agents>` in the ledger.
 
@@ -294,6 +296,10 @@ could not run locally (the config or the environment could not provide them)
 and were deferred, the status is **"clean before merge; N scenarios pending"**.
 Name those scenarios, and never call that result clean. Anything else is
 **"not clean: <reason>"**. The status line uses exactly one of these three forms.
+
+**Last ledger line:** `Done: <HEAD sha> — <status>`, every time this skill
+ends (also in `--comments` mode). The plugin's dispatch hook reads it as "this
+run has ended".
 
 **Everything that was not tested gets its own section at the end of the
 report**, with the scenarios, what was missing, and whether the user declined

@@ -26,8 +26,10 @@ and report "wrong checkout: <what you saw>". Work only there. Branch
 
 Mode: <new | revise>. Row: <row>.
 
-When Row is `small` and the change turns out to cross modules or services, or
-to hit the confidence test's fail list (below), write no spec: end with the
+When Row is `small` and the change turns out to cross modules or services, to
+widen access, change money, need a migration, or do something a follow-up
+commit cannot undo, write no spec. An open choice that nothing quotable
+decides is a question (below), not a reason to resize. On a resize: end with the
 stage report, `File: none`, and the line `Resize: standard — <reason>`.
 
 Read first, in full: the issue <ledger dir>/issue.md; the repo config

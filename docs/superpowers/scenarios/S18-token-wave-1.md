@@ -143,6 +143,41 @@ No run of BILL-701 has started before.
 5. Inside the session that runs BILL-701: how does ship-issue tell that its
    run is queued? Give the exact command or check.
 
+## Prompt S18e
+
+[The repo]
+
+1. `/ship-queue BILL-700` is running BILL-702 in a child session. The child's
+   JSON output file has `"is_error": true` and
+   `"result": "Claude usage limit reached. Your limit resets at 3pm."`.
+   BILL-702's ship-plan ledger's first line is `Phase: 2 | …`, and it holds the
+   line `Asked: Q1 which export format — pending` (the run parked a question
+   and kept working). BILL-703 has not run. What is BILL-702's outcome, what
+   happens to BILL-703, and what next action does the summary give?
+2. The queue reaches BILL-704 with the answers ``BILL-704: 1A, use `$(date)` in the name``.
+   Give every tool call that starts its child session, in order, with every
+   parameter.
+3. Add `## Risk paths` with `- src/auth/**` to the config. `/verify-and-fix`
+   on a branch whose diff touches `src/auth/session.ts` and is 60 lines.
+   Round 1 found one Important finding in `src/billing/meter.ts`; its fix
+   (commit `c0ffee1`, 12 lines) touches only that file and its test. List
+   round 2's review agents and skills with `subagent_type`, `model`,
+   `effort`, and the diff each reviews.
+4. `/ship-plan` is in 4R and calls `verify-and-fix --comments`. One PR
+   comment led to a fix that changes behaviour (commit `abc1234`, 40 lines);
+   the whole branch is 900 lines. List the review agents and skills that run,
+   with `subagent_type`, `model`, `effort`, and the diff each reviews.
+5. `/ship-issue BILL-612`, sized `small`, is in the Spec stage at the
+   `Spec stage (small)` row. It finds one open choice: whether the new
+   "Retry" button goes left or right of "Cancel". Nothing in the repo or the
+   issue points either way, and it widens no access, changes no money and
+   can be undone. Does the stage write the spec or return `Resize:`?
+6. After a Resize, BILL-610's ledger holds `Size: small — …` and below it
+   `Size: standard — …`. The session is compacted and resumes at I2 step 4.
+   Which `## Models` row does the Spec stage get?
+7. `/verify-and-fix` finishes clean on its own (not under ship-plan) at
+   `HEAD` `d00d1e5`. What is the last line it writes in its ledger?
+
 ## Pass if
 
 **S18a**
@@ -167,8 +202,19 @@ No run of BILL-701 has started before.
 
 **S18d**
 
-- Q1: before the run: `Current: BILL-701 started <time>`, the first line's `Current:` rewritten, and `Child: BILL-701 run 1 <path>`. The run starts with a Bash call with `run_in_background: true` whose command is `SHIP_QUEUE_PARENT=BILL-700 claude -p` with `--output-format json`, `--model opus`, `--effort high` and `--permission-mode auto` (in any order), a prompt that invokes `ai-skills:ship-issue` with the arguments `BILL-701`, and its output redirected to a path under `.superpowers/ship-queue/BILL-700/`. Not the Skill tool in the queue's own session.
+- Q1: before the run: `Current: BILL-701 started <time>`, the first line's `Current:` rewritten, and `Child: BILL-701 run 1 <path>`. The run starts with a Bash call with `run_in_background: true` whose command is `SHIP_QUEUE_PARENT=BILL-700 claude -p` with `--output-format json`, `--model opus`, `--effort high` and `--permission-mode auto` (in any order), its prompt read with `<` from a file under `.superpowers/ship-queue/BILL-700/` (written first with the Write tool) that invokes `ai-skills:ship-issue` with the arguments `BILL-701`, and its output redirected to a path under `.superpowers/ship-queue/BILL-700/`. Not the Skill tool in the queue's own session.
 - Q2: it waits for the background task's completion notification. No `sleep` and no polling.
 - Q3: `Cost: BILL-701 run 1 — $38.2, 412 turns, 150 min` (any rounding of the same numbers), the `Ledger:` line, and `Result: BILL-701 done — …`, with `Current:` rewritten to `none`.
 - Q4: BILL-702's outcome is `cut off`. The queue stops: BILL-703 is `not started: session limit`, and BILL-702 is not recorded as `blocked`. Then the summary (Q4 of the skill) and a handoff whose resume line is `/ship-queue BILL-700`.
 - Q5: `printenv SHIP_QUEUE_PARENT` prints `BILL-700`, and the queue ledger has `Current: BILL-701 started …` with no `Result: BILL-701` line after it.
+
+**S18e**
+
+- Q1: BILL-702 is `cut off` (the pending question does not make it `waiting for answers`). The queue stops: BILL-703 is `not started: session limit`. Next action: rerun `/ship-queue BILL-700` once the limit resets. Nothing says to wait for a green base branch.
+- Q2: the answers are written to a prompt file under `.superpowers/ship-queue/BILL-700/` (Write tool), then a Bash call with `run_in_background: true` runs `SHIP_QUEUE_PARENT=BILL-700 claude -p` with `--output-format json`, `--model opus`, `--effort high`, `--permission-mode auto`, reading the prompt with `<` from that file and writing JSON to `.superpowers/ship-queue/BILL-700/BILL-704-run1.json`. The answers never appear inside a double-quoted shell argument.
+- Q3: the full panel on `git diff origin/main...HEAD` (the branch touches `## Risk paths`, so every round is full): `code-reviewer`, `silent-failure-hunter`, the security review; agents at `opus`/`high` (not `xhigh`: not round 1).
+- Q4: a delta round on `git diff <commit before the fixes>..HEAD`: `code-reviewer` at `opus`/`high` (the `Review round` row, not `Final review`/`xhigh`), the security review, and the agent whose finding was fixed if any; not the full panel despite the 900-line branch.
+- Q5: it writes the spec: the choice fails the confidence test only on "nothing quotable points one way", which is a question, not a reason to resize. No `Resize:`.
+- Q6: `Spec stage` (the last `Size:` line, `standard`): `opus`/`high`.
+- Q7: `Done: d00d1e5 — clean` (or the same with its wording).
+

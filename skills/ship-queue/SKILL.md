@@ -174,7 +174,7 @@ For each sub-issue in order:
 
 | Outcome | How it is read | Next action in the summary |
 |---|---|---|
-| `cut off` | the child's output file has `"is_error": true`, or is missing or not JSON, and its ship-issue and ship-plan ledgers show none of the outcomes below (a usage limit, a crash) | rerun `/ship-queue <parent>` once the limit resets; **the queue stops** (below) |
+| `cut off` | the child's output file has `"is_error": true`, or is missing or not JSON (a usage limit, a crash), and the run reached no end: its ship-plan ledger has no `Phase: done`, no `Outcome:` line, no `Phase: 4R awaiting review` and no `Phase: 5 awaiting merge`, and its ship-issue ledger does not end `Waiting: batch …`. An `Asked: … — pending` line or a stage `blocked` in a run that was still working does not count: the run is `cut off` | rerun `/ship-queue <parent>` once the limit resets; **the queue stops** (below) |
 | `done, questions pending` | ship-plan ledger `Phase: done`, with an `Asked: … — pending` line (its close-out batch: a sign-in, a follow-up, a lessons answer) | the questions; answer with `/ship-queue <parent> <KEY>: <answers>`. Counts as `done` for dependencies; the queue's `Phase: done` waits for the answers |
 | `done` | ship-plan ledger `Phase: done` | none |
 | `base branch red` | ship-plan ledger `Outcome: Base branch red` (its queued close-out line) | its report's reason; **the queue stops** (below) |
@@ -190,13 +190,13 @@ For each sub-issue in order:
 
 **Base branch red** after a sub-issue: every later PR would fail on the same
 red base, and ship-plan never merges red. **The queue stops:** every sub-issue
-not yet run is `not started: base branch red`, and Q4 is written at once.
+not yet run is `not started: base branch red`, and Q4 is written at once. A
+later `/ship-queue <parent>` continues once the base branch is green.
 
 **Cut off:** a usage limit applies to every child, so the next one would be
 cut off too. **The queue stops:** every sub-issue not yet run is
 `not started: session limit`, then Q4 and a handoff (*Resume and session end*).
-The cut-off sub-issue resumes from its own ledgers on the next `/ship-queue <parent>`. A
-later `/ship-queue <parent>` continues once the base branch is green.
+The cut-off sub-issue resumes from its own ledgers on the next `/ship-queue <parent>`.
 
 ## Q3. The review sweep
 
@@ -238,14 +238,20 @@ headless session, so this session stays small: one queue session carried five
 full runs through seven compactions, and every turn re-read all of it. A child
 starts with a fresh context and its own model.
 
-1. Write `Child: <KEY> run <n> <output file>`, where `<n>` counts this sub-issue's children (1 for the first) and the output file is `.superpowers/ship-queue/<parent>/<KEY>-run<n>.json`.
+1. Write `Child: <KEY> run <n> <output file>`, where `<n>` counts this sub-issue's children (1 for the first) and the output file is `.superpowers/ship-queue/<parent>/<KEY>-run<n>.json`. Then write the child's prompt, with the Write tool, to `.superpowers/ship-queue/<parent>/<KEY>-run<n>.prompt.md`:
+
+   ```text
+   Invoke the ai-skills:<skill> skill with the Skill tool, with the arguments "<arguments>". You are a ship-queue child run: nobody is watching; follow the skill's Queued mode.
+   ```
+
+   `<skill>` is `ship-issue` (or `ship-plan`), `<arguments>` what this skill would have passed it, the user's answers copied exactly. Never put the arguments on the command line: a backtick or `$(` in an answer would run in the shell.
 2. Start it from the queue's checkout, with `run_in_background`:
 
    ```bash
-   SHIP_QUEUE_PARENT=<parent> claude -p --output-format json --model <model> --effort <effort> --permission-mode <mode> "Invoke the ai-skills:<skill> skill with the Skill tool, with the arguments \"<arguments>\". You are a ship-queue child run: nobody is watching; follow the skill's Queued mode." > .superpowers/ship-queue/<parent>/<KEY>-run<n>.json
+   SHIP_QUEUE_PARENT=<parent> claude -p --output-format json --model <model> --effort <effort> --permission-mode <mode> < .superpowers/ship-queue/<parent>/<KEY>-run<n>.prompt.md > .superpowers/ship-queue/<parent>/<KEY>-run<n>.json
    ```
 
-   Keep every flag, `--output-format json` above all: without it the file holds plain text and the `Cost:` line cannot be written. `<skill>` is `ship-issue` (or `ship-plan`), `<arguments>` what this skill would have passed it. `<model>` and `<effort>` come from the config's `## Models` `Queue run` row (default `opus`, `high`), `<mode>` from `## Queue` `Child permission mode:` (default `auto`).
+   Keep every flag, `--output-format json` above all: without it the file holds plain text and the `Cost:` line cannot be written. The prompt comes from the file on stdin (`<`). `<model>` and `<effort>` come from the config's `## Models` `Queue run` row (default `opus`, `high`), `<mode>` from `## Queue` `Child permission mode:` (default `auto`).
 3. **Wait for its completion notification.** No `sleep` and no polling: the harness wakes this session when the child exits. A child runs for hours.
 4. Read the result: `jq '{is_error, subtype, num_turns, total_cost_usd, duration_ms, result: ((.result // "") | .[0:400])}' <output file>`. Write `Cost: <KEY> run <n> — $<total_cost_usd>, <num_turns> turns, <duration_ms / 60000, rounded> min`. Then read the outcome from the ledgers (Q2 step 5); the JSON decides only `cut off`.
 
@@ -263,7 +269,7 @@ handoff of its own; the queue writes one for the whole queue.
     - `waiting for answers` with answers in this argument: `ship-issue <KEY> <answers>`, its resume form. With none: it stays as it is, and is not invoked.
     - `done, questions pending` with answers: write `Current: <KEY> started <time>`, then run **ship-plan** in a child session with the answers (`ship-plan <answers>`); ship-issue would stop at its I0 row for a Done issue. ship-plan's queued mode takes this run's done ledger, and its section 0, step 2 applies the answers. Read the outcome again (Q2 steps 5–7). With none: it stays as it is.
     - `awaiting review`: not in the loop; the review sweep (Q3) polls it once, passing this argument's answers for it if any (`ship-issue <KEY> <answers>`).
-    - `awaiting merge`, `not merged`, `blocked`, `cut off`: run `ship-issue <KEY>` in a child session; it routes to ship-plan, which resumes from its ledger.
+    - `awaiting merge`, `not merged`, `blocked`, `cut off`: run `ship-issue <KEY>` in a child session; it routes to ship-plan, which resumes from its ledger. With answers for it in this argument: `ship-issue <KEY> <answers>`.
     - `waits for <KEY>`, `not started`: as new.
   - **Answers for a key with no pending question** (no `Waiting: batch` and no `Asked: … — pending` in its ledgers: already done before the queue, not in the queue, not a sub-issue): report them in the summary as not used, and never pass them to ship-issue: a run that is done is never resumed with answers it did not ask for.
   - Then Q3 and Q4 as usual.

@@ -110,7 +110,8 @@ generic reviewers. Default: none.
 ```
 
 Globs, one per bullet. A diff that touches one gets the full review panel,
-every round, on the whole diff (`verify-and-fix` section 4). Default: none:
+every round, on the whole diff (`verify-and-fix` section 4; in its `--comments`
+mode, on the fix diff). Default: none:
 only the diff's size decides.
 
 ### `## Security extras`
