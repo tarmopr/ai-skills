@@ -21,7 +21,7 @@ Each candidate carries one quoted piece of evidence: a message, an error line, a
 |---|---|---|
 | a rule for every session and repo | `~/.claude/CLAUDE.md` or a file it imports | a direct edit |
 | a convention of this repo | the repo's `AGENTS.md` or `CLAUDE.md` | the repo's rule for docs changes |
-| a blocker or a standing answer for a run skill | that skill's log in the repo (e.g. `.claude/ship-plan/blockers.md`) | that skill's lessons PR |
+| a recurring blocker or a standing answer for a run skill | that skill's log in the repo (e.g. `.claude/ship-plan/blockers.md`) | that skill's lessons PR |
 | a missing or wrong step in a skill | the skill's source (`readlink -f ~/.claude/skills/<name>`) | that repo's workflow: its README or a memory |
 | a check that can run the same way every time | a hook or a permission in settings | the `update-config` skill |
 | a fact about the user, the project or an outside system | memory | the memory rules: update a file before adding one |

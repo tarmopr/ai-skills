@@ -217,8 +217,8 @@ write a `Lesson:`.
 
 From here ship-plan runs to close-out. It copies the `From ship-issue` block
 into its ledger at pre-flight, so the rulings reach the PR body, and its
-section 8 writes this run's questions to `.claude/ship-issue/interruptions.md`
-on the same lessons branch.
+section 8 writes this run's recurring questions to `.claude/ship-issue/interruptions.md`
+on the same lessons branch, under its rules.
 
 ## W. Which checkout
 

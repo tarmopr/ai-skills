@@ -313,7 +313,7 @@ Keep it short: the gate table (pass / fail / skipped / not run, with the
 reason), the scenario table from `scenarios.md` with the paths to the GIFs, how
 many rounds ran, the fixes with their commits, the PR review items (author,
 grade, result, reply) when there is a PR, every `Ruling:`, the suggestions
-listed rather than fixed, the blockers entries added this run (under `ship-plan`, the `Lesson:` lines for them), every unknown
+listed rather than fixed, the blockers entries added, updated or removed this run (under `ship-plan`, the `Lesson:` lines for them), every unknown
 config section, every override line not applied, each `## Allowed` entry the run
 used (such as `Sign in on Hosted URL: test users`), and every proposed config change.
 
@@ -326,10 +326,14 @@ Run on its own, update `.claude/ship-plan/blockers.md` (create it from
 record each one, whether it would be written or proposed, as a `Lesson:` line in ship-plan's ledger that names its
 target file (`.claude/ship-plan/blockers.md` for a blocker). ship-plan's section 8 writes them on its lessons branch at the end of its run, so they never land in the product PR.
 
-- Add an entry: the symptom (exact error text), the cause, the fix (the exact
-  command), and the date.
-- If an existing entry was wrong or out of date, correct it rather than adding a
-  second one.
+- **`blockers.md`, run on its own,** follows ship-plan's section 8 rules for logs
+  ([phase-close.md](../ship-plan/phase-close.md)): list the headings first and
+  update a matching entry (correct it, extend it, bump `Seen`), never a second;
+  a new entry only for a problem that would recur, in the compact format of
+  [log-formats.md](../ship-plan/log-formats.md); upkeep for the entries it touches
+  (bump `Seen` on each `Used:` line, merge, delete one fixed at the root); and the
+  16 KB budget, compacting the file once before adding to it when it is over. A
+  one-off stays in the ledger.
 - **A lesson only this repo needs** (a step, a fact, a failure path, a test
   value): write it into the matching override file,
   `.claude/ship-plan/verify-and-fix/<file>.md`, created if missing. It may only
