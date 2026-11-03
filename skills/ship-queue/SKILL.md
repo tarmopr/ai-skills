@@ -276,7 +276,7 @@ handoff of its own; the queue writes one for the whole queue.
 
 ## Runner or session
 
-With `## Runner` `Mode: runner`, or the argument `--runner`, unless `printenv SHIP_RUNNER` prints a folder (a runner child), the ship runner runs the phases and this session only watches and relays: read [../ship-plan/runner-session.md](../ship-plan/runner-session.md) and follow it with `start queue …`, after Q0 and Q1 have computed the order and dependencies. Otherwise ignore this section; the skill runs as above.
+With `## Runner` `Mode: runner`, or the argument `--runner`, the ship runner runs the phases and this session only watches and relays: read [../ship-plan/runner-session.md](../ship-plan/runner-session.md) and follow it with `start queue …`, after Q0 and Q1 have computed the order and dependencies. Otherwise ignore this section; the skill runs as above.
 
 ## Red flags
 
