@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, symlinkSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -36,23 +36,31 @@ const gitRepo = () => {
   return { main, wt };
 };
 
-test('logStore: the main checkout store from a linked worktree; null inside the main checkout, outside git or for a bare clone', () => {
+test('logStore: the main checkout store from a linked worktree; null inside the main checkout or outside git; why for a bare or --separate-git-dir clone', () => {
   const { main, wt } = gitRepo();
-  assert.equal(logStore(wt), join(main, '.superpowers', 'ship-logs'));
+  const store = join(main, '.superpowers', 'ship-logs');
+  assert.deepEqual(logStore(wt), { store, expected: store });
   assert.equal(logStore(main), null);
   assert.equal(logStore(fresh()), null);
+  const g = (cwd, ...a) => execFileSync('git', a, { cwd, stdio: 'ignore' });
   const bare = join(realpathSync(fresh()), 'b.git');
-  execFileSync('git', ['clone', '-q', '--bare', main, bare], { stdio: 'ignore' });
+  g(fresh(), 'clone', '-q', '--bare', main, bare);
   const bwt = join(realpathSync(fresh()), 'bwt');
-  execFileSync('git', ['worktree', 'add', '-q', bwt, 'main'], { cwd: bare, stdio: 'ignore' });
-  assert.equal(logStore(bwt), null); // common dir b.git: no main checkout to hold the store
+  g(bare, 'worktree', 'add', '-q', bwt, 'main');
+  assert.match(logStore(bwt).why, /bare clone/);
+  const top = realpathSync(fresh());
+  g(top, 'init', '-q', '-b', 'main', `--separate-git-dir=${join(top, 'sep.git')}`, 's');
+  g(join(top, 's'), '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'init');
+  const swt = join(top, 'swt');
+  g(join(top, 's'), 'worktree', 'add', '-q', swt, '-b', 'side');
+  assert.match(logStore(swt).why, /not the \.git folder of a checkout/);
 });
 
 test('runChild: a child in a linked worktree gets the log store as --add-dir, created', async () => {
   const { main, wt } = gitRepo();
   const dir = fresh();
   const log = join(dir, 'argv.json');
-  const r = await runChild(base(dir, { FAKE_CLAUDE: 'ok:RUNNER: done', FAKE_CLAUDE_LOG: log }, { cwd: wt, logsLocal: true }));
+  const r = await runChild(base(dir, { FAKE_CLAUDE: 'ok:RUNNER: done', FAKE_CLAUDE_LOG: log }, { cwd: wt, logs: logStore(wt) }));
   assert.equal(r.ok, true);
   const store = join(main, '.superpowers', 'ship-logs');
   assert.deepEqual(JSON.parse(readFileSync(log, 'utf8')).argv.slice(-2), ['--add-dir', store]);
@@ -69,7 +77,7 @@ for (const [what, link] of [['ship-logs', ['.superpowers', 'ship-logs']], ['.sup
     symlinkSync(elsewhere, join(main, ...link));
     const dir = fresh();
     const log = join(dir, 'argv.json');
-    const r = await runChild(base(dir, { FAKE_CLAUDE: 'ok:RUNNER: done', FAKE_CLAUDE_LOG: log }, { cwd: wt, logsLocal: true }));
+    const r = await runChild(base(dir, { FAKE_CLAUDE: 'ok:RUNNER: done', FAKE_CLAUDE_LOG: log }, { cwd: wt, logs: logStore(wt) }));
     assert.equal(r.ok, true);
     assert.ok(!JSON.parse(readFileSync(log, 'utf8')).argv.includes('--add-dir'));
     const ev = readFileSync(join(dir, 'events.log'), 'utf8').split('\n').filter((l) => / progress log store not granted: /.test(l));
@@ -381,7 +389,7 @@ test('runChild: a child in the main checkout gets no --add-dir, even under Locat
   const { main } = gitRepo();
   const dir = fresh();
   const log = join(dir, 'argv.json');
-  assert.equal((await runChild(base(dir, { FAKE_CLAUDE: 'ok:RUNNER: done', FAKE_CLAUDE_LOG: log }, { cwd: main, logsLocal: true }))).ok, true);
+  assert.equal((await runChild(base(dir, { FAKE_CLAUDE: 'ok:RUNNER: done', FAKE_CLAUDE_LOG: log }, { cwd: main, logs: logStore(main) }))).ok, true);
   assert.ok(!argvOf(log).includes('--add-dir'));
   assert.deepEqual(notGranted(dir), []);
 });
@@ -392,7 +400,7 @@ test('runChild: a store that cannot be made gets no --add-dir, one event, and th
   const dir = fresh();
   const log = join(dir, 'argv.json');
   try {
-    const r = await runChild(base(dir, { FAKE_CLAUDE: 'ok:RUNNER: done', FAKE_CLAUDE_LOG: log }, { cwd: wt, logsLocal: true }));
+    const r = await runChild(base(dir, { FAKE_CLAUDE: 'ok:RUNNER: done', FAKE_CLAUDE_LOG: log }, { cwd: wt, logs: logStore(wt) }));
     assert.equal(r.ok, true);
     assert.ok(!argvOf(log).includes('--add-dir'));
     assert.equal(notGranted(dir).length, 1);
@@ -400,4 +408,28 @@ test('runChild: a store that cannot be made gets no --add-dir, one event, and th
   } finally {
     chmodSync(join(main, '.superpowers'), 0o700);
   }
+});
+
+// final review: a child can rewrite a linked worktree's gitfile, so the store is fixed once, at the
+// runner's start; a later child gets that store, never one a rewritten gitfile points to
+test('runChild: the store given is used as it is, whatever the worktree gitfile says later', async () => {
+  const { main, wt } = gitRepo();
+  const logs = logStore(wt);
+  const other = gitRepo();
+  writeFileSync(join(wt, '.git'), `gitdir: ${join(other.main, '.git', 'worktrees', 'wt')}\n`);
+  const dir = fresh();
+  const log = join(dir, 'argv.json');
+  assert.equal((await runChild(base(dir, { FAKE_CLAUDE: 'ok:RUNNER: done', FAKE_CLAUDE_LOG: log }, { cwd: wt, logs }))).ok, true);
+  assert.deepEqual(argvOf(log).slice(-2), ['--add-dir', join(main, '.superpowers', 'ship-logs')]);
+  assert.equal(existsSync(join(other.main, '.superpowers')), false);
+});
+
+test('runChild: a store that resolves elsewhere than expected is refused', async () => {
+  const { wt } = gitRepo();
+  const logs = { ...logStore(wt), expected: '/nowhere/.superpowers/ship-logs' };
+  const dir = fresh();
+  const log = join(dir, 'argv.json');
+  assert.equal((await runChild(base(dir, { FAKE_CLAUDE: 'ok:RUNNER: done', FAKE_CLAUDE_LOG: log }, { cwd: wt, logs }))).ok, true);
+  assert.ok(!argvOf(log).includes('--add-dir'));
+  assert.match(notGranted(dir)[0], /resolves to/);
 });

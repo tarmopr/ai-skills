@@ -1339,6 +1339,40 @@ test('## Logs Location: a runner child in a linked worktree gets the log store a
   }
 });
 
+// final review: the store is fixed at the runner's start; a child that repoints the worktree's
+// gitfile to another clone never moves a later child's --add-dir there
+test('## Logs Location: local: a rewritten worktree gitfile does not move the store a later child gets', () => {
+  const main = repo();
+  put(main, '.claude/ship-plan.md', ['## Logs', 'Location: local']);
+  commit(main);
+  git(main, 'switch', '-q', '-c', 'other');
+  const wt = join(realpathSync(mkdtempSync(join(tmpdir(), 'runner-wt-'))), 'wt');
+  git(main, 'worktree', 'add', '-q', wt, 'main');
+  const evil = join(realpathSync(mkdtempSync(join(tmpdir(), 'runner-evil-'))), 'evil');
+  git(main, 'clone', '-q', main, evil);
+  git(evil, 'switch', '-q', '-c', 'other2');
+  const ewt = join(dirname(evil), 'ewt');
+  git(evil, 'worktree', 'add', '-q', ewt, 'main');
+  writeFileSync(join(evil, '.git', 'info', 'exclude'), '.superpowers/\n');
+  atVerify(wt, 'A-1', 'A-2');
+  const [log1, log2] = [join(wt, 'a1.json'), join(wt, 'a2.json')];
+  const env = { FAKE_CLAUDE_BY_KEY: JSON.stringify({
+    'A-1': { ...ships('A-1'), FAKE_CLAUDE_LOG: log1, FAKE_CLAUDE_LEDGER_APPEND: ops([
+      { file: planLedger('A-1'), firstLine: planFirst('A-1', 'done') },
+      { file: '.git', firstLine: `gitdir: ${join(evil, '.git', 'worktrees', 'ewt')}` },
+    ]) },
+    'A-2': { ...ships('A-2'), FAKE_CLAUDE_LOG: log2 },
+  }) };
+  cli(wt, ['start', 'queue', 'P-1', 'A-1,A-2'], env);
+  const store = join(main, '.superpowers', 'ship-logs');
+  const argv1 = JSON.parse(readFileSync(log1, 'utf8')).argv;
+  assert.deepEqual(argv1.slice(argv1.indexOf('--add-dir'), argv1.indexOf('--add-dir') + 2), ['--add-dir', store]);
+  assert.ok(existsSync(log2), 'the second child ran');
+  const argv2 = JSON.parse(readFileSync(log2, 'utf8')).argv;
+  if (argv2.includes('--add-dir')) assert.equal(argv2[argv2.indexOf('--add-dir') + 1], store);
+  assert.equal(existsSync(join(evil, '.superpowers', 'ship-logs')), false);
+});
+
 // K1: a verify run started again after it ended blocked (or cut off, or not started) reads its
 // ledger from a fresh snapshot, like a done one: the earlier closing Done: does not end it
 test('start verify again after a blocked verify: a fresh ledger snapshot, a new child', () => {

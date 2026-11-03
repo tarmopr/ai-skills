@@ -20,7 +20,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { acquireLock, alive, answersNamed, clean, emit, groupAlive, makeDir, plainFile, readLock, readState, releaseLock, runDir, runGit, setChildPid, writeState } from './runner-lib.mjs';
 import { findPlanLedger, ledgerOutcome, listed, pendingQuestions, PHASE_ROWS, PHASES, phaseFromLedgers, runIssue } from './runner-phases.mjs';
-import { endChildren, haltChildren } from './runner-child.mjs';
+import { endChildren, haltChildren, logStore } from './runner-child.mjs';
 import { nextItem } from './runner-queue.mjs';
 
 // `## Models` rows the runner's children use, with their defaults.
@@ -680,8 +680,11 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
     const used = PHASES.map((p) => `${p} ${cfg.models[PHASE_ROWS[p]].model}/${cfg.models[PHASE_ROWS[p]].effort}`);
     emit(dir, slug, '-', 'progress', `models: ${used.join(', ')}`);
 
+    // `## Logs` `Location: local`: the log store, fixed now, before any child can rewrite the gitfile
+    const logs = cfg.logsLocal ? logStore(root) : null;
+    if (logs?.why) emit(dir, slug, '-', 'progress', `log store not granted: ${logs.why}`);
     const base = {
-      root, dir, models: cfg.models, mode, env: {}, chunkSize: cfg.chunkSize, idleMs: cfg.idleMinutes * 60000, logsLocal: cfg.logsLocal,
+      root, dir, models: cfg.models, mode, env: {}, chunkSize: cfg.chunkSize, idleMs: cfg.idleMinutes * 60000, logs: logs?.store ? logs : null,
       skill: run.skill, args: run.args, save, answersDir: store,
     };
     const pollMs = Number(process.env.SHIP_RUNNER_POLL_MS) || 30000;
