@@ -19,7 +19,7 @@ import { appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync, realpat
 import { basename, dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { acquireLock, alive, answersNamed, clean, emit, groupAlive, makeDir, plainFile, readLock, readState, releaseLock, runDir, runGit, setChildPid, writeState } from './runner-lib.mjs';
-import { findPlanLedger, ledgerOutcome, pendingQuestions, PHASE_ROWS, PHASES, phaseFromLedgers, runIssue } from './runner-phases.mjs';
+import { findPlanLedger, ledgerBranch, ledgerOutcome, pendingQuestions, PHASE_ROWS, PHASES, phaseFromLedgers, runIssue } from './runner-phases.mjs';
 import { endChildren, haltChildren } from './runner-child.mjs';
 import { nextItem } from './runner-queue.mjs';
 
@@ -623,15 +623,31 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
         changes.push(...waits);
       }
     }
-    // origin/<base> as it is now, before any child of this start: the one base a guarded change
-    // may come from (K2). Never fetched by the runner: a child controls the git config a fetch
-    // would run with. An upstream change after this is a stop; the rerun records a fresh one.
-    let recordedBase = null;
-    if (/^[A-Za-z0-9._/-]+$/.test(baseInfo.name) && !baseInfo.name.startsWith('-')) {
+    // origin/<base> as it is now, before any child of this start, and the tips of each item's run
+    // branch (its ledgers' Branch:, local and on origin): the commits a guarded change may come
+    // from (K2, K4; a child switches to either by design). Never fetched by the runner: a child
+    // controls the git config a fetch would run with. An upstream change after this is a stop; the
+    // rerun records afresh.
+    const commitOf = (ref) => {
       try {
-        recordedBase = git(root, 'rev-parse', '--verify', '-q', `refs/remotes/origin/${baseInfo.name}^{commit}`) || null;
+        return git(root, 'rev-parse', '--verify', '-q', `${ref}^{commit}`) || null;
       } catch {
-        // no origin/<base>: a guarded change is never taken as upstream's
+        return null; // no such ref: nothing recorded for it
+      }
+    };
+    const refName = (b) => /^[A-Za-z0-9._/#-]+$/.test(b) && !b.startsWith('-') && !b.includes('..');
+    const recordedBase = refName(baseInfo.name) ? commitOf(`refs/remotes/origin/${baseInfo.name}`) : null;
+    const tips = [];
+    for (const i of state.items) {
+      let b = null;
+      try {
+        b = ledgerBranch(root, i.key, ledgerOpts(root, state, i));
+      } catch {
+        // a ledger that cannot be read: no branch recorded (the item's own run reports it)
+      }
+      if (!b || !refName(b)) continue;
+      for (const c of [commitOf(`refs/heads/${b}`), commitOf(`refs/remotes/origin/${b}`)]) {
+        if (c && c !== recordedBase && !tips.includes(c)) tips.push(c);
       }
     }
     // A child window left open by a runner that was stopped (a signal, a kill): what that child
@@ -673,7 +689,7 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
 
     const base = {
       root, dir, models: cfg.models, mode, env: {}, chunkSize: cfg.chunkSize, idleMs: cfg.idleMinutes * 60000,
-      skill: run.skill, args: run.args, save, answersDir: store, base: recordedBase,
+      skill: run.skill, args: run.args, save, answersDir: store, base: recordedBase, tips,
     };
     const pollMs = Number(process.env.SHIP_RUNNER_POLL_MS) || 30000;
     let ran = false; // a queue item has run in this start

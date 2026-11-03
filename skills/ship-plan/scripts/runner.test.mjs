@@ -1608,26 +1608,18 @@ test('an upstream change to a guarded file after the run started, fetched by the
   assert.match(events(dir), /review, then rerun; run stopped$/m);
 });
 
-test('fail closed: base content left uncommitted, a guarded file the base does not have, a deletion the base does not make: each stops the run', () => {
+// (A third case, the base deleting CLAUDE.md, absent at the base and after the child, stopped the
+// run here until review round 3: F1 makes it a match; see the K4/F1 test below.)
+test('fail closed: base content left uncommitted, a deletion the base does not make: each stops the run', () => {
   const cases = [
     // CLAUDE.md taken from the base into the index and the worktree, not committed
     { up: [['CLAUDE.md', 'v2']], git: [['checkout', 'origin/main', '--', 'CLAUDE.md']], file: 'CLAUDE.md', reason: /^child changed CLAUDE\.md$/ },
-    // the base deleted CLAUDE.md: absent at the base and after the child, never vouched for
-    { up: null, git: [['switch', '-q', '-c', 'feat/A-1', 'origin/main']], file: 'CLAUDE.md', reason: /^child changed CLAUDE\.md$/ },
     // the child deletes CLAUDE.md, which the base has
     { up: [['README.md', 'x']], git: [['rm', '-q', 'CLAUDE.md'], ['commit', '-q', '--no-verify', '-m', 'rm']], file: 'CLAUDE.md', reason: offBase('CLAUDE.md') },
   ];
   for (const c of cases) {
     const root = guardedRepo();
-    if (c.up) upstream(root, c.up, { fetched: true });
-    else {
-      git(root, 'switch', '-q', '-c', 'up');
-      git(root, 'rm', '-q', 'CLAUDE.md');
-      git(root, 'commit', '-q', '--no-verify', '-m', 'upstream rm');
-      git(root, 'push', '-q', 'origin', 'up:main');
-      git(root, 'switch', '-q', 'main');
-      git(root, 'branch', '-q', '-D', 'up');
-    }
+    upstream(root, c.up, { fetched: true });
     const r = cli(root, ['start', 'issue', 'A-1'], { ...ships('A-1'), FAKE_CLAUDE_GIT: childGit(...c.git) });
     assert.equal(r.status, 0, r.stderr);
     const dir = runDir(root, 'issue', 'A-1');
@@ -1755,4 +1747,108 @@ test('a child that replaces the recorded base\'s blob with its own (git replace)
   const dir = runDir(root, 'issue', 'A-1');
   assert.equal(reasonOf(dir)[0], 'blocked', events(dir));
   assert.match(reasonOf(dir)[1], offBase('CLAUDE.md'));
+});
+
+// K4 (review round 3, reproduced): a rerun of an item whose branch is older than origin/<base>: the
+// child switches to its branch, so a guarded file differs from the snapshot and from the base. The
+// tips of each item's run branch (ledger Branch:, local and origin/) recorded at the start match.
+test('a child that switches to its run branch, older than origin/<base>: content equal to the branch tip recorded at the start, no stop', () => {
+  for (const where of ['local', 'origin']) {
+    const root = guardedRepo();
+    git(root, 'branch', 'feat/A-1'); // made at v1
+    if (where === 'origin') {
+      git(root, 'push', '-q', 'origin', 'feat/A-1');
+      git(root, 'branch', '-q', '-D', 'feat/A-1');
+    }
+    upstream(root, [['CLAUDE.md', 'v2']], { fetched: true });
+    git(root, 'merge', '-q', '--ff-only', 'origin/main');
+    assert.equal(readFileSync(join(root, 'CLAUDE.md'), 'utf8'), 'v2\n');
+    const r = cli(root, ['start', 'issue', 'A-1'], { ...ships('A-1'), FAKE_CLAUDE_GIT: childGit(['switch', '-q', 'feat/A-1']) });
+    assert.equal(r.status, 0, r.stderr);
+    const dir = runDir(root, 'issue', 'A-1');
+    assert.equal(readFileSync(join(root, 'CLAUDE.md'), 'utf8'), 'v1\n', where);
+    assert.deepEqual(reasonOf(dir), ['done', ''], `${where}: ${events(dir)}`);
+  }
+});
+
+// K4: a tip recorded at the start vouches only for its own content; a child's commit on top does not
+test('a child that commits a guarded change on its run branch: blocked, naming the recorded base and branch tip', () => {
+  const root = guardedRepo();
+  git(root, 'switch', '-q', '-c', 'feat/A-1');
+  put(root, 'README.md', ['branch work']);
+  git(root, 'add', 'README.md');
+  git(root, 'commit', '-q', '--no-verify', '-m', 'work');
+  git(root, 'switch', '-q', 'main');
+  const tip = git(root, 'rev-parse', 'feat/A-1').trim().slice(0, 12);
+  const base = git(root, 'rev-parse', 'origin/main').trim().slice(0, 12);
+  // written on main, carried over by the switch (CLAUDE.md is the same on the branch), then committed
+  const r = cli(root, ['start', 'issue', 'A-1'], {
+    FAKE_CLAUDE: 'ok:RUNNER: done',
+    FAKE_CLAUDE_LEDGER_APPEND: ops([{ file: planLedger('A-1'), firstLine: planFirst('A-1', 'done') }, { file: 'CLAUDE.md', firstLine: 'v3' }]),
+    FAKE_CLAUDE_GIT: childGit(['switch', '-q', 'feat/A-1'], ['commit', '-q', '--no-verify', '-am', 'widen']),
+  });
+  assert.equal(r.status, 0, r.stderr);
+  const dir = runDir(root, 'issue', 'A-1');
+  assert.deepEqual(reasonOf(dir), ['blocked', `guarded file CLAUDE.md differs from the recorded base ${base} and the run branch tip ${tip}: changed by the child or upstream; review, then rerun`], events(dir));
+});
+
+// F1 (review round 3): absent at a recorded commit and after the child is a match, when that commit
+// really has nothing there (not a path beyond a link) and git status is clean
+test('a guarded file absent at the recorded base and after the child: a match when really absent and clean; beyond a link, or ignored before, a stop', () => {
+  // the base deleted CLAUDE.md; the child moves to it
+  let root = guardedRepo();
+  git(root, 'switch', '-q', '-c', 'up');
+  git(root, 'rm', '-q', 'CLAUDE.md');
+  git(root, 'commit', '-q', '--no-verify', '-m', 'upstream rm');
+  git(root, 'push', '-q', 'origin', 'up:main');
+  git(root, 'switch', '-q', 'main');
+  git(root, 'branch', '-q', '-D', 'up');
+  let r = cli(root, ['start', 'issue', 'A-1'], { ...ships('A-1'), FAKE_CLAUDE_GIT: childGit(['switch', '-q', '-c', 'feat/A-1', 'origin/main']) });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(existsSync(join(root, 'CLAUDE.md')), false);
+  assert.deepEqual(reasonOf(runDir(root, 'issue', 'A-1')), ['done', ''], events(runDir(root, 'issue', 'A-1')));
+
+  // the base has .claude as a link to cfg/, which holds no settings.json: .claude/settings.json is
+  // beyond a link there, not absent
+  root = guardedRepo();
+  git(root, 'switch', '-q', '-c', 'up');
+  git(root, 'rm', '-q', '-r', '.claude');
+  put(root, 'cfg/notes.md', ['n']);
+  symlinkSync('cfg', join(root, '.claude'));
+  git(root, 'add', '-f', 'cfg/notes.md', '.claude');
+  git(root, 'commit', '-q', '--no-verify', '-m', 'upstream link');
+  git(root, 'push', '-q', 'origin', 'up:main');
+  git(root, 'switch', '-q', 'main');
+  git(root, 'branch', '-q', '-D', 'up');
+  r = cli(root, ['start', 'issue', 'A-1'], { ...ships('A-1'), FAKE_CLAUDE_GIT: childGit(['switch', '-q', '-c', 'feat/A-1', 'origin/main']) });
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(reasonOf(runDir(root, 'issue', 'A-1')), ['blocked', 'child changed .claude/settings.json'], events(runDir(root, 'issue', 'A-1')));
+
+  // an ignored CLAUDE.local.md the base does not have, deleted by the child: status was not clean
+  root = guardedRepo();
+  writeFileSync(join(root, '.git', 'info', 'exclude'), 'CLAUDE.local.md\n');
+  put(root, 'CLAUDE.local.md', ['mine']);
+  r = cli(root, ['start', 'issue', 'A-1'], { ...ships('A-1'), FAKE_CLAUDE_RM: join(root, 'CLAUDE.local.md') });
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(reasonOf(runDir(root, 'issue', 'A-1')), ['blocked', 'child changed CLAUDE.local.md'], events(runDir(root, 'issue', 'A-1')));
+});
+
+// T10 (review round 3): the base is recorded once, at the start, before any child: a later child
+// that moves to what an earlier one fetched still stops, naming the start's commit
+test('the base recorded once per start: child 1 fetches an upstream CLAUDE.md change, child 2 switches to it: stop naming the start\'s commit', () => {
+  const root = guardedRepo();
+  atVerify(root, 'A-2');
+  const start = git(root, 'rev-parse', 'origin/main').trim();
+  upstream(root, [['CLAUDE.md', 'v2']]);
+  const r = cli(root, ['start', 'queue', 'P-1', 'A-1,A-2'], { FAKE_CLAUDE_BY_KEY: JSON.stringify({
+    'A-1': { ...ships('A-1'), FAKE_CLAUDE_GIT: childGit(['fetch', '-q', 'origin']) },
+    'A-2': { ...ships('A-2'), FAKE_CLAUDE_GIT: childGit(['switch', '-q', '-c', 'feat/A-2', 'origin/main']) },
+  }) });
+  assert.equal(r.status, 0, r.stderr);
+  const dir = runDir(root, 'queue', 'P-1');
+  assert.notEqual(git(root, 'rev-parse', 'origin/main').trim(), start, 'child 1 fetched');
+  const s = readState(dir);
+  assert.deepEqual(s.items.map((i) => i.status), ['done', 'blocked'], events(dir));
+  assert.match(byKey(s, 'A-2').reason, offBase('CLAUDE.md'));
+  assert.ok(byKey(s, 'A-2').reason.includes(`recorded base ${start.slice(0, 12)}:`), byKey(s, 'A-2').reason);
 });
