@@ -199,7 +199,10 @@ gives, when it gives one.
 
 The pre-approval clears when the user sends a message. So every question you
 ask ends with: **"Answer with `/ship-plan <your answers>`,"** which starts the
-skill again, renews the pre-approval, and resumes from the ledger. A command
+skill again, renews the pre-approval, and resumes from the ledger. With
+`## Runner` `Mode: runner` and this run in session mode (it got `--session`),
+the line is **"Answer with `/ship-plan <your answers> --session`,"** so the
+answers resume this run, not a new runner. A command
 still refused after that goes into the batch (section 5, step 5).
 
 ## The run
@@ -375,8 +378,9 @@ applies, with these changes:
 
 With `## Runner` `Mode: runner`, or the argument `--runner`, unless `printenv SHIP_RUNNER` prints a folder (a runner child) or the argument `--session` was given, the ship runner runs the phases and this session only watches and relays: read [runner-session.md](runner-session.md) and follow it with `start plan <path>`. Otherwise ignore this section; the skill runs as above.
 
-- **`--session`:** another ship skill invoked this one from its own run (ship-issue's I6 and its I0 resume row pass it): run in session mode, as above, whatever `Mode:` says. It changes nothing else: it is never the plan path, the issue key or answers, and a runner child's Runner mode is still decided by `SHIP_RUNNER`.
-- **verify-and-fix from here** (sections 4 and 4R) always gets `--session` among its arguments: it runs inside this run, never as a runner of its own.
+- **`--session`:** another ship skill invoked this one from its own run (ship-issue's I6 and its I0 resume row pass it), or the user answered with a session-mode run's answer line: run in session mode, as above, whatever `Mode:` says. It changes nothing else, and a runner child's Runner mode is still decided by `SHIP_RUNNER`.
+- **`--runner` and `--session` are flags:** read the argument without them. Neither is ever the plan path, the issue key or answers.
+- **Every nested ship skill from here** always gets `--session` among its arguments: verify-and-fix in sections 4 and 4R and in [red-base.md](red-base.md)'s fix-forward, and any other ship skill this run invokes. It runs inside this run, never as a runner of its own.
 
 ## Red flags
 

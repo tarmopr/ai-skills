@@ -4,7 +4,7 @@ Sections I0–I3 of [ship-issue](SKILL.md). Everything in SKILL.md applies here.
 
 ## I0. Route: what already exists
 
-**Read the argument first:**
+**Read the argument first,** without `--runner` and `--session` (SKILL.md's "Runner or session"):
 
 - **Its first word names an existing `.superpowers/ship-issue/<dir>/`** (an issue key as file names write it, so GitHub Issues' `#<n>` names `<n>/`; or with no issue the slug) in this checkout or one `git worktree list` shows: this is a resume, and the rest of the argument is answers. Record each as `Asked: … — <answer>` and a `Ruling: user <date>`, then continue from the ledger's first line.
 - **An issue key** (the tracker's *Issue keys*): that is the issue.
@@ -79,6 +79,8 @@ Ask with `AskUserQuestion`: at most 4 questions, the recommended option first,
 marked "(Recommended)". If there are more than 4, or they need free text, send
 one numbered message. End it with: **"Answer with `/ship-issue <KEY-n>
 <your answers>`. I'm carrying on with everything that doesn't depend on it."**
+With `## Runner` `Mode: runner` (a session-mode run there, SKILL.md's "Runner
+or session"), the form is `/ship-issue <KEY-n> <your answers> --session`.
 That form restarts the skill, renews its pre-approval (a plain reply clears
 it), and resumes from the ledger. Carry on meanwhile with everything the
 answers don't block. **Empty batch: ask nothing.** Each answer becomes a

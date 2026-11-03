@@ -278,6 +278,8 @@ handoff of its own; the queue writes one for the whole queue.
 
 With `## Runner` `Mode: runner`, or the argument `--runner`, the ship runner runs the phases and this session only watches and relays: read [../ship-plan/runner-session.md](../ship-plan/runner-session.md) and follow it with `start queue …`, after Q0 and Q1 have computed the order and dependencies. Otherwise ignore this section; the skill runs as above.
 
+- **`--runner` is a flag:** read the argument without it. It is never the parent key, a sub-issue key, `show order` or answers.
+
 ## Red flags
 
 | Thought | Reality |
