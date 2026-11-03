@@ -277,8 +277,8 @@ The logs are read by index, not in full: see below.
 
 ### Reading the logs
 
-`blockers.md` and the `interruptions.md` files grow with every run, and every
-turn re-reads whatever they put in context. So read them by index:
+`blockers.md` and the `interruptions.md` files are kept under a size budget
+(section 8), and every turn re-reads whatever they put in context. So read them by index:
 
 1. **List the headings:** `grep -n '^##' <log>`. Each `###` heading is one entry's
    symptom (blockers) or question (interruptions). A log under 8 KB is read in full.
@@ -293,7 +293,10 @@ turn re-reads whatever they put in context. So read them by index:
    used yet this run, and after a compaction. The headings are the index to keep,
    not the entries.
 4. **A heading list that matches nothing** is an answer, not a reason to read the
-   whole log. A new blocker or question still goes into the log at close-out.
+   whole log. A new blocker or question that will recur goes into the log at close-out.
+5. **Record each entry you apply** as a ledger line `Used: <log path under .claude/> <heading>`,
+   e.g. `Used: ship-plan/blockers.md <heading>` (`verify-and-fix` under `ship-plan`: in
+   ship-plan's ledger). Section 8 bumps its `Seen` from these; an entry never used ages out.
 
 ### The ledger
 
@@ -302,7 +305,7 @@ turn re-reads whatever they put in context. So read them by index:
 `Phase: <n> | Plan: <path> | Issue: <id or none> | PR: #<n> | merge: <sha> | base run: <id>`,
 rewritten as each value becomes known; a finished run ends with `Phase: done`. Below it, one line per event: phase
 changes, `Ruling:` lines, `Asked:` lines (every question put to the user, with
-its answer), questions parked, CI results, `Lesson:` lines, and a `Branch: <name>` line
+its answer), questions parked, CI results, `Lesson:`, `Used:` and `Removed:` lines, and a `Branch: <name>` line
 once the branch exists (section 1), which a resume switches to.
 **After a context compaction, resume from this line and `git log`, not from
 memory.** `questions.md` sits next to it (section 3). `verify-and-fix` keeps its own

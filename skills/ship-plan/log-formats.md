@@ -2,47 +2,22 @@
 
 `ship-plan` and `verify-and-fix` create these in the repo, under `.claude/ship-plan/`, the first
 time a run has something to write and the file is missing. They are committed
-through `ship-plan`'s lessons PR.
+through `ship-plan`'s lessons PR, under its section 8's rules
+([phase-close.md](phase-close.md)).
 
 ## interruptions.md seed
 
 ````markdown
 # Interruptions and standing answers
 
-Every question a ship run asked the user, and every ruling the user
-overturned. **List the headings before pre-flight and before every question you ask** (`grep -n "^###"`; read the entries that match). A question with a standing answer
-here is not asked again: apply the answer and record
-`Ruling: standing answer <entry title>`.
-
-Tooling blockers do not go here. They go in [blockers.md](blockers.md).
-
-Entry format:
-
-```markdown
-### <the question, short>
-- **Asked:** <date>, <phase>, <exact question>
-- **Why I could not decide:** <which part of the confidence test failed>
-- **Answer:** <the user's answer, verbatim if short>
-- **Standing answer:** <the rule the next run applies without asking, or "ask each time", with the reason>
-- **Status:** open / standing / promoted to SKILL.md (<section>)
-```
-
-An overturned ruling uses the same format, with **Ruled:** in place of
-**Asked:** and **Corrected to:** in place of **Answer:**.
-
-## Standing answers
-
-### Should I push, open the PR, merge, or rerun CI?
-- **Answer:** yes, without asking. Push and PR once `verify-and-fix` is clean, merge once every check is green, rerun transient failures, and fix the base branch forward.
-- **Status:** promoted to SKILL.md (authorization section)
-
-### What should branches be called?
-- **Answer:** `<type>/<slug>`, or `<type>/<id>-<slug>` with an issue; type one of feature, fix, docs, chore, refactor. The Jira key stays upper case. Never a username prefix.
-- **Status:** promoted to SKILL.md (section 1)
-
-### Can the agent edit settings or `allowed-tools`?
-- **Answer:** never. Write commands in the pre-approved form. If one is refused anyway, put the exact `allowed-tools` line in the batch for the user to add.
-- **Status:** promoted to SKILL.md (authorization section)
+Standing answers to questions ship runs ask that recur. List the headings before pre-flight
+and before every question you ask (`grep -n '^##'`; read the entries that match). A question
+answered here is not asked again: apply the answer, record `Ruling: standing answer <heading>`
+and `Used: ship-plan/interruptions.md <heading>`. Blockers go in [blockers.md](blockers.md); one-offs and
+"ask each time" answers in no log. Budget: 8 KB. One entry per question: update it, never add a second.
+Entry: `### <the question, as a run would phrase it>`, then at most 3 lines:
+`- Answer: <the rule the next run applies without asking>` (never a permission: point to the
+proposed `## Allowed` line), `- Seen: <n>×, last <yyyy-mm-dd>`.
 
 ## Entries
 ````
@@ -52,10 +27,13 @@ An overturned ruling uses the same format, with **Ruled:** in place of
 ```markdown
 # Known blockers
 
-Read the headings before the first round (`grep -n '^##'`), then the entries that match
-the tool or gate at hand. Each entry: the symptom with the exact
-error, the cause, the fix as an exact command, and the date. Correct a wrong
-entry rather than adding a second.
+Symptom → fix for tooling and environment problems that recur. Procedures go in an override
+file or the config; one-offs stay in the run's ledger. Budget: 16 KB.
+Read the headings before the first round (`grep -n '^##'`), then the entries that match the
+tool or gate at hand; record `Used: ship-plan/blockers.md <heading>` for each one applied.
+One entry per symptom: correct or extend it, never add a second.
+Entry: `### <the symptom, with the exact error text>`, then at most 3 lines:
+`- Fix: <the exact command or action>`, `- Cause: <only when not obvious>`, `- Seen: <n>×, last <yyyy-mm-dd>`.
 
 ## Gates and local environment
 

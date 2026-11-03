@@ -35,6 +35,6 @@ on the spot, except for a destructive action.
    - CI does cover it: CI has not registered yet. Wait up to 10 minutes, then treat it as a blocker: park it and close out with the PR open ("not merged").
 7. **A red check:** the host's *Read a failed run*.
    - A transient failure listed in `blockers.md`: the host's *Rerun a failed PR check*.
-   - **A new transient on the PR:** a test the diff does not touch fails, and the same test passed on the base branch's last run: the host's *Rerun a failed PR check* once, write a `Lesson:`, and add it to `blockers.md` at close-out. A second failure is a gate failure.
+   - **A new transient on the PR:** a test the diff does not touch fails, and the same test passed on the base branch's last run: the host's *Rerun a failed PR check* once, and record a `Lesson:` for `blockers.md`; section 8's write gate decides. A second failure is a gate failure.
    - Anything else is a gate failure. Back to `verify-and-fix` (with `--session`, and `--comments` once the PR is in review, so only the fix is re-reviewed): fix it with a test first, run the gates, then run a review round unless the fix keeps behaviour. Commit, `git push origin <branch>`, and wait again.
 8. **Every check green:** section 4R.
