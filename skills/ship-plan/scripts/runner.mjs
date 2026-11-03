@@ -16,7 +16,7 @@ import { constants } from 'node:os';
 import { appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { acquireLock, alive, clean, emit, groupAlive, plainFile, readLock, readState, releaseLock, runDir, runGit, setChildPid, writeState } from './runner-lib.mjs';
+import { acquireLock, alive, clean, emit, groupAlive, makeDir, plainFile, readLock, readState, releaseLock, runDir, runGit, setChildPid, writeState } from './runner-lib.mjs';
 import { findPlanLedger, ledgerOutcome, pendingQuestions, PHASE_ROWS, PHASES, phaseFromLedgers, runIssue } from './runner-phases.mjs';
 import { endChildren, haltChildren } from './runner-child.mjs';
 import { nextItem } from './runner-queue.mjs';
@@ -34,6 +34,8 @@ export const MODEL_DEFAULTS = {
 const strip = (v) => v.replace(/`/g, '').trim();
 
 export const CHILD_MODES = ['auto', 'acceptEdits', 'dontAsk', 'bypassPermissions'];
+// How much a child may do in each mode, narrowest first: a rerun never takes a wider one (X5).
+const WIDTH = { dontAsk: 0, acceptEdits: 1, auto: 2, bypassPermissions: 3 };
 
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const MODEL_NAME = /^[A-Za-z0-9.[\]_-]+$/;
@@ -167,6 +169,9 @@ function ledgerOpts(root, state, item) {
 
 // An issue key (`PROJ-12`, `#12`, `owner-repo-12`): it names files, so nothing else.
 const KEY = /^#?[A-Za-z0-9][A-Za-z0-9._-]*$/;
+// A queue parent or a verify branch: it names the run dir, which the watching session puts in
+// shell commands.
+const RUN_ID = /^[A-Za-z0-9._/#-]+$/;
 
 // The checkout's own git dir (per worktree), and the dir its info/exclude lives in.
 const gitDir = (root) => git(root, 'rev-parse', '--absolute-git-dir');
@@ -178,6 +183,22 @@ const gitCommonDir = (root) => resolve(root, git(root, 'rev-parse', '--git-commo
 const answersStore = (root, dir) => join(gitDir(root), 'ship-runner', basename(dir));
 
 const answersName = (key) => `answers-${key}.md`;
+
+// The run's first permission mode, kept in state.json and beside the answers store,
+// <git dir>/ship-runner/<run>.mode (a child can edit state.json; the git dir is never named to it).
+const modeFile = (root, dir) => `${answersStore(root, dir)}.mode`;
+// The narrower of the two copies; null for a run with neither.
+function firstMode(root, dir, state) {
+  let stored = null;
+  try {
+    stored = readFileSync(modeFile(root, dir), 'utf8').trim();
+  } catch {
+    // none yet, or no git dir
+  }
+  let first = null;
+  for (const m of [state?.mode, stored]) if (Object.hasOwn(WIDTH, m ?? '') && (first === null || WIDTH[m] < WIDTH[first])) first = m;
+  return first;
+}
 
 // A file written while a child of this item ran (its recorded windows, [start, end] in ms; an
 // open one runs to now) was not written by the user: the child that asked answered itself.
@@ -281,8 +302,9 @@ function usage(msg) {
 
 const newItem = (key, deps = []) => ({ key, phase: null, status: 'queued', reason: '', deps, sessions: [], answersFile: null });
 
-// A key or file name as an item key: every character a key cannot hold becomes '-'.
-const asKey = (name) => name.replace(/[^A-Za-z0-9._-]/g, '-');
+// A file or branch name as an item key `answer` takes (KEY): every character a key cannot hold
+// becomes '-', and what precedes the first letter or digit is dropped (else: fallback).
+const asKey = (name, fallback) => name.replace(/[^A-Za-z0-9._-]/g, '-').replace(/^[^A-Za-z0-9]+/, '') || fallback;
 
 // Parse `start …` arguments: { kind, id, items, skill, args } or an error string. Issue and queue
 // keys must be issue keys (KEY), exit 2 otherwise.
@@ -295,7 +317,9 @@ function parseStart(root, [what, ...a]) {
     if (extra(1)) return extra(1);
     return { kind: 'issue', id: a[0], items: [newItem(a[0])], skill: 'ship-issue' };
   }
+  const notId = (id) => `start ${what}: "${id}" holds a character other than letters, digits, . _ / # -`;
   if (what === 'queue') {
+    if (!RUN_ID.test(a[0])) return notId(a[0]);
     const keys = (a[1] ?? '').split(',').map((k) => k.trim()).filter(Boolean);
     if (!keys.length) return 'start queue: no sub-issue keys';
     const bad = keys.find((k) => !KEY.test(k));
@@ -317,16 +341,20 @@ function parseStart(root, [what, ...a]) {
   }
   if (what === 'plan') {
     if (extra(1)) return extra(1);
+    // the path goes into the child's prompt in double quotes, and the run dir into the watching
+    // session's commands in single quotes
+    if (/["'\x00-\x1f\x7f]/.test(a[0])) return 'start plan: the path holds a quote or a control character';
     if (!existsSync(resolve(root, a[0]))) return `start plan: no plan at ${a[0]}`;
-    return { kind: 'plan', id: a[0], items: [newItem(asKey(basename(a[0]).replace(/\.md$/, '')))], skill: 'ship-plan', args: a[0] };
+    return { kind: 'plan', id: a[0], items: [newItem(asKey(basename(a[0]).replace(/\.md$/, ''), 'plan'))], skill: 'ship-plan', args: a[0] };
   }
   if (what === 'verify') {
+    if (!RUN_ID.test(a[0])) return notId(a[0]);
     // verify-and-fix's own arguments (base branch, --comments) follow `--`; the branch verified is
     // the checked-out one
     const extra = a[1] === '--' ? a.slice(2) : a.length > 1 ? null : [];
     if (!extra) return `start verify: after <branch> only -- <verify-and-fix arguments>`;
     if (extra.some((x) => /["\x00-\x1f\x7f]/.test(x))) return 'start verify: an argument after -- holds a quote or a control character';
-    const item = newItem(asKey(a[0]));
+    const item = newItem(asKey(a[0], 'verify'));
     try {
       item.from = readFileSync(join(root, verifyLedger(a[0])), 'utf8').replace(/\r?\n$/, '').split(/\r?\n/).length;
     } catch (e) {
@@ -391,6 +419,23 @@ async function start(rest) {
   if (held) {
     console.log(`held by ${held}`);
     return 3;
+  }
+
+  // the run dir names one run: two ids can share it (a/b and a-b)
+  let prev = null;
+  try {
+    prev = readState(dir);
+  } catch {
+    // unreadable: the locked run reports it (a runner error, with its event)
+  }
+  if (prev && (prev.kind !== run.kind || prev.id !== run.id)) return usage(`start ${run.kind}: ${dir} holds the run ${prev.kind} ${prev.id}`);
+  // a rerun keeps the first start's mode: none given takes it, a wider one is refused
+  const first = prev ? firstMode(root, dir, prev) : null;
+  if (first && modeFrom === 'default') {
+    mode = first;
+    modeFrom = 'state.json';
+  } else if (first && WIDTH[mode] > WIDTH[first]) {
+    return usage(`start: --permission-mode ${mode} is wider than this run's ${first} (its first start's); a rerun never widens it`);
   }
 
   const cfg = readConfig(root);
@@ -495,6 +540,11 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
   process.on('uncaughtException', onCrash);
   process.on('unhandledRejection', onCrash);
 
+  const refused = mode === 'bypassPermissions' && !allowBypass;
+  if (refused) {
+    mode = 'auto';
+    modeFrom = 'bypass refused';
+  }
   try {
     state = readState(dir);
     const changes = [];
@@ -540,12 +590,27 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
     // A child window left open by a runner that was stopped (a signal, a kill): what that child
     // started may have outlived it, so the window runs until now, and an answers file written
     // since for that item is rejected too.
+    // origin's URL as the run starts: the guard fetches <base> from it before each child (a child
+    // may change the remote's config later)
+    let originUrl = null;
+    try {
+      originUrl = git(root, 'remote', 'get-url', 'origin');
+    } catch {
+      // no origin: a guarded change is never taken as upstream's
+    }
     const startedAt = Date.now();
     for (const i of state.items) for (const w of i.windows ?? []) w[1] ??= startedAt;
     state.root = root;
     state.current = null;
     state.stopped = null;
     const store = answersStore(root, dir);
+    // the first start's mode (X5), in state.json and in the store
+    if (!Object.hasOwn(WIDTH, state.mode ?? '')) state.mode = mode;
+    const kept = modeFile(root, dir);
+    if (!existsSync(kept)) {
+      makeDir(store);
+      writeFileSync(kept, `${state.mode}\n`);
+    }
     const save = () => {
       syncAnswers(state, dir, store);
       writeState(dir, state);
@@ -554,10 +619,7 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
     if (changes.length) emit(dir, slug, '-', 'progress', `queue changed: ${changes.join('; ')}`);
     if (excludeRunFiles(root)) emit(dir, slug, '-', 'progress', '.superpowers/ added to the git info/exclude');
 
-    const refused = mode === 'bypassPermissions' && !allowBypass;
     if (refused) {
-      mode = 'auto';
-      modeFrom = 'bypass refused';
       console.error('runner: bypassPermissions refused: set SHIP_RUNNER_ALLOW_BYPASS=1');
       emit(dir, slug, '-', 'progress', 'bypassPermissions refused: set SHIP_RUNNER_ALLOW_BYPASS=1');
     }
@@ -569,7 +631,7 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
 
     const base = {
       root, dir, models: cfg.models, mode, env: {}, chunkSize: cfg.chunkSize, idleMs: cfg.idleMinutes * 60000,
-      skill: run.skill, args: run.args, save, answersDir: store, baseBranch: baseInfo.name,
+      skill: run.skill, args: run.args, save, answersDir: store, upstream: { url: originUrl, base: baseInfo.name },
     };
     const pollMs = Number(process.env.SHIP_RUNNER_POLL_MS) || 30000;
     let ran = false; // a queue item has run in this start
@@ -617,13 +679,15 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
       const window = [Date.now() + 1, null];
       (item.windows ??= []).push(window);
       save();
-      const ctx = { ...base, ledgers };
+      // closed once the item's outcome is known, before its event (runIssue's end): an `answer`
+      // right after a `waiting` event finds no open window
+      const ctx = { ...base, ledgers, beforeEnd: () => { window[1] ??= Date.now(); } };
       current = item;
       try {
         await runIssue(ctx, item);
         current = null;
       } finally {
-        window[1] = Date.now();
+        window[1] ??= Date.now();
         state.current = null;
         save();
       }
@@ -687,8 +751,9 @@ function restoreCheckout(root, baseName, state, item, dir) {
   return false;
 }
 
-// The checkout a run dir belongs to: state.json's root, else <root>/.superpowers/ship-runner/<run>/.
-const rootOf = (state, dir) => state.root ?? resolve(dir, '..', '..', '..');
+// The checkout a run dir belongs to: <root>/.superpowers/ship-runner/<run>/, from where the run dir
+// is, never from state.json (a child can edit it).
+const rootOf = (dir) => resolve(dir, '..', '..', '..');
 
 function answer([dirArg, key, file]) {
   if (!dirArg || !key || !file) return usage('answer <run-dir> <KEY> <file>');
@@ -706,8 +771,8 @@ function answer([dirArg, key, file]) {
   }
   // The file alone is the record: the runner (now, or on the next start) puts the item back in
   // line from it. Writing state.json here could lose a write of a runner that holds the lock.
-  const store = answersStore(rootOf(state, dir), dir);
-  mkdirSync(store, { recursive: true });
+  const store = answersStore(rootOf(dir), dir);
+  makeDir(store);
   const tmp = join(store, `${answersName(key)}.${process.pid}.tmp`);
   writeFileSync(tmp, readFileSync(file));
   renameSync(tmp, join(store, answersName(key)));
@@ -721,7 +786,7 @@ function status([dirArg]) {
   const dir = resolve(dirArg);
   const state = readState(dir);
   if (!state) return usage(`status: no run at ${dirArg}`);
-  const root = rootOf(state, dir);
+  const root = rootOf(dir);
   let store = null;
   try {
     store = answersStore(root, dir);

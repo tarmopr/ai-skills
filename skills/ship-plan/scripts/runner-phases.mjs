@@ -3,7 +3,7 @@
 // The ledgers win over a child's RUNNER: marker.
 import { createHash } from 'node:crypto';
 import { lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync, statSync } from 'node:fs';
-import { dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
+import { dirname, isAbsolute, join, parse, posix, relative, resolve, sep } from 'node:path';
 import { emit, readAnswers, runGit } from './runner-lib.mjs';
 import { isEnvError, isLimitError, resumeOrFresh, runChild } from './runner-child.mjs';
 
@@ -506,45 +506,89 @@ const chainsOf = (root, rels) => {
 };
 const gitPaths = (chains) => [...new Set([...chains.values()].flatMap((c) => c.paths ?? []))];
 
-function gitHead(root) {
+// origin/<base> as the runner fetches it itself, before a child (up: { url, base }, the url read
+// when the run started): its commit id, or null (no origin, a fetch that failed, a base name that
+// is not a plain branch name). The ref is written by this fetch, with no child running.
+function fetchBase(root, up) {
+  if (!up?.url || !/^[A-Za-z0-9._/-]+$/.test(up.base ?? '') || up.base.startsWith('-')) return null;
+  const ref = `refs/remotes/origin/${up.base}`;
   try {
-    return runGit(root, ['rev-parse', '--verify', '-q', 'HEAD']).trim() || null;
+    runGit(root, ['fetch', '-q', '--no-tags', '--', up.url, `+refs/heads/${up.base}:${ref}`]);
+    return runGit(root, ['rev-parse', '--verify', '-q', `${ref}^{commit}`]).trim() || null;
   } catch {
     return null;
   }
 }
 
-// What the guard takes before a child: the guarded hashes, HEAD, and the git status of the guarded
-// paths (null when git cannot tell).
-export function guardSnapshot(root) {
+// { mode, type, oid } of a path in commit sha, or null when the commit has nothing there (or the
+// path is beyond a link of that commit).
+function treeEntry(root, commit, rel) {
+  const out = runGit(root, ['ls-tree', '-z', commit, '--', rel]);
+  for (const line of out.split('\0')) {
+    const m = /^(\d+) (\w+) ([0-9a-f]+)\t(.*)$/s.exec(line);
+    if (m && m[4] === rel) return { mode: m[1], type: m[2], oid: m[3] };
+  }
+  return null;
+}
+const blobAt = (root, oid) => runGit(root, ['cat-file', 'blob', oid], { encoding: 'buffer' });
+
+// What a symlink at rel with this target resolves to in commit sha, as linkHash says it: a file's
+// sha256, `dir` or `dangling`; null when it leaves the checkout (git cannot vouch for that).
+function resolvedAt(root, commit, rel, target, hops = 0) {
+  if (isAbsolute(target) || hops > 40) return null;
+  const p = posix.normalize(posix.join(posix.dirname(rel), target.replaceAll('\\', '/')));
+  if (p === '..' || p.startsWith('../')) return null;
+  if (p === '.' || p === '') return 'dir';
+  const e = treeEntry(root, commit, p);
+  if (!e) return 'dangling';
+  if (e.type === 'tree') return 'dir';
+  if (e.type !== 'blob') return null;
+  if (e.mode === '120000') return resolvedAt(root, commit, p, blobAt(root, e.oid).toString('utf8'), hops + 1);
+  return sha(blobAt(root, e.oid));
+}
+
+// The value guardedHashes would give rel in a checkout of commit sha, or null when that cannot be
+// told (a link out of the checkout, a submodule).
+function hashAt(root, commit, rel) {
+  const e = treeEntry(root, commit, rel);
+  if (!e || e.type === 'tree') return 'absent';
+  if (e.type !== 'blob') return null;
+  if (e.mode !== '120000') return sha(blobAt(root, e.oid));
+  const target = blobAt(root, e.oid).toString('utf8');
+  const to = resolvedAt(root, commit, rel, target);
+  return to === null ? null : `link:${target}:${to}`;
+}
+
+// What the guard takes before a child: the guarded hashes; the git status of the guarded paths
+// (null when git cannot tell); and origin/<base>, fetched by the runner now (fetchBase).
+export function guardSnapshot(root, up) {
   const hashes = guardedHashes(root);
-  const head = gitHead(root);
-  return { hashes, head, dirty: head ? statusEntries(root, gitPaths(chainsOf(root, Object.keys(hashes)))) : null };
+  const dirty = statusEntries(root, gitPaths(chainsOf(root, Object.keys(hashes))));
+  return { hashes, dirty, upstream: dirty ? fetchBase(root, up) : null };
 }
 
 // The guarded paths a child changed (K2): those whose hash differs from the snapshot, less the
-// ones that only came with a newer origin/<base> (a child switches to it by design). Such a path
-// is clean in git before and after the child (no uncommitted, untracked or ignored change, every
-// link on its way and its end inside the checkout), and no commit on HEAD that is on neither the
-// child's start HEAD nor origin/<base> touches it. HEAD unmoved, or git unable to tell: every
-// changed path counts.
-export function guardedChildChanges(root, snap, base) {
-  const changed = guardedChanges(snap.hashes, guardedHashes(root));
-  const head = changed.length ? gitHead(root) : null;
-  if (!changed.length || !base || !snap.head || !snap.dirty || !head || head === snap.head) return changed;
+// ones whose content now is exactly what origin/<base> held when the runner fetched it before the
+// child (snap.upstream; a child switches to a newer origin/<base> by design): the bytes, or a
+// link's target and what it resolves to, equal to that commit's, or absent in both. Never vouched
+// for by what the child can change (refs, the index, git status): git status only refuses (a path
+// that differed from HEAD before the child, or that leads out of the checkout counts). No
+// upstream commit, or git unable to tell: every changed path counts.
+export function guardedChildChanges(root, snap) {
+  const after = guardedHashes(root);
+  const changed = guardedChanges(snap.hashes, after);
+  if (!changed.length || !snap.upstream || !snap.dirty) return changed;
   const chains = chainsOf(root, changed);
-  const now = statusEntries(root, gitPaths(chains));
-  if (!now) return changed;
-  const committed = (p) => {
-    try {
-      return runGit(root, ['rev-list', '-1', 'HEAD', '--not', snap.head, `refs/remotes/origin/${base}`, '--', `:(literal)${p}`]).trim() !== '';
-    } catch {
-      return true; // no origin/<base>: nothing came from it
-    }
-  };
   return changed.filter((p) => {
     const c = chains.get(p);
-    return c.outside || c.paths.some((g) => snap.dirty.some((e) => touches(e, g)) || now.some((e) => touches(e, g)) || committed(g));
+    if (c.outside || c.paths.some((g) => snap.dirty.some((e) => touches(e, g)))) return true;
+    let want = null;
+    try {
+      want = hashAt(root, snap.upstream, p);
+    } catch {
+      // git cannot read it: not vouched for
+    }
+    return want === null || want !== (after[p] ?? 'absent');
   });
 }
 
@@ -553,7 +597,7 @@ const plural = (n) => `${n} question${n === 1 ? '' : 's'}`;
 // Run the issue's phases until it is done, waiting, blocked or cut off.
 // ctx: { root, dir, models: {[row]: {model, effort}}, mode, env, skill = 'ship-issue',
 //        args = item.key, chunkSize = 5, tailMs = 5000, idleMs?, ledgers?: LedgerOpts, save?(item),
-//        baseBranch? (origin/<it> is where guarded changes may come from: guardedChildChanges) }.
+//        upstream?: { url, base } (origin's <base>, where guarded changes may come from: guardSnapshot) }.
 // A child that fails on a usage limit cuts the item off (the run stops); any other child failure
 // blocks it with the error's first 300 characters. ctx.stop is set (and the event ends "; run
 // stopped") when no later child should start: a failure of the environment (no claude, an API or
@@ -568,11 +612,14 @@ export async function runIssue(ctx, item) {
     ? readAnswers(isAbsolute(item.answersFile) ? item.answersFile : join(ctx.answersDir ?? dir, item.answersFile))
     : null;
 
+  // the outcome saved (ctx.beforeEnd first: the runner closes the item's child window there)
+  // before its event: whoever acts on the event finds state.json saying so already
   const end = (status, reason, phase, kind, text) => {
     item.status = status;
     item.reason = reason;
-    emit(dir, key, phase, kind, text);
+    ctx.beforeEnd?.(item);
     ctx.save?.(item);
+    emit(dir, key, phase, kind, text);
     return item;
   };
 
@@ -608,7 +655,7 @@ export async function runIssue(ctx, item) {
       mode: ctx.mode ?? 'auto', resume, env: ctx.env ?? {}, idleMs: ctx.idleMs,
     };
     // hashed before the tail starts: a hash that throws leaves no timer behind
-    const guarded = guardSnapshot(root);
+    const guarded = guardSnapshot(root, ctx.upstream);
     const stop = tailProgress(root, key, (line) => emit(dir, key, phase, 'progress', line), ctx.tailMs ?? 5000, ctx.ledgers,
       (e) => emit(dir, key, phase, 'progress', `ledger read failed: ${e.code || e.message}`));
     let r;
@@ -627,7 +674,7 @@ export async function runIssue(ctx, item) {
     item.sessions.push(session(r));
     ctx.save?.(item);
 
-    const changed = guardedChildChanges(root, guarded, ctx.baseBranch);
+    const changed = guardedChildChanges(root, guarded);
     if (changed.length) {
       const more = changed.length > 5 ? ` and ${changed.length - 5} more` : '';
       ctx.stop = `child changed ${changed.slice(0, 5).join(', ')}${more}`;

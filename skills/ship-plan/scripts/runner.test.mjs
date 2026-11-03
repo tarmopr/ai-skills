@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { alive } from './runner-lib.mjs';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1416,4 +1416,164 @@ test('a guarded link to a file outside the checkout, changed while the child mov
   assert.equal(r.status, 0, r.stderr);
   const dir = runDir(root, 'issue', 'A-1');
   assert.deepEqual(readState(dir).items.map((i) => [i.status, i.reason]), [['blocked', 'child changed CLAUDE.local.md']], events(dir));
+});
+
+// review round 2, batch E2
+
+// X5: a child can edit the config's `Child permission mode:`, and state.json; the first start's mode
+// is kept in state.json and in the answers store, and a rerun never widens it
+test('a rerun never widens the first start\'s permission mode: wider exit 2, none given uses it, narrower allowed', () => {
+  const root = repo();
+  const log = join(root, 'm.json');
+  const dir = runDir(root, 'queue', 'P-1');
+  // each start adds a key, so each runs one new child
+  const start = (flags, keys, env = {}) => {
+    atVerify(root, ...keys);
+    const byKey = Object.fromEntries(keys.map((k) => [k, ships(k)]));
+    return cli(root, ['start', ...flags, 'queue', 'P-1', keys.join(',')], { FAKE_CLAUDE_BY_KEY: JSON.stringify(byKey), FAKE_CLAUDE_LOG: log, ...env });
+  };
+  const childMode = () => {
+    const seen = JSON.parse(readFileSync(log, 'utf8'));
+    rmSync(log);
+    return seen.argv[seen.argv.indexOf('--permission-mode') + 1];
+  };
+  assert.equal(start(['--permission-mode', 'acceptEdits'], ['M-1']).status, 0);
+  assert.equal(childMode(), 'acceptEdits');
+  assert.equal(readState(dir).mode, 'acceptEdits');
+  for (const wider of ['auto', 'bypassPermissions']) {
+    const r = start(['--permission-mode', wider], ['M-1', 'M-2'], { SHIP_RUNNER_ALLOW_BYPASS: '1' });
+    assert.equal(r.status, 2, wider);
+    assert.match(r.stderr, new RegExp(`--permission-mode ${wider} is wider than this run's acceptEdits`));
+    assert.equal(existsSync(log), false);
+  }
+  assert.equal(start([], ['M-1', 'M-2']).status, 0);
+  assert.equal(childMode(), 'acceptEdits');
+  assert.match(events(dir), /child permission mode: acceptEdits \(state\.json\)$/m);
+  assert.equal(start(['--permission-mode', 'dontAsk'], ['M-1', 'M-2', 'M-3']).status, 0);
+  assert.equal(childMode(), 'dontAsk');
+  assert.equal(readState(dir).mode, 'acceptEdits');
+  // a child that widens state.json's mode: the copy in the git dir still holds
+  writeState(dir, { ...readState(dir), mode: 'bypassPermissions' });
+  const r = start(['--permission-mode', 'auto'], ['M-1', 'M-2', 'M-3', 'M-4']);
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /wider than this run's acceptEdits/);
+});
+
+// X6: a run id goes into shell commands the watching session writes
+test('start: a queue parent or verify branch outside [A-Za-z0-9._/#-], or a plan path with a quote or a control character, is refused (exit 2)', () => {
+  const root = repo();
+  put(root, "docs/it's.md", ['# Plan']);
+  commit(root);
+  for (const args of [['queue', 'P;1', 'A-1'], ['queue', 'P 1', 'A-1'], ['queue', '$(x)', 'A-1'], ['plan', "docs/it's.md"]]) {
+    const r = cli(root, ['start', ...args]);
+    assert.equal(r.status, 2, `${args.join(' ')}: ${r.stderr}`);
+  }
+  git(root, 'switch', '-q', '-c', "feat/it's");
+  const v = cli(root, ['start', 'verify', "feat/it's"]);
+  assert.equal(v.status, 2, v.stderr);
+  assert.match(v.stderr, /letters, digits/);
+  assert.equal(existsSync(join(root, '.superpowers', 'ship-runner')), false);
+});
+
+// X8: a plan or branch named with a leading `_` gave an item key `answer` refused
+test('start plan docs/_draft.md: its item key is one `answer` takes', async () => {
+  const root = repo();
+  put(root, 'docs/_draft.md', ['# Plan', '### Task 1: a']);
+  commit(root);
+  const pl = '.superpowers/ship-plan/feat-d/ledger.md';
+  const first = 'Phase: 2 | Plan: docs/_draft.md | Branch: feat/d';
+  const env = {
+    FAKE_CLAUDE: 'ok:RUNNER: waiting',
+    FAKE_CLAUDE_LEDGER_APPEND: ops([
+      { when: 'phase implement', file: pl, firstLine: first, append: [Q] },
+      { when: 'copied exactly', file: pl, firstLine: first.replace('Phase: 2', 'Phase: done'), replace: [[Q, 'Asked: which db? — postgres']] },
+    ]),
+  };
+  const runner = spawn(process.execPath, [RUNNER, 'start', 'plan', 'docs/_draft.md'], { cwd: root, env: { ...ENV, ...env }, stdio: 'ignore' });
+  const exited = new Promise((r) => runner.on('close', r));
+  try {
+    const dir = runDir(root, 'plan', 'docs/_draft.md');
+    for (let i = 0; i < 400 && !/ waiting /.test(events(dir)); i++) await new Promise((r) => setTimeout(r, 25));
+    const key = readState(dir).items[0].key;
+    writeFileSync(join(root, 'a.txt'), '1A\n');
+    const a = cli(root, ['answer', dir, key, join(root, 'a.txt')]);
+    assert.equal(a.status, 0, `${key}: ${a.stderr}`);
+    assert.equal(await exited, 0);
+    assert.equal(readState(dir).items[0].status, 'done');
+  } finally {
+    killQuietly(runner.pid);
+  }
+});
+
+// X8: two ids can share a run dir (a/b and a-b): the second is refused, never run on the first's state
+test('start: a run dir that holds another run (a/b vs a-b) is refused (exit 2)', () => {
+  const root = repo();
+  git(root, 'switch', '-q', '-c', 'a/b');
+  const done = { FAKE_CLAUDE: 'ok:RUNNER: done', FAKE_CLAUDE_LEDGER_APPEND: ops([{ file: '.superpowers/verify-and-fix/a-b/ledger.md', append: ['Done: x — clean'] }]) };
+  assert.equal(cli(root, ['start', 'verify', 'a/b'], done).status, 0);
+  git(root, 'switch', '-q', '-c', 'a-b');
+  const r = cli(root, ['start', 'verify', 'a-b'], done);
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /holds the run verify a\/b/);
+  assert.equal(readState(runDir(root, 'verify', 'a-b')).id, 'a/b');
+});
+
+// X8: the checkout comes from the run dir's place, never from state.json's root (a child can edit it)
+test('answer: the answers store is found from the run dir, not from state.json\'s root', () => {
+  const root = repo();
+  const elsewhere = repo();
+  atVerify(root, 'W-1');
+  const r = cli(root, ['start', 'queue', 'P-1', 'W-1'], { FAKE_CLAUDE_BY_KEY: JSON.stringify({ 'W-1': { ...waitsThenShips('W-1'), FAKE_CLAUDE: 'ok:RUNNER: waiting' } }) });
+  assert.equal(r.status, 0, r.stderr);
+  const dir = runDir(root, 'queue', 'P-1');
+  writeState(dir, { ...readState(dir), root: elsewhere });
+  writeFileSync(join(root, 'a.txt'), '1A\n');
+  const a = cli(root, ['answer', dir, 'W-1', join(root, 'a.txt')]);
+  assert.equal(a.status, 0, a.stderr);
+  assert.equal(readFileSync(join(answersAt(root, dir), 'answers-W-1.md'), 'utf8'), '1A\n');
+  assert.equal(existsSync(join(elsewhere, '.git', 'ship-runner')), false);
+});
+
+// X8: the run dir and the answers store are the user's alone
+test('the run dir and the answers store are created 0700', () => {
+  const root = repo();
+  atVerify(root, 'W-1');
+  assert.equal(cli(root, ['start', 'queue', 'P-1', 'W-1'], { FAKE_CLAUDE_BY_KEY: JSON.stringify({ 'W-1': { ...waitsThenShips('W-1'), FAKE_CLAUDE: 'ok:RUNNER: waiting' } }) }).status, 0);
+  const dir = runDir(root, 'queue', 'P-1');
+  writeFileSync(join(root, 'a.txt'), '1A\n');
+  assert.equal(cli(root, ['answer', dir, 'W-1', join(root, 'a.txt')]).status, 0);
+  assert.equal(statSync(dir).mode & 0o777, 0o700);
+  assert.equal(statSync(answersAt(root, dir)).mode & 0o777, 0o700);
+});
+
+// K2, redone (automated security review of the first K2): the exemption trusts only origin/<base>
+// as the runner itself fetched it before the child, compared by content; never refs, the index or
+// git status the child can change
+test('a child that moves origin/<base> to its own commit changing CLAUDE.md: blocked, run stopped', () => {
+  const root = guardedRepo();
+  upstream(root, [['README.md', 'upstream']]);
+  const r = cli(root, ['start', 'issue', 'A-1'], {
+    FAKE_CLAUDE: 'ok:RUNNER: done',
+    FAKE_CLAUDE_LEDGER_APPEND: ops([{ file: planLedger('A-1'), firstLine: planFirst('A-1', 'done') }, { file: 'CLAUDE.md', firstLine: 'v2' }]),
+    FAKE_CLAUDE_GIT: childGit(['commit', '-q', '--no-verify', '-am', 'widen'], ['update-ref', 'refs/remotes/origin/main', 'HEAD']),
+  });
+  assert.equal(r.status, 0, r.stderr);
+  const dir = runDir(root, 'issue', 'A-1');
+  assert.equal(git(root, 'rev-parse', 'refs/remotes/origin/main'), git(root, 'rev-parse', 'HEAD'));
+  assert.deepEqual(readState(dir).items.map((i) => [i.status, i.reason]), [['blocked', 'child changed CLAUDE.md']], events(dir));
+});
+
+test('a child that hides a changed guarded file with skip-worktree, after moving to a newer origin/<base>: blocked, run stopped', () => {
+  const root = guardedRepo();
+  upstream(root, [['README.md', 'upstream']]);
+  const r = cli(root, ['start', 'issue', 'A-1'], {
+    FAKE_CLAUDE: 'ok:RUNNER: done',
+    // written first, carried over by the switch (CLAUDE.md is the same upstream), then hidden
+    FAKE_CLAUDE_LEDGER_APPEND: ops([{ file: planLedger('A-1'), firstLine: planFirst('A-1', 'done') }, { file: 'CLAUDE.md', firstLine: 'v2' }]),
+    FAKE_CLAUDE_GIT: childGit(['fetch', '-q', 'origin'], ['switch', '-q', '-c', 'feat/A-1', 'origin/main'], ['update-index', '--skip-worktree', 'CLAUDE.md']),
+  });
+  assert.equal(git(root, 'status', '--porcelain', '--', 'CLAUDE.md'), '', 'git status sees nothing');
+  assert.equal(r.status, 0, r.stderr);
+  const dir = runDir(root, 'issue', 'A-1');
+  assert.deepEqual(readState(dir).items.map((i) => [i.status, i.reason]), [['blocked', 'child changed CLAUDE.md']], events(dir));
 });

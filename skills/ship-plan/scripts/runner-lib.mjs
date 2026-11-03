@@ -3,18 +3,28 @@
 import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { appendFileSync, closeSync, constants, fstatSync, linkSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 // Every git call of the runner. A child can set `core.fsmonitor` or `core.hooksPath` in the git
 // config, or write a hook: the runner's own git (status, switch) would run that code. Both are
 // switched off here, and SHIP_RUNNER_ALLOW_BYPASS is never in git's env, so what git runs anyway
 // (a filter, an alias) never gets it. Returns stdout; a failure throws as execFileSync does
-// (git's words in e.stderr).
+// (git's words in e.stderr); { encoding: 'buffer' } returns bytes.
 export const SAFE_GIT = ['-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=/dev/null'];
-export function runGit(cwd, args) {
+export function runGit(cwd, args, { encoding = 'utf8' } = {}) {
   const env = { ...process.env };
   delete env.SHIP_RUNNER_ALLOW_BYPASS;
-  return execFileSync('git', [...SAFE_GIT, ...args], { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  return execFileSync('git', [...SAFE_GIT, ...args], { cwd, env, encoding, stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024 });
+}
+
+// A run dir or an answers store: its parents as usual, itself 0700 (the user's alone) when made now.
+export function makeDir(dir) {
+  mkdirSync(dirname(resolve(dir)), { recursive: true });
+  try {
+    mkdirSync(dir, { mode: 0o700 });
+  } catch (e) {
+    if (e.code !== 'EEXIST') throw e;
+  }
 }
 
 // <root>/.superpowers/ship-runner/<kind>-<id>/ ; every '/' and '\' in id becomes '-'. An id with
@@ -60,7 +70,7 @@ export function readAnswers(file) {
 // Write to a temp file, then rename, so a crash never leaves half a state file.
 // The temp name carries the pid: the runner and an `answer` command may write at the same time.
 export function writeState(dir, state) {
-  mkdirSync(dir, { recursive: true });
+  makeDir(dir);
   const tmp = join(dir, `state.json.${process.pid}.tmp`);
   writeFileSync(tmp, JSON.stringify(state, null, 2) + '\n');
   renameSync(tmp, join(dir, 'state.json'));
@@ -138,7 +148,7 @@ const unique = () => `${process.pid}.${randomBytes(4).toString('hex')}`;
 // 10 s) is renamed aside, never removed in place: of two runners taking it over, one rename wins;
 // a lock that turns out to be fresh once aside (another runner took it over first) is put back.
 export function acquireLock(dir, pid) {
-  mkdirSync(dir, { recursive: true });
+  makeDir(dir);
   const file = join(dir, 'lock');
   const tmp = join(dir, `lock.${unique()}.tmp`);
   writeFileSync(tmp, JSON.stringify({ runner: pid, child: null }));
@@ -201,7 +211,7 @@ export function releaseLock(dir, pid = process.pid) {
 
 // kind: start, progress, done, waiting, blocked, cutoff, summary
 export function emit(dir, key, phase, kind, text) {
-  mkdirSync(dir, { recursive: true });
+  makeDir(dir);
   const line = `${new Date().toISOString()} ${clean(key)} ${clean(phase)} ${kind} ${clean(text)}\n`;
   appendFileSync(join(dir, 'events.log'), line);
 }

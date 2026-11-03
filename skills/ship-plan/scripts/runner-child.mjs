@@ -1,10 +1,10 @@
 // Child launcher and stream reader for the ship runner.
 // Starts `claude -p` with stream-json output, logs every stdout line, and reads the final result.
 import { spawn } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
+import { appendFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
-import { emit, groupAlive, setChildPid } from './runner-lib.mjs';
+import { emit, groupAlive, makeDir, setChildPid } from './runner-lib.mjs';
 
 export function childArgs({ model, effort, mode, resume }) {
   const args = ['-p', '--output-format', 'stream-json', '--verbose', '--model', model, '--effort', effort, '--permission-mode', mode];
@@ -126,7 +126,7 @@ export async function endChildren(opts) {
 // idleMs: no stdout line for that long kills the child's process group (default: never).
 function runOnce({ dir, cwd, key, phase, prompt, model, effort, mode, resume, env, idleMs }) {
   if (halted) return new Promise(() => {}); // the runner is ending: it writes the end itself
-  mkdirSync(dir, { recursive: true });
+  makeDir(dir);
   const file = logFile(dir, key, phase);
   appendFileSync(file, ''); // claim the number before the child starts
   // a failure to write the transcript or the lock never stops the run: said once, in an event

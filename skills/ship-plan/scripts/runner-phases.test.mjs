@@ -562,3 +562,17 @@ test('guardedHashes: a symlinked guarded file, a symlinked dir under a guarded d
   assert.ok(changed.includes('.claude/agents'), changed.join(', '));
   assert.ok(changed.includes('.claude/agents/x.md'), changed.join(', '));
 });
+
+// review round 2, batch E2: the item's child window is closed (ctx.beforeEnd) before its end event:
+// `answer` right after a `waiting` event must not find the window still open
+test('runIssue: ctx.beforeEnd runs once the outcome is known, before the end event is written', async () => {
+  const root = repo({ issue: [issueFirst(1)] });
+  const ops = ledgerOps([{ file: ISSUE, firstLine: issueFirst(3), append: ['Asked: a — pending'] }]);
+  const seen = [];
+  const it = await runIssue(ctxFor(root, { FAKE_CLAUDE: 'ok:RUNNER: phase-done', FAKE_CLAUDE_LEDGER_APPEND: ops }, {
+    beforeEnd: (i) => seen.push([i.status, /waiting/.test(events(root))]),
+  }), item());
+  assert.equal(it.status, 'waiting');
+  assert.deepEqual(seen, [['waiting', false]]);
+  assert.match(events(root), / BILL-7 spec waiting 1 question$/m);
+});
