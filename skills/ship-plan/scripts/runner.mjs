@@ -14,10 +14,10 @@
 // Exit: 0 done, 1 runner error, 2 usage error, 3 the run dir's lock is held; 128+n on signal n.
 import { execFileSync } from 'node:child_process';
 import { constants } from 'node:os';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { acquireLock, alive, clean, emit, groupAlive, readLock, readState, releaseLock, runDir, setChildPid, writeState } from './runner-lib.mjs';
+import { acquireLock, alive, clean, emit, groupAlive, plainFile, readLock, readState, releaseLock, runDir, setChildPid, writeState } from './runner-lib.mjs';
 import { findPlanLedger, ledgerOutcome, pendingQuestions, PHASE_ROWS, PHASES, phaseFromLedgers, runIssue } from './runner-phases.mjs';
 import { endChildren, haltChildren } from './runner-child.mjs';
 import { nextItem } from './runner-queue.mjs';
@@ -187,23 +187,31 @@ const answersName = (key) => `answers-${key}.md`;
 const inChildWindow = (item, ms) => (item.windows ?? []).some(([from, to]) => ms >= from && ms <= (to ?? Infinity));
 const writtenInWindow = (item, st) => inChildWindow(item, st.mtimeMs) || inChildWindow(item, st.ctimeMs);
 
-// Whether the item's answers file is in the store and usable. One written inside a child window
-// of the item is moved aside as answers-<KEY>@rejected-<n>.md, with an event, and never used.
-function answersReady(store, dir, item) {
-  const file = join(store, answersName(item.key));
+// Whether the store's answers file `name` of this item is usable: 'ok', 'missing', or 'rejected'
+// (moved aside as answers-<KEY>@rejected-<n>.md, with an event, never used): a link rather than a
+// plain file (plainFile; lstat, so a symlink's target is never judged), or written inside a child
+// window of the item. Checked for a fresh file and again for a consumed one before each reuse.
+function checkAnswers(store, dir, item, name) {
+  const file = join(store, name);
   let st;
   try {
-    st = statSync(file);
+    st = lstatSync(file);
   } catch (e) {
-    if (e.code === 'ENOENT') return false;
+    if (e.code === 'ENOENT') return 'missing';
     throw e;
   }
-  if (!writtenInWindow(item, st)) return true;
+  let why = null;
+  if (!plainFile(st)) why = `${name} is a link, not a plain file`;
+  else if (writtenInWindow(item, st)) why = `${name} was written while a child of ${item.key} ran`;
+  if (!why) return 'ok';
   const kept = unusedName(store, `answers-${item.key}@rejected-`);
   renameSync(file, join(store, kept));
-  emit(dir, item.key, item.phase ?? '-', 'progress', `answers rejected: ${answersName(item.key)} was written while a child of ${item.key} ran (kept as ${kept}); answer again`);
-  return false;
+  emit(dir, item.key, item.phase ?? '-', 'progress', `answers rejected: ${why} (kept as ${kept}); answer again`);
+  return 'rejected';
 }
+
+// Whether the item's answers file (answers-<KEY>.md) is in the store and usable (checkAnswers).
+const answersReady = (store, dir, item) => checkAnswers(store, dir, item, answersName(item.key)) === 'ok';
 
 // An answers file not yet consumed puts a waiting item back in line (the `answer` command may race
 // the runner's own state writes; the file is the record), and marks a queued one answered. The
@@ -220,7 +228,16 @@ function syncAnswers(state, dir, store) {
 // <prefix><n>.md with the first unused n, starting at 1.
 function unusedName(store, prefix) {
   let n = 1;
-  while (existsSync(join(store, `${prefix}${n}.md`))) n++;
+  const taken = (f) => {
+    try {
+      lstatSync(f); // a dangling symlink is taken too
+      return true;
+    } catch (e) {
+      if (e.code === 'ENOENT') return false;
+      throw e;
+    }
+  };
+  while (taken(join(store, `${prefix}${n}.md`))) n++;
   return `${prefix}${n}.md`;
 }
 
@@ -485,8 +502,14 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
     else {
       // resume from files: what was cut short runs again; the ledgers say where
       // verify again on a branch verified before: a new run, from a fresh snapshot of its ledger
+      // so does one that ended any other way (blocked, cut off, …): an earlier closing Done: must
+      // not end it again with no child. Not a waiting one, nor one holding answers: their questions
+      // are in the lines after the old snapshot.
       if (state.kind === 'verify') {
-        for (const i of state.items) if (i.status === 'done') Object.assign(i, { status: 'queued', reason: '', phase: null, from: run.items[0].from, answersUnused: undefined });
+        for (const i of state.items) {
+          if (i.status === 'done') Object.assign(i, { status: 'queued', reason: '', phase: null, answersUnused: undefined });
+          if (i.status !== 'waiting' && !i.answersFile) i.from = run.items[0].from;
+        }
       }
       for (const i of state.items) {
         if (['running', 'cut off', 'not started', 'blocked'].includes(i.status)) Object.assign(i, { status: 'queued', reason: '' });
@@ -578,17 +601,20 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
             Object.assign(item, { answersFile: null, answersUnused: used });
             emit(dir, item.key, item.phase ?? '-', 'progress', `answers not used, no question pending (${used})`);
           }
-        } else if (!waits || !existsSync(join(store, item.answersFile))) {
-          // consumed by a run killed mid-child: its questions are answered already, or the file is gone
-          if (waits) emit(dir, item.key, item.phase ?? '-', 'progress', `answers file ${item.answersFile} is gone; the questions wait again`);
-          item.answersFile = null;
+        } else if (!waits) item.answersFile = null; // consumed by a run killed mid-child: its questions are answered already
+        else {
+          // consumed by a run killed mid-child and the ledgers still wait: resume with it again, if it
+          // is still the user's (that child may have written over it in its window)
+          const seen = checkAnswers(store, dir, item, item.answersFile);
+          if (seen === 'missing') emit(dir, item.key, item.phase ?? '-', 'progress', `answers file ${item.answersFile} is gone; the questions wait again`);
+          if (seen !== 'ok') item.answersFile = null;
         }
-        // else: consumed by a run killed mid-child and the ledgers still wait: resume with it again
       }
       state.current = item.key;
       ran = true;
-      // the window an answers file of this item must not be written in
-      const window = [Date.now(), null];
+      // the window an answers file of this item must not be written in; from the next millisecond:
+      // the answers consumed just now (the rename sets their ctime, sub-millisecond) are before it
+      const window = [Date.now() + 1, null];
       (item.windows ??= []).push(window);
       save();
       const ctx = { ...base, ledgers };
@@ -674,6 +700,10 @@ function answer([dirArg, key, file]) {
   if (!state) return usage(`answer: no run at ${dirArg}`);
   const item = state.items.find((i) => i.key === key);
   if (!item) return usage(`answer: ${key} is not in this run`);
+  // an answers file written inside an open child window would only be set aside later
+  if ((item.windows ?? []).some(([, to]) => to == null)) {
+    return usage(`answer: a child of ${key} is running, or the run was stopped while one ran; answer once ${key} waits again (after the rerun, if the runner has exited)`);
+  }
   // The file alone is the record: the runner (now, or on the next start) puts the item back in
   // line from it. Writing state.json here could lose a write of a runner that holds the lock.
   const store = answersStore(rootOf(state, dir), dir);
@@ -701,7 +731,8 @@ function status([dirArg]) {
   const received = (i) => {
     if (!store) return false;
     try {
-      return !writtenInWindow(i, statSync(join(store, answersName(i.key))));
+      const st = lstatSync(join(store, answersName(i.key)));
+      return plainFile(st) && !writtenInWindow(i, st);
     } catch {
       return false;
     }

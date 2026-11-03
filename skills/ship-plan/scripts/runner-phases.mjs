@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { lstatSync, readdirSync, readFileSync, readlinkSync, statSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { emit } from './runner-lib.mjs';
+import { emit, readAnswers } from './runner-lib.mjs';
 import { isEnvError, isLimitError, resumeOrFresh, runChild } from './runner-child.mjs';
 
 export const PHASES = ['spec', 'plan', 'implement', 'verify', 'merge', 'close'];
@@ -415,7 +415,7 @@ export async function runIssue(ctx, item) {
   const skill = ctx.skill ?? 'ship-issue';
   const args = ctx.args ?? key;
   let answers = item.answersFile
-    ? readFileSync(isAbsolute(item.answersFile) ? item.answersFile : join(ctx.answersDir ?? dir, item.answersFile), 'utf8')
+    ? readAnswers(isAbsolute(item.answersFile) ? item.answersFile : join(ctx.answersDir ?? dir, item.answersFile))
     : null;
 
   const end = (status, reason, phase, kind, text) => {

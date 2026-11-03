@@ -1,7 +1,7 @@
 // State, lock and event log for the ship runner.
 // Node only, no dependencies, so it runs the same on macOS, Linux and Windows.
 import { randomBytes } from 'node:crypto';
-import { appendFileSync, closeSync, fstatSync, linkSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, closeSync, constants, fstatSync, linkSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 // <root>/.superpowers/ship-runner/<kind>-<id>/ ; every '/' and '\' in id becomes '-'. An id with
@@ -25,6 +25,22 @@ export function readState(dir) {
   } catch (e) {
     if (e.code === 'ENOENT') return null;
     throw Object.assign(new Error(`${file}: ${e.message}`), { code: e.code });
+  }
+}
+
+// An answers file is the user's only as a plain file with one name: a symlink, or a second hard
+// link to a file the runner writes (events.log, …), would hand a child's text on as answers.
+export const plainFile = (st) => st.isFile() && st.nlink === 1;
+
+// An answers file's text, through one descriptor: never through a symlink (O_NOFOLLOW), and only
+// from a plain file (plainFile); anything else throws.
+export function readAnswers(file) {
+  const fd = openSync(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+  try {
+    if (!plainFile(fstatSync(fd))) throw new Error(`${file} is a link, not a plain file`);
+    return readFileSync(fd, 'utf8');
+  } finally {
+    closeSync(fd);
   }
 }
 

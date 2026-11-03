@@ -528,6 +528,10 @@ test('start queue: answers for the running item arrive during its child, which i
   assert.deepEqual(s.items.map((i) => [i.key, i.status]), [['A-1', 'cut off'], ['A-2', 'not started']]);
   assert.equal(byKey(s, 'A-2').reason, 'session limit');
   assert.deepEqual(children(dir), ['A-1-verify-1.jsonl']);
+  // T1 (review round 2): a cut-off item's answers are not looked at (B1): still in the store for
+  // the rerun, never set aside
+  assert.ok(existsSync(join(answersAt(root, dir), 'answers-A-1.md')));
+  assert.doesNotMatch(events(dir), /answers rejected/);
 });
 
 test('start: the base branch is ## Repo Base branch: first, and the event names it', () => {
@@ -1093,4 +1097,190 @@ test('start: an extra or unknown argument, or --deps with no value, is refused (
     assert.match(r.stderr, /^runner: start /, args.join(' '));
   }
   assert.equal(existsSync(join(root, '.superpowers', 'ship-runner')), false);
+});
+
+// T1: B1 pinned. An answers file for an item that ended blocked (here written by another item's
+// child) does not put it back in line: only a waiting item is requeued by its answers
+test('answers for a blocked item arriving during another item\'s child: the blocked item is not run again', () => {
+  const root = repo();
+  atVerify(root, 'A-1', 'A-2');
+  const dir = runDir(root, 'queue', 'P-1');
+  const answersRel = join('.git', 'ship-runner', basename(dir), 'answers-A-1.md');
+  const env = {
+    'A-1': { FAKE_CLAUDE: 'ok:RUNNER: blocked CI secret missing' },
+    'A-2': { ...ships('A-2'), FAKE_CLAUDE_LEDGER_APPEND: ops([{ file: planLedger('A-2'), firstLine: planFirst('A-2', 'done') }, { file: answersRel, append: ['postgres'] }]) },
+  };
+  const r = cli(root, ['start', 'queue', 'P-1', 'A-1,A-2'], { FAKE_CLAUDE_BY_KEY: JSON.stringify(env) });
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(starts(dir), ['A-1', 'A-2']);
+  assert.deepEqual(readState(dir).items.map((i) => [i.key, i.status]), [['A-1', 'blocked'], ['A-2', 'done']]);
+  assert.ok(existsSync(join(answersAt(root, dir), 'answers-A-1.md')));
+});
+
+// T2: a window left open by a stopped runner ends when the next start begins (w[1] ??= startedAt);
+// without that, a single issue would wait for ever, every answer inside the open window
+test('a single-issue rerun after a runner stopped mid-child: the open window ends at the start, the answer resumes the child', async () => {
+  const root = repo();
+  atVerify(root, 'T-2');
+  put(root, planLedger('T-2'), [planFirst('T-2', '3'), Q]);
+  const dir = runDir(root, 'issue', 'T-2');
+  writeState(dir, {
+    kind: 'issue', id: 'T-2', current: null, stopped: new Date().toISOString(), root,
+    items: [{ key: 'T-2', phase: 'verify', status: 'cut off', reason: 'runner stopped (SIGTERM)', deps: [], answersFile: null,
+      sessions: [{ phase: 'verify', sessionId: 's-7', costUsd: 0.1, turns: 1, minutes: 0 }], windows: [[Date.now() - 60000, null]] }],
+  });
+  const log = join(root, 't2.json');
+  const runner = spawn(process.execPath, [RUNNER, 'start', 'issue', 'T-2'], { cwd: root, env: { ...ENV, ...waitsThenShips('T-2', { FAKE_CLAUDE_LOG: log }) }, stdio: 'ignore' });
+  const exited = new Promise((r) => runner.on('close', (code) => r(code)));
+  try {
+    const waiting = () => / T-2 verify waiting /.test(events(dir)) && (readState(dir)?.items[0].windows ?? []).every((w) => w[1] !== null);
+    for (let i = 0; i < 200 && !waiting(); i++) await new Promise((r) => setTimeout(r, 25));
+    assert.ok(waiting(), 'waiting, with every window closed');
+    writeFileSync(join(root, 'a.txt'), 'postgres\n');
+    const a = cli(root, ['answer', dir, 'T-2', join(root, 'a.txt')]);
+    assert.equal(a.status, 0, a.stderr);
+    assert.equal(await exited, 0);
+  } finally {
+    runner.kill('SIGKILL');
+  }
+  const seen = JSON.parse(readFileSync(log, 'utf8'));
+  assert.deepEqual(seen.argv.slice(-2), ['--resume', 's-7']);
+  assert.match(seen.stdin, /copied exactly:\npostgres\n$/);
+  assert.equal(readState(dir).items[0].status, 'done');
+  assert.doesNotMatch(events(dir), /answers rejected/);
+});
+
+// S3: an answer written while a child of the item runs (or a stopped run left its window open)
+// would only be set aside later: refused up front
+test('answer while the item\'s child window is open: refused (exit 2), nothing stored', () => {
+  const root = repo();
+  atVerify(root, 'A-1');
+  const dir = runDir(root, 'queue', 'P-1');
+  writeState(dir, {
+    kind: 'queue', id: 'P-1', current: 'A-1', stopped: null, root,
+    items: [{ key: 'A-1', phase: 'verify', status: 'running', reason: '', deps: [], sessions: [], answersFile: null, windows: [[Date.now() - 1000, null]] }],
+  });
+  writeFileSync(join(dir, 'lock'), JSON.stringify({ runner: process.pid, child: process.pid }));
+  writeFileSync(join(root, 'a.txt'), 'postgres\n');
+  const r = cli(root, ['answer', dir, 'A-1', join(root, 'a.txt')]);
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /^runner: answer: a child of A-1 is running/m);
+  assert.equal(existsSync(join(answersAt(root, dir), 'answers-A-1.md')), false);
+  assert.doesNotMatch(events(dir), /answers received/);
+});
+
+// X1: consumed answers are checked again before each reuse: a child that overwrote them during its
+// window (then crashed, or was stopped) never hands the next child its own text
+test('consumed answers overwritten during the item\'s window: not reused on the rerun, set aside with an event', () => {
+  const root = repo();
+  atVerify(root, 'R-1');
+  put(root, planLedger('R-1'), [planFirst('R-1', '3'), Q]);
+  const dir = runDir(root, 'queue', 'P-9');
+  writeState(dir, {
+    kind: 'queue', id: 'P-9', current: 'R-1', stopped: null, root,
+    items: [{ key: 'R-1', phase: 'verify', status: 'running', reason: '', deps: [], answersFile: 'answers-R-1@1.md',
+      sessions: [{ phase: 'verify', sessionId: 's-3', costUsd: 0.1, turns: 1, minutes: 0 }], windows: [[Date.now() - 60000, null]] }],
+  });
+  mkdirSync(answersAt(root, dir), { recursive: true });
+  writeFileSync(join(answersAt(root, dir), 'answers-R-1@1.md'), 'forged\n'); // inside the open window
+  writeFileSync(join(dir, 'lock'), JSON.stringify({ runner: deadPid(), child: deadPid() }));
+  const r = cli(root, ['start', 'queue', 'P-9', 'R-1'], waitsThenShips('R-1'));
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(children(dir), []);
+  assert.deepEqual(readState(dir).items.map((i) => [i.status, i.answersFile]), [['waiting', null]]);
+  assert.match(events(dir), / R-1 verify progress answers rejected: answers-R-1@1\.md was written while a child of R-1 ran \(kept as answers-R-1@rejected-1\.md\); answer again$/m);
+});
+
+// X1, the other way: the user's answers consumed just before the child started (the rename sets
+// ctime) are the same answers on a rerun after the runner was killed mid-child
+test('answered, then the runner killed mid-child: the rerun resumes with the consumed answers', async () => {
+  const root = repo();
+  atVerify(root, 'K-1');
+  put(root, planLedger('K-1'), [planFirst('K-1', '3'), Q]);
+  const dir = runDir(root, 'queue', 'P-1');
+  assert.equal(cli(root, ['start', 'queue', 'P-1', 'K-1']).status, 0); // no child: the ledger waits
+  writeFileSync(join(root, 'a.txt'), 'postgres\n');
+  assert.equal(cli(root, ['answer', dir, 'K-1', join(root, 'a.txt')]).status, 0);
+  const { runner, exited, child } = await runnerWithChild(root, dir, ['start', 'queue', 'P-1', 'K-1'], { FAKE_CLAUDE: 'hang' });
+  try {
+    runner.kill('SIGKILL'); // no handler: the child is left, its window open
+    await exited;
+  } finally {
+    killQuietly(child);
+  }
+  for (let i = 0; i < 80 && alive(child); i++) await new Promise((r) => setTimeout(r, 25));
+  assert.equal(readState(dir).items[0].answersFile, 'answers-K-1@1.md');
+  const log = join(root, 'k.json');
+  const r = cli(root, ['start', 'queue', 'P-1', 'K-1'], waitsThenShips('K-1', { FAKE_CLAUDE_LOG: log }));
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(JSON.parse(readFileSync(log, 'utf8')).stdin, /copied exactly:\npostgres\n$/);
+  assert.equal(readState(dir).items[0].status, 'done');
+  assert.doesNotMatch(events(dir), /answers rejected/);
+});
+
+// X2: an answers file that is a link (symbolic, or a second hard link to a file the runner writes
+// after the window, like events.log) is not the user's
+test('an answers file that is a symlink or a hard link: rejected on the rerun, never read', () => {
+  for (const how of ['sym', 'hard']) {
+    const root = repo();
+    atVerify(root, 'L-1');
+    const dir = runDir(root, 'queue', 'P-1');
+    const env = { 'L-1': {
+      FAKE_CLAUDE: 'crashafter',
+      FAKE_CLAUDE_LEDGER_APPEND: ops([{ file: planLedger('L-1'), append: [Q] }]),
+      FAKE_CLAUDE_LINK: ops([[join(dir, 'events.log'), join(answersAt(root, dir), 'answers-L-1.md'), how]]),
+    } };
+    assert.equal(cli(root, ['start', 'queue', 'P-1', 'L-1'], { FAKE_CLAUDE_BY_KEY: JSON.stringify(env) }).status, 0);
+    assert.equal(readState(dir).items[0].status, 'blocked', how);
+    const log = join(root, 'l.json');
+    const r = cli(root, ['start', 'queue', 'P-1', 'L-1'], waitsThenShips('L-1', { FAKE_CLAUDE_LOG: log }));
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(existsSync(log), false, `${how}: a child ran with the linked file`);
+    assert.deepEqual(readState(dir).items.map((i) => [i.status, i.answersFile]), [['waiting', null]], how);
+    assert.match(events(dir), / L-1 verify progress answers rejected: answers-L-1\.md is a link, not a plain file \(kept as answers-L-1@rejected-1\.md\); answer again$/m, how);
+    assert.doesNotMatch(cli(root, ['status', dir]).stdout, /answers received/, how);
+  }
+});
+
+// T6: a linked worktree has its own git dir (the answers store) and shares the common one (the
+// exclude)
+test('a linked worktree: answers stored in its own git dir and used; .superpowers/ in the common exclude', () => {
+  const main = repo();
+  git(main, 'switch', '-q', '-c', 'other');
+  const wt = join(realpathSync(mkdtempSync(join(tmpdir(), 'runner-wt-'))), 'wt');
+  git(main, 'worktree', 'add', '-q', wt, 'main');
+  atVerify(wt, 'W-1');
+  const dir = runDir(wt, 'queue', 'P-1');
+  const log = join(wt, 'w.json');
+  const env = { FAKE_CLAUDE_BY_KEY: JSON.stringify({ 'W-1': waitsThenShips('W-1', { FAKE_CLAUDE_LOG: log }) }) };
+  assert.equal(cli(wt, ['start', 'queue', 'P-1', 'W-1'], env).status, 0);
+  assert.equal(readState(dir).items[0].status, 'waiting');
+  writeFileSync(join(wt, 'a.txt'), 'postgres\n');
+  const a = cli(wt, ['answer', dir, 'W-1', join(wt, 'a.txt')]);
+  assert.equal(a.status, 0, a.stderr);
+  assert.equal(a.stdout.trim(), `answers stored: ${join(main, '.git', 'worktrees', 'wt', 'ship-runner', basename(dir), 'answers-W-1.md')}`);
+  assert.equal(cli(wt, ['start', 'queue', 'P-1', 'W-1'], env).status, 0);
+  assert.equal(readState(dir).items[0].status, 'done');
+  assert.match(JSON.parse(readFileSync(log, 'utf8')).stdin, /copied exactly:\npostgres\n$/);
+  assert.match(readFileSync(join(main, '.git', 'info', 'exclude'), 'utf8'), /^\.superpowers\/$/m);
+  assert.equal(git(wt, 'status', '--porcelain', '--untracked-files=all'), '');
+});
+
+// K1: a verify run started again after it ended blocked (or cut off, or not started) reads its
+// ledger from a fresh snapshot, like a done one: the earlier closing Done: does not end it
+test('start verify again after a blocked verify: a fresh ledger snapshot, a new child', () => {
+  const root = repo();
+  git(root, 'switch', '-q', '-c', 'feat/k');
+  const vf = '.superpowers/verify-and-fix/feat-k/ledger.md';
+  const dir = runDir(root, 'verify', 'feat/k');
+  let r = cli(root, ['start', 'verify', 'feat/k'], {
+    FAKE_CLAUDE: 'ok:RUNNER: blocked CI secret missing', FAKE_CLAUDE_LEDGER_APPEND: ops([{ file: vf, append: ['Blocked: CI secret missing', 'Done: abc — blocked'] }]),
+  });
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(readState(dir).items.map((i) => [i.status, i.reason]), [['blocked', 'CI secret missing']]);
+  r = cli(root, ['start', 'verify', 'feat/k'], { FAKE_CLAUDE: 'ok:RUNNER: done', FAKE_CLAUDE_LEDGER_APPEND: ops([{ file: vf, append: ['Done: def — clean'] }]) });
+  assert.equal(r.status, 0, r.stderr);
+  const s = readState(dir);
+  assert.deepEqual(s.items.map((i) => [i.status, i.sessions.length, i.from]), [['done', 2, 2]]);
+  assert.deepEqual(children(dir), ['feat-k-verify-1.jsonl', 'feat-k-verify-2.jsonl']);
 });
