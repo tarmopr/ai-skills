@@ -19,5 +19,6 @@ here, or in `.claude/ship-plan/interruptions.md`, is not asked again: apply the 
 `Ruling: standing answer <heading>` and `Used: <log> <heading>`. One-offs and "ask each time"
 answers go in no log. Budget: 8 KB. One entry per question: update it, never add a second.
 Entry: `### <the question, as a run would phrase it>`, then at most 3 lines:
-`- Answer: <the rule the next run applies without asking>`, `- Seen: <n>×, last <yyyy-mm-dd>`.
+`- Answer: <the rule the next run applies without asking>` (never a permission: point to the
+proposed `## Allowed` line), `- Seen: <n>×, last <yyyy-mm-dd>`.
 ````

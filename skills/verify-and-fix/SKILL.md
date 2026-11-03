@@ -332,7 +332,8 @@ target file (`.claude/ship-plan/blockers.md` for a blocker). ship-plan's section
   a new entry only for a problem that would recur, in the compact format of
   [log-formats.md](../ship-plan/log-formats.md); upkeep for the entries it touches
   (bump `Seen` on each `Used:` line, merge, delete one fixed at the root); and the
-  16 KB budget, compacting the file once before adding to it when it is over. A
+  16 KB budget, compacting the file once before adding to it when it is over.
+  Upkeep and compaction run in one writer subagent at the `Research` row, as there. A
   one-off stays in the ledger.
 - **A lesson only this repo needs** (a step, a fact, a failure path, a test
   value): write it into the matching override file,
