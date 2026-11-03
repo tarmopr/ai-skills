@@ -5,17 +5,20 @@
 //   node runner.mjs start issue <KEY>
 //   node runner.mjs start queue <PARENT> <KEY>,<KEY>… [--deps <KEY>:<DEP>,…]   (<KEY> waits for <DEP>)
 //   node runner.mjs start plan <path>          ship-plan from implement
-//   node runner.mjs start verify <branch>      verify-and-fix alone, on the checked-out branch
+//   node runner.mjs start verify <branch> [-- <args>]   verify-and-fix alone, on the checked-out
+//                                              branch; <args> (base branch, --comments) passed to it
 // Every start but verify needs a clean checkout on the base branch (.superpowers/ aside).
 //   node runner.mjs answer <run-dir> <KEY> <file>
 //   node runner.mjs status <run-dir>
-// Exit: 0 done, 2 usage error, 3 the run dir's lock is held.
+// Exit: 0 done, 1 runner error, 2 usage error, 3 the run dir's lock is held; 128+n on signal n.
 import { execFileSync } from 'node:child_process';
+import { constants } from 'node:os';
 import { existsSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { acquireLock, alive, emit, readLock, readState, releaseLock, runDir, writeState } from './runner-lib.mjs';
-import { findPlanLedger, ledgerOutcome, pendingQuestions, phaseFromLedgers, runIssue } from './runner-phases.mjs';
+import { findPlanLedger, ledgerOutcome, pendingQuestions, PHASE_ROWS, PHASES, phaseFromLedgers, runIssue } from './runner-phases.mjs';
+import { killChildren } from './runner-child.mjs';
 import { nextItem } from './runner-queue.mjs';
 
 // `## Models` rows the runner's children use, with their defaults.
@@ -32,11 +35,16 @@ const strip = (v) => v.replace(/`/g, '').trim();
 
 export const CHILD_MODES = ['auto', 'acceptEdits', 'dontAsk', 'bypassPermissions'];
 
+const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
+const MODEL_NAME = /^[A-Za-z0-9.[\]_-]+$/;
+
 /**
  * What the runner reads from `.claude/ship-plan.md`: `## Runner` `Implement chunk:` (default 5) and
- * `## Models` rows over MODEL_DEFAULTS. Never the permission mode: a child can edit the working
- * tree and every local git ref, so the mode comes only from `start --permission-mode`.
- * Headings match case-insensitively; a field line may start with `- `.
+ * `Child idle timeout:` (minutes, default 60), `## Repo` `Base branch:`, and `## Models` rows over
+ * MODEL_DEFAULTS (roles matched case-insensitively). Never the permission mode: a child can edit
+ * the working tree and every local git ref, so the mode comes only from `start --permission-mode`.
+ * Headings match case-insensitively; a field line may start with `- `. A value the runner cannot
+ * use is left out, with a line in `warnings`.
  */
 export function parseConfig(text) {
   const sections = new Map();
@@ -53,15 +61,42 @@ export function parseConfig(text) {
     }
     return '';
   };
-  const chunk = Number.parseInt(field('runner', 'Implement chunk'), 10);
+  const warnings = [];
+  const chunkText = field('runner', 'Implement chunk');
+  let chunkSize = 5;
+  if (chunkText) {
+    if (/^\d+$/.test(chunkText) && Number(chunkText) > 0) chunkSize = Number(chunkText);
+    else warnings.push(`Implement chunk: "${chunkText}" is not a positive whole number; using 5`);
+  }
+  const idleText = field('runner', 'Child idle timeout');
+  let idleMinutes = 60;
+  if (idleText) {
+    if (/^\d+(\.\d+)?$/.test(idleText) && Number(idleText) > 0) idleMinutes = Number(idleText);
+    else warnings.push(`Child idle timeout: "${idleText}" is not a positive number of minutes; using 60`);
+  }
   const models = structuredClone(MODEL_DEFAULTS);
+  const known = new Map(Object.keys(MODEL_DEFAULTS).map((k) => [k.toLowerCase(), k]));
   for (const l of sections.get('models') ?? []) {
     if (!l.trim().startsWith('|')) continue;
-    const [role, model, effort] = l.trim().replace(/^\||\|$/g, '').split('|').map(strip);
-    if (!role || !model || role.toLowerCase() === 'role' || /^-+$/.test(role)) continue;
-    models[role] = { model, effort: effort || MODEL_DEFAULTS[role]?.effort || 'high' };
+    const [cell, model, effort] = l.trim().replace(/^\||\|$/g, '').split('|').map(strip);
+    if (!cell || !model || cell.toLowerCase() === 'role' || /^-+$/.test(cell)) continue;
+    const role = known.get(cell.replace(/\s+/g, ' ').toLowerCase());
+    if (!role) {
+      // other roles are the skills' own (subagent dispatches); a Phase: row is the runner's
+      if (/^phase:/i.test(cell)) warnings.push(`## Models row "${cell}": no such runner phase; row ignored`);
+      continue;
+    }
+    if (!MODEL_NAME.test(model)) {
+      warnings.push(`## Models row "${cell}": model "${model}" is not a model name; row ignored`);
+      continue;
+    }
+    if (effort && !EFFORTS.includes(effort)) {
+      warnings.push(`## Models row "${cell}": effort "${effort}" is not low, medium, high, xhigh or max; row ignored`);
+      continue;
+    }
+    models[role] = { model, effort: effort || MODEL_DEFAULTS[role].effort };
   }
-  return { chunkSize: chunk > 0 ? chunk : 5, models };
+  return { chunkSize, idleMinutes, base: field('repo', 'Base branch'), models, warnings };
 }
 
 function readConfig(root) {
@@ -73,16 +108,22 @@ function readConfig(root) {
   }
 }
 
+// git's output; on failure an Error whose message is git's own stderr.
 function git(root, ...args) {
-  return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  try {
+    return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  } catch (e) {
+    throw new Error(String(e.stderr ?? '').trim().replace(/\s*\n\s*/g, ' ') || e.message);
+  }
 }
 
-// origin/HEAD's branch, else main.
-function baseBranch(root) {
+// { name, from }: the config's `## Repo` `Base branch:`, else origin/HEAD's branch, else main.
+function baseBranch(root, cfg) {
+  if (cfg.base) return { name: cfg.base, from: 'config' };
   try {
-    return git(root, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD').replace(/^origin\//, '');
+    return { name: git(root, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD').replace(/^origin\//, ''), from: 'origin/HEAD' };
   } catch {
-    return 'main';
+    return { name: 'main', from: 'default, no origin/HEAD' };
   }
 }
 
@@ -95,15 +136,15 @@ function headBranch(root) {
 }
 
 // Changed or untracked paths, .superpowers/ left out (the runner's and the skills' own files);
-// null when git cannot tell.
+// { error } with git's words when git cannot tell.
 function changedPaths(root) {
   let out;
   try {
-    out = execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-  } catch {
-    return null;
+    out = execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  } catch (e) {
+    return { error: `git status failed: ${String(e.stderr ?? '').trim().replace(/\s*\n\s*/g, ' ') || e.message}` };
   }
-  return out.split('\n').filter(Boolean).map((l) => l.slice(3)).filter((p) => !/^"?\.superpowers(\/|"?$)/.test(p));
+  return { paths: out.split('\n').filter(Boolean).map((l) => l.slice(3)).filter((p) => !/^"?\.superpowers(\/|"?$)/.test(p)) };
 }
 
 function checkoutRoot() {
@@ -125,12 +166,15 @@ function ledgerOpts(root, state, item) {
 
 const answersName = (key) => `answers-${key}.md`;
 
-// An answers file not yet consumed puts its item back in line (the `answer` command may race
-// the runner's own state writes; the file is the record). The running item is left alone.
+// An answers file not yet consumed puts a waiting item back in line (the `answer` command may race
+// the runner's own state writes; the file is the record), and marks a queued one answered. The
+// running item, and one that ended any other way (cut off, blocked, done), are left alone: a rerun
+// re-queues those, and the file is still there for it.
 function syncAnswers(state, dir) {
   for (const i of state.items) {
     if (i.key === state.current || !existsSync(join(dir, answersName(i.key)))) continue;
-    Object.assign(i, { status: 'queued', reason: '', answersFile: answersName(i.key) });
+    if (i.status === 'waiting') Object.assign(i, { status: 'queued', reason: '', answersFile: answersName(i.key) });
+    else if (i.status === 'queued') i.answersFile = answersName(i.key);
   }
 }
 
@@ -167,12 +211,15 @@ function parseStart(root, [what, ...a]) {
   if (what === 'queue') {
     const keys = (a[1] ?? '').split(',').map((k) => k.trim()).filter(Boolean);
     if (!keys.length) return 'start queue: no sub-issue keys';
+    const twice = keys.find((k, n) => keys.indexOf(k) !== n);
+    if (twice) return `start queue: ${twice} is in the list twice`;
     const deps = Object.fromEntries(keys.map((k) => [k, []]));
     const at = a.indexOf('--deps');
     for (const pair of at === -1 ? [] : (a[at + 1] ?? '').split(',').filter(Boolean)) {
       const [k, d] = pair.split(':').map((x) => x.trim());
       if (!deps[k] || !deps[d]) return `start queue: --deps ${pair}: both keys must be in the queue`;
-      deps[k].push(d);
+      if (k === d) return `start queue: --deps ${pair}: a key cannot wait for itself`;
+      if (!deps[k].includes(d)) deps[k].push(d);
     }
     return { kind: 'queue', id: a[0], items: keys.map((k) => newItem(k, deps[k])), skill: 'ship-issue' };
   }
@@ -181,27 +228,51 @@ function parseStart(root, [what, ...a]) {
     return { kind: 'plan', id: a[0], items: [newItem(basename(a[0]).replace(/\.md$/, ''))], skill: 'ship-plan', args: a[0] };
   }
   if (what === 'verify') {
-    const head = headBranch(root);
-    if (head !== a[0]) return `start verify: the checkout is on ${head}, not ${a[0]}`;
+    // verify-and-fix's own arguments (base branch, --comments) follow `--`; the branch verified is
+    // the checked-out one
+    const extra = a[1] === '--' ? a.slice(2) : a.length > 1 ? null : [];
+    if (!extra) return `start verify: after <branch> only -- <verify-and-fix arguments>`;
+    if (extra.some((x) => /["\x00-\x1f\x7f]/.test(x))) return 'start verify: an argument after -- holds a quote or a control character';
     const item = newItem(a[0].replaceAll('/', '-'));
     try {
       item.from = readFileSync(join(root, verifyLedger(a[0])), 'utf8').replace(/\r?\n$/, '').split(/\r?\n/).length;
-    } catch {
+    } catch (e) {
+      if (e.code !== 'ENOENT') throw e;
       item.from = 0;
     }
-    // verify-and-fix's argument is the base branch; the branch verified is the checked-out one
-    return { kind: 'verify', id: a[0], items: [item], skill: 'verify-and-fix', args: '' };
+    return { kind: 'verify', id: a[0], items: [item], skill: 'verify-and-fix', args: extra.join(' ') };
   }
   return `start: unknown run "${what}" (issue, queue, plan, verify)`;
 }
 
+// Run fn; a throw is reported on stderr and otherwise ignored (the run's last writes must all be
+// tried, whatever fails before them).
+function safe(fn) {
+  try {
+    fn();
+  } catch (e) {
+    console.error(`runner: ${e.message}`);
+  }
+}
+
+// The pid holding the run dir: its runner, alive; or, the runner dead, its child still alive (it
+// still writes the ledgers). Null when nothing holds it.
+function holder(dir) {
+  const prev = readLock(dir);
+  const live = (pid) => Number.isInteger(pid) && alive(pid);
+  if (prev && live(prev.runner)) return prev.runner;
+  if (prev && live(prev.child)) return prev.child;
+  return null;
+}
+
 async function start(rest) {
   const root = checkoutRoot();
-  // --permission-mode <m>: the only source of the children's mode
+  // --permission-mode <m> (before any `--`): the only source of the children's mode
   const args = [...rest];
   let mode = 'auto';
   let modeFrom = 'default';
-  const at = args.indexOf('--permission-mode');
+  const dd = args.indexOf('--');
+  const at = args.slice(0, dd === -1 ? args.length : dd).indexOf('--permission-mode');
   if (at !== -1) {
     mode = args[at + 1];
     modeFrom = 'flag';
@@ -213,66 +284,140 @@ async function start(rest) {
   delete process.env.SHIP_RUNNER_ALLOW_BYPASS;
   const run = parseStart(root, args);
   if (typeof run === 'string') return usage(run);
-  const baseName = baseBranch(root);
-  if (run.kind !== 'verify') {
-    const head = headBranch(root);
-    const changed = changedPaths(root);
-    if (head !== baseName || !changed || changed.length) {
-      return usage(`start: the checkout must be clean and on ${baseName} (it is on ${head}${changed?.length ? ', with uncommitted changes' : ''})`);
-    }
-  }
   const dir = runDir(root, run.kind, run.id);
 
-  // A child left running by a dead runner still writes the ledgers: never start a second one.
-  const prev = readLock(dir);
-  const live = (pid) => Number.isInteger(pid) && alive(pid);
-  if (prev && !live(prev.runner) && live(prev.child)) {
-    console.log(`held by ${prev.child}`);
+  // A live run first: its checkout may well be on its own branch. A child left running by a dead
+  // runner still writes the ledgers: never start a second one.
+  const held = holder(dir);
+  if (held) {
+    console.log(`held by ${held}`);
     return 3;
+  }
+
+  const cfg = readConfig(root);
+  const base = baseBranch(root, cfg);
+  const head = headBranch(root);
+  if (run.kind === 'verify') {
+    if (head !== run.id) return usage(`start verify: the checkout is on ${head}, not ${run.id}`);
+  } else {
+    const changed = changedPaths(root);
+    if (head !== base.name || changed.error || changed.paths.length) {
+      return usage(`start: the checkout must be clean and on ${base.name} (it is on ${head}${changed.paths?.length ? ', with uncommitted changes' : ''}${changed.error ? `; ${changed.error}` : ''})`);
+    }
   }
   const lock = acquireLock(dir, process.pid);
   if (!lock.ok) {
     console.log(`held by ${lock.holder}`);
     return 3;
   }
+  return runLocked({ root, dir, run, cfg, base, mode, modeFrom, allowBypass });
+}
 
-  let state = readState(dir);
-  if (!state) state = { kind: run.kind, id: run.id, items: run.items, current: null, stopped: null };
-  else {
-    // resume from files: what was cut short runs again; the ledgers say where
-    // verify again on a branch verified before: a new run, from a fresh snapshot of its ledger
-    if (state.kind === 'verify') {
-      for (const i of state.items) if (i.status === 'done') Object.assign(i, { status: 'queued', reason: '', phase: null, from: run.items[0].from, answersUnused: undefined });
-    }
-    for (const i of state.items) {
-      if (['running', 'cut off', 'not started', 'blocked'].includes(i.status)) Object.assign(i, { status: 'queued', reason: '' });
-      if (i.status === 'waiting' && !phaseFromLedgers(root, i.key, ledgerOpts(root, state, i)).waiting) Object.assign(i, { status: 'queued', reason: '' });
-    }
-  }
-  state.root = root;
-  state.current = null;
-  state.stopped = null;
-  const save = () => {
-    syncAnswers(state, dir);
-    writeState(dir, state);
+// Everything after the lock is taken. Whatever happens (an error, a signal), the run ends with a
+// summary event, `stopped` set in state.json, and the lock released, last.
+async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, allowBypass }) {
+  const slug = run.id.replaceAll('/', '-');
+  let state = null;
+  let code = 0;
+  let ended = false;
+  const finish = () => {
+    if (ended) return;
+    ended = true;
+    if (state) {
+      state.current = null;
+      safe(() => emit(dir, slug, '-', 'summary', summaryText(state)));
+      state.stopped = new Date().toISOString();
+      safe(() => writeState(dir, state));
+    } else safe(() => emit(dir, slug, '-', 'summary', 'no run state'));
+    safe(() => releaseLock(dir));
   };
-  save();
+  const onSignal = (sig) => {
+    killChildren('SIGTERM');
+    if (state) {
+      const why = `runner stopped (${sig})`;
+      for (const i of state.items) {
+        if (i.status === 'running') {
+          Object.assign(i, { status: 'cut off', reason: why });
+          safe(() => emit(dir, i.key, i.phase ?? '-', 'cutoff', why));
+        } else if (i.status === 'queued') Object.assign(i, { status: 'not started', reason: why });
+      }
+    }
+    finish();
+    process.exit(128 + (constants.signals[sig] ?? 0));
+  };
+  const SIGNALS = ['SIGTERM', 'SIGINT', 'SIGHUP'];
+  for (const sig of SIGNALS) process.on(sig, onSignal);
 
-  const cfg = readConfig(root);
-  const refused = mode === 'bypassPermissions' && !allowBypass;
-  if (refused) mode = 'auto';
-  const base = { root, dir, models: cfg.models, mode, env: {}, chunkSize: cfg.chunkSize, skill: run.skill, args: run.args, save };
-  const pollMs = Number(process.env.SHIP_RUNNER_POLL_MS) || 30000;
-  const slug = state.id.replaceAll('/', '-');
-  if (refused) emit(dir, slug, '-', 'progress', 'bypassPermissions refused: set SHIP_RUNNER_ALLOW_BYPASS=1');
-  emit(dir, slug, '-', 'progress', `child permission mode: ${mode} (${modeFrom})`);
-  let ran = false; // a queue item has run in this start
   try {
+    state = readState(dir);
+    const changes = [];
+    if (!state) state = { kind: run.kind, id: run.id, items: run.items, current: null, stopped: null };
+    else {
+      // resume from files: what was cut short runs again; the ledgers say where
+      // verify again on a branch verified before: a new run, from a fresh snapshot of its ledger
+      if (state.kind === 'verify') {
+        for (const i of state.items) if (i.status === 'done') Object.assign(i, { status: 'queued', reason: '', phase: null, from: run.items[0].from, answersUnused: undefined });
+      }
+      for (const i of state.items) {
+        if (['running', 'cut off', 'not started', 'blocked'].includes(i.status)) Object.assign(i, { status: 'queued', reason: '' });
+        if (i.status === 'waiting' && !phaseFromLedgers(root, i.key, ledgerOpts(root, state, i)).waiting) Object.assign(i, { status: 'queued', reason: '' });
+      }
+      // a queue started again with more keys or deps: they join the run
+      if (state.kind === 'queue') {
+        const added = [];
+        const waits = [];
+        for (const n of run.items) {
+          const old = state.items.find((i) => i.key === n.key);
+          if (!old) {
+            state.items.push(n);
+            added.push(n.key);
+            if (n.deps.length) waits.push(`${n.key} waits for ${n.deps.join(', ')}`);
+            continue;
+          }
+          const more = n.deps.filter((d) => !(old.deps ?? []).includes(d));
+          if (more.length) {
+            old.deps = [...(old.deps ?? []), ...more];
+            waits.push(`${n.key} waits for ${more.join(', ')}`);
+          }
+        }
+        if (added.length) changes.push(`added ${added.join(', ')}`);
+        changes.push(...waits);
+      }
+    }
+    state.root = root;
+    state.current = null;
+    state.stopped = null;
+    const save = () => {
+      syncAnswers(state, dir);
+      writeState(dir, state);
+    };
+    save();
+    if (changes.length) emit(dir, slug, '-', 'progress', `queue changed: ${changes.join('; ')}`);
+
+    const refused = mode === 'bypassPermissions' && !allowBypass;
+    if (refused) {
+      mode = 'auto';
+      modeFrom = 'bypass refused';
+      console.error('runner: bypassPermissions refused: set SHIP_RUNNER_ALLOW_BYPASS=1');
+      emit(dir, slug, '-', 'progress', 'bypassPermissions refused: set SHIP_RUNNER_ALLOW_BYPASS=1');
+    }
+    emit(dir, slug, '-', 'progress', `child permission mode: ${mode} (${modeFrom})`);
+    if (run.kind !== 'verify') emit(dir, slug, '-', 'progress', `base branch: ${baseInfo.name} (${baseInfo.from})`);
+    for (const w of cfg.warnings) emit(dir, slug, '-', 'progress', `config: ${w}`);
+    const used = PHASES.map((p) => `${p} ${cfg.models[PHASE_ROWS[p]].model}/${cfg.models[PHASE_ROWS[p]].effort}`);
+    emit(dir, slug, '-', 'progress', `models: ${used.join(', ')}`);
+
+    const base = {
+      root, dir, models: cfg.models, mode, env: {}, chunkSize: cfg.chunkSize, idleMs: cfg.idleMinutes * 60000,
+      skill: run.skill, args: run.args, save,
+    };
+    const pollMs = Number(process.env.SHIP_RUNNER_POLL_MS) || 30000;
+    let ran = false; // a queue item has run in this start
     for (;;) {
       syncAnswers(state, dir);
       const item = nextItem(state);
       save();
-      if (item && ran && state.kind === 'queue' && !restoreCheckout(root, baseName, state, item, dir)) break;
+      if (item && ran && state.kind === 'queue' && !restoreCheckout(root, baseInfo.name, state, item, dir)) break;
       if (!item) {
         // a single issue waits for its answers instead of ending
         const only = state.items[0];
@@ -295,6 +440,7 @@ async function start(rest) {
           }
         } else if (!waits || !existsSync(join(dir, item.answersFile))) {
           // consumed by a run killed mid-child: its questions are answered already, or the file is gone
+          if (waits) emit(dir, item.key, item.phase ?? '-', 'progress', `answers file ${item.answersFile} is gone; the questions wait again`);
           item.answersFile = null;
         }
         // else: consumed by a run killed mid-child and the ledgers still wait: resume with it again
@@ -319,32 +465,41 @@ async function start(rest) {
         break;
       }
     }
+  } catch (e) {
+    code = 1;
+    const why = `runner error: ${e.message}`;
+    console.error(`runner: ${e.message}`);
+    if (state) for (const i of state.items) if (i.status === 'running') Object.assign(i, { status: 'blocked', reason: why });
+    safe(() => emit(dir, '-', '-', 'blocked', why));
   } finally {
-    state.current = null;
-    emit(dir, slug, '-', 'summary', summaryText(state));
-    state.stopped = new Date().toISOString();
-    writeState(dir, state);
-    releaseLock(dir);
+    for (const sig of SIGNALS) process.off(sig, onSignal);
+    finish();
   }
-  return 0;
+  return code;
 }
 
 // Before a queue item after the first: back to the base branch when the checkout is clean.
 // Dirty (or git fails): this item and every queued one are not started, and false stops the queue.
+// Never throws: a failure here stops the queue with its reason.
 function restoreCheckout(root, baseName, state, item, dir) {
-  const changed = changedPaths(root);
-  let why = !changed ? 'git status failed' : changed.length ? changed.slice(0, 5).join(', ') : '';
-  if (!why) {
-    try {
-      git(root, 'switch', '-q', baseName);
-      return true;
-    } catch {
-      why = `git switch ${baseName} failed`;
+  let why;
+  try {
+    const changed = changedPaths(root);
+    why = changed.error ?? (changed.paths.length ? changed.paths.slice(0, 5).join(', ') : '');
+    if (!why) {
+      try {
+        git(root, 'switch', '-q', baseName);
+        return true;
+      } catch (e) {
+        why = `git switch ${baseName} failed: ${e.message}`;
+      }
     }
+  } catch (e) {
+    why = e.message;
   }
   item.status = 'queued';
   for (const i of state.items) if (i.status === 'queued') Object.assign(i, { status: 'not started', reason: 'checkout busy' });
-  emit(dir, item.key, '-', 'blocked', `checkout busy: ${why}; queue stopped`);
+  safe(() => emit(dir, item.key, '-', 'blocked', `checkout busy: ${why}; queue stopped`));
   return false;
 }
 

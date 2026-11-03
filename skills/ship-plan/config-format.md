@@ -267,12 +267,18 @@ inherit it); otherwise it falls back to `auto`.
 `Mode:` is read by the skills (their "Runner or session" section); every
 other field by the runner (`skills/ship-plan/scripts/runner.mjs`), which runs
 each ship phase as a `claude -p` child. Opt-in: the default is the
-single-session path.
+single-session path. The runner also reads `## Repo` `Base branch:` (else
+origin/HEAD's branch, else `main`) and the `## Models` rows its children use.
+A value it cannot use (a `Phase:` row it has no phase for, a model name or
+effort it does not know, a field that is not a number) is ignored and named in
+a `config:` progress event at start; the base branch and the models in use are
+events too.
 
 | Field | Meaning | Default |
 |---|---|---|
 | `Mode:` | `session` runs the phases in the watching session; `runner` runs them as runner children. The argument `--runner` also selects the runner | `session` |
 | `Implement chunk:` | Plan tasks one implement child takes before the next child continues | `5` |
+| `Child idle timeout:` | Minutes a child may write nothing to its output stream before the runner kills it and its process group; the item ends `blocked` `child idle <n> min` | `60` |
 
 ### `## Models`
 
@@ -305,6 +311,8 @@ start runs on Opus at high effort.
 
 The runner's spec and plan children use the `Spec stage` and `Plan stage` rows.
 It does not use `Spec stage (small)`: its spec child always takes `Spec stage`.
+It matches these six roles case-insensitively, and ignores a row whose model
+is not a model name or whose effort is not one of the five below.
 
 **The hook.** While a ship run's ledger is live (changed in the last 6 hours
 and not `Phase: done`), or a runner run's `.superpowers/ship-runner/*/state.json`
