@@ -4,6 +4,8 @@ Sections I0–I3 of [ship-issue](SKILL.md). Everything in SKILL.md applies here.
 
 ## I0. Route: what already exists
 
+**Under `## Logs` `Location: local`,** when the store holds no log, copy the tracked logs into it first, as [`## Logs`](../ship-plan/config-format.md#-logs) says.
+
 **Read the argument first,** without a `--runner` or `--session` flag at its start or end (SKILL.md's "Runner or session"; the same words inside the text are text):
 
 - **Its first word names an existing `.superpowers/ship-issue/<dir>/`** (an issue key as file names write it, so GitHub Issues' `#<n>` names `<n>/`; or with no issue the slug) in this checkout or one `git worktree list` shows: this is a resume, and the rest of the argument is answers. Record each as `Asked: … — <answer>` and a `Ruling: user <date>`, then continue from the ledger's first line.

@@ -1,15 +1,31 @@
 // Child launcher and stream reader for the ship runner.
 // Starts `claude -p` with stream-json output, logs every stdout line, and reads the final result.
 import { spawn } from 'node:child_process';
-import { appendFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { appendFileSync, existsSync, mkdirSync, realpathSync } from 'node:fs';
+import { dirname, isAbsolute, join, relative, sep } from 'node:path';
 import { createInterface } from 'node:readline';
-import { emit, groupAlive, makeDir, setChildPid } from './runner-lib.mjs';
+import { emit, groupAlive, makeDir, runGit, setChildPid } from './runner-lib.mjs';
 
-export function childArgs({ model, effort, mode, resume }) {
+export function childArgs({ model, effort, mode, resume, addDir }) {
   const args = ['-p', '--output-format', 'stream-json', '--verbose', '--model', model, '--effort', effort, '--permission-mode', mode];
   if (resume) args.push('--resume', resume);
+  if (addDir) args.push('--add-dir', addDir);
   return args;
+}
+
+// The local log store (`## Logs` `Location: local`): <main checkout>/.superpowers/ship-logs, the main
+// checkout being the parent of the common git dir. Returned only when it lies outside cwd (a linked
+// worktree), where a child's edits there need --add-dir; otherwise, and outside git, null.
+export function logStore(cwd) {
+  let common;
+  try {
+    common = runGit(cwd, ['rev-parse', '--path-format=absolute', '--git-common-dir']).trim();
+  } catch {
+    return null;
+  }
+  const store = join(dirname(common), '.superpowers', 'ship-logs');
+  const rel = relative(realpathSync(cwd), store);
+  return rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel) ? store : null;
 }
 
 const MARKER = /^RUNNER: (phase-done|waiting|blocked|done)\b ?(.*)$/gm;
@@ -152,7 +168,11 @@ function runOnce({ dir, cwd, key, phase, prompt, model, effort, mode, resume, en
     let idle = null;
     let rateLimited = false;
 
-    const child = spawn(process.env.CLAUDE_BIN || 'claude', childArgs({ model, effort, mode, resume }), {
+    // made now so --add-dir names a folder that exists; the child's first log write fills it
+    let addDir = logStore(cwd);
+    if (addDir) soft('log store not created', () => mkdirSync(addDir, { recursive: true }));
+    if (addDir && !existsSync(addDir)) addDir = null;
+    const child = spawn(process.env.CLAUDE_BIN || 'claude', childArgs({ model, effort, mode, resume, addDir }), {
       cwd,
       // the run dir and the item's key (state.json's `current` while it runs), set last: the child
       // reads its key here instead of deriving it

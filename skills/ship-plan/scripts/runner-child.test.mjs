@@ -1,12 +1,13 @@
 // Tests for the child launcher and stream reader. Run: node --test 'skills/ship-plan/scripts/*.test.mjs'
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readdirSync, readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { acquireLock, alive } from './runner-lib.mjs';
-import { childArgs, endChildren, isEnvError, isLimitError, parseMarker, redact, resumeOrFresh, runChild } from './runner-child.mjs';
+import { childArgs, endChildren, isEnvError, isLimitError, logStore, parseMarker, redact, resumeOrFresh, runChild } from './runner-child.mjs';
 
 process.env.CLAUDE_BIN = join(dirname(fileURLToPath(import.meta.url)), 'fake-claude.mjs');
 
@@ -20,6 +21,37 @@ test('childArgs: resume appended only when given', () => {
   const head = ['-p', '--output-format', 'stream-json', '--verbose', '--model', 'opus', '--effort', 'high', '--permission-mode', 'auto'];
   assert.deepEqual(childArgs({ model: 'opus', effort: 'high', mode: 'auto', resume: null }), head);
   assert.deepEqual(childArgs({ model: 'opus', effort: 'high', mode: 'auto', resume: 's-9' }), [...head, '--resume', 's-9']);
+  assert.deepEqual(childArgs({ model: 'opus', effort: 'high', mode: 'auto', resume: null, addDir: '/m/.superpowers/ship-logs' }), [...head, '--add-dir', '/m/.superpowers/ship-logs']);
+});
+
+// The local log store (`## Logs` `Location: local`) is the main checkout's .superpowers/ship-logs/:
+// a child in a linked worktree gets it as --add-dir, or acceptEdits and dontAsk refuse its writes.
+const gitRepo = () => {
+  const main = realpathSync(fresh());
+  const git = (cwd, ...args) => execFileSync('git', args, { cwd, stdio: 'ignore' });
+  git(main, 'init', '-q', '-b', 'main');
+  git(main, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'init');
+  const wt = join(realpathSync(fresh()), 'wt');
+  git(main, 'worktree', 'add', '-q', wt, '-b', 'side');
+  return { main, wt };
+};
+
+test('logStore: the main checkout store from a linked worktree; null inside the main checkout or outside git', () => {
+  const { main, wt } = gitRepo();
+  assert.equal(logStore(wt), join(main, '.superpowers', 'ship-logs'));
+  assert.equal(logStore(main), null);
+  assert.equal(logStore(fresh()), null);
+});
+
+test('runChild: a child in a linked worktree gets the log store as --add-dir, created', async () => {
+  const { main, wt } = gitRepo();
+  const dir = fresh();
+  const log = join(dir, 'argv.json');
+  const r = await runChild(base(dir, { FAKE_CLAUDE: 'ok:RUNNER: done', FAKE_CLAUDE_LOG: log }, { cwd: wt }));
+  assert.equal(r.ok, true);
+  const store = join(main, '.superpowers', 'ship-logs');
+  assert.deepEqual(JSON.parse(readFileSync(log, 'utf8')).argv.slice(-2), ['--add-dir', store]);
+  assert.ok(existsSync(store));
 });
 
 test('parseMarker: last RUNNER line wins; none -> null', () => {
