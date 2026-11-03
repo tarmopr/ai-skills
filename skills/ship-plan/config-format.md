@@ -316,7 +316,7 @@ is not a model name or whose effort is not one of the five below.
 
 **The hook.** While a ship run's ledger is live (changed in the last 6 hours
 and not `Phase: done`), or a runner run's `.superpowers/ship-runner/*/state.json`
-is (changed in the last 6 hours, `stopped` null), the plugin's `PreToolUse` hook refuses an Agent
+is (changed in the last 6 hours, `stopped` null, and its lock does not name a dead runner), the plugin's `PreToolUse` hook refuses an Agent
 dispatch that passes no `model` or no `effort`, and its message names the
 ledger. Pass both from the role's row.
 

@@ -22,7 +22,7 @@ on the spot, except for a destructive action.
 
 ## 4. Verify, push, PR
 
-1. **REQUIRED SUB-SKILL:** `verify-and-fix`. Run it until it reports `clean` or `clean before merge; N scenarios pending`. Its setup step collects its own questions; those go into `questions.md` unless blocked. Pending scenarios are listed in the ledger as **pending after merge**.
+1. **REQUIRED SUB-SKILL:** `verify-and-fix`, with `--session` among its arguments (it never starts a runner of its own from here). Run it until it reports `clean` or `clean before merge; N scenarios pending`. Its setup step collects its own questions; those go into `questions.md` unless blocked. Pending scenarios are listed in the ledger as **pending after merge**.
    `not clean: <reason>`: never push and never open the PR. A reason the loop can still work on (a gate failure, a review finding) is work: keep going. A reason that needs the user (an unconfirmed draft config, a gate that could not run, no gates, round 5, a fix that still fails) is parked in `questions.md`; when nothing unblocked is left, go to close-out (section 7) with no PR, and ask the batch. Never call `verify-and-fix` again on an unchanged reason.
    **No `origin` remote:** stop here, before the push, and say in the report that no PR can be opened.
 2. **Push:** `git push -u origin <branch>`.
@@ -36,5 +36,5 @@ on the spot, except for a destructive action.
 7. **A red check:** the host's *Read a failed run*.
    - A transient failure listed in `blockers.md`: the host's *Rerun a failed PR check*.
    - **A new transient on the PR:** a test the diff does not touch fails, and the same test passed on the base branch's last run: the host's *Rerun a failed PR check* once, write a `Lesson:`, and add it to `blockers.md` at close-out. A second failure is a gate failure.
-   - Anything else is a gate failure. Back to `verify-and-fix` (with `--comments` once the PR is in review, so only the fix is re-reviewed): fix it with a test first, run the gates, then run a review round unless the fix keeps behaviour. Commit, `git push origin <branch>`, and wait again.
+   - Anything else is a gate failure. Back to `verify-and-fix` (with `--session`, and `--comments` once the PR is in review, so only the fix is re-reviewed): fix it with a test first, run the gates, then run a review round unless the fix keeps behaviour. Commit, `git push origin <branch>`, and wait again.
 8. **Every check green:** section 4R.

@@ -564,7 +564,8 @@ test('start verify <branch> -- <args>: the args reach verify-and-fix', () => {
   assert.match(JSON.parse(readFileSync(log, 'utf8')).stdin, /verify-and-fix skill with the Skill tool, with the arguments "develop --comments"\./);
   const bad = cli(root, ['start', 'verify', 'feat/v', '--', 'a"b']);
   assert.equal(bad.status, 2);
-  assert.match(bad.stderr, /start verify: an argument after -- holds a quote or a control character/);
+  // D3 (review round 2): the message names the double quote, the one quote refused
+  assert.match(bad.stderr, /start verify: an argument after -- holds a double quote or a control character/);
 });
 
 test('a runner error after the lock: blocked runner error event, summary, lock released', () => {

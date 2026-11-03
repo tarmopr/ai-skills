@@ -376,7 +376,7 @@ Nobody is watching. Everything above applies, with these changes:
 
 ## Runner or session
 
-With `## Runner` `Mode: runner`, or the argument `--runner`, unless `printenv SHIP_RUNNER` prints a folder (a runner child), the ship runner runs the phases and this session only watches and relays: read [../ship-plan/runner-session.md](../ship-plan/runner-session.md) and follow it with `start verify <the checked-out branch>`, and when this skill got arguments (its base branch, `--comments`; `--runner` left out), add `-- <those arguments>`, each single-quoted: the runner passes them to its verify-and-fix child. Otherwise ignore this section; the skill runs as above.
+With `## Runner` `Mode: runner`, or the argument `--runner`, unless `printenv SHIP_RUNNER` prints a folder (a runner child) or the argument `--session` was given (ship-plan passes it: this loop then runs inside ship-plan's run, in session mode, whatever `Mode:` says; `--session` is never the base branch), the ship runner runs the phases and this session only watches and relays: read [../ship-plan/runner-session.md](../ship-plan/runner-session.md) and follow it with `start verify <the checked-out branch>`, and when this skill got arguments (its base branch, `--comments`; `--runner` and `--session` left out), add `-- <those arguments>`, each single-quoted: the runner passes them to its verify-and-fix child. Otherwise ignore this section; the skill runs as above.
 
 ## Red flags
 

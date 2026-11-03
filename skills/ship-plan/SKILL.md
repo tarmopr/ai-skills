@@ -373,7 +373,10 @@ applies, with these changes:
 
 ## Runner or session
 
-With `## Runner` `Mode: runner`, or the argument `--runner`, unless `printenv SHIP_RUNNER` prints a folder (a runner child), the ship runner runs the phases and this session only watches and relays: read [runner-session.md](runner-session.md) and follow it with `start plan <path>`. Otherwise ignore this section; the skill runs as above.
+With `## Runner` `Mode: runner`, or the argument `--runner`, unless `printenv SHIP_RUNNER` prints a folder (a runner child) or the argument `--session` was given, the ship runner runs the phases and this session only watches and relays: read [runner-session.md](runner-session.md) and follow it with `start plan <path>`. Otherwise ignore this section; the skill runs as above.
+
+- **`--session`:** another ship skill invoked this one from its own run (ship-issue's I6 and its I0 resume row pass it): run in session mode, as above, whatever `Mode:` says. It changes nothing else: it is never the plan path, the issue key or answers, and a runner child's Runner mode is still decided by `SHIP_RUNNER`.
+- **verify-and-fix from here** (sections 4 and 4R) always gets `--session` among its arguments: it runs inside this run, never as a runner of its own.
 
 ## Red flags
 

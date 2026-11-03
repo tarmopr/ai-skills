@@ -4,6 +4,7 @@
 //   (bypassPermissions only with SHIP_RUNNER_ALLOW_BYPASS=1 in the runner's env; never passed to children)
 //   node runner.mjs start issue <KEY>
 //   node runner.mjs start queue <PARENT> <KEY>,<KEY>… [--deps <KEY>:<DEP>,…]   (<KEY> waits for <DEP>)
+// <PARENT> and <branch>: letters, digits, . _ / # -. A rerun keeps the first start's permission mode.
 //   node runner.mjs start plan <path>          ship-plan from implement
 //   node runner.mjs start verify <branch> [-- <args>]   verify-and-fix alone, on the checked-out
 //                                              branch; <args> (base branch, --comments) passed to it
@@ -11,7 +12,8 @@
 //   node runner.mjs answer <run-dir> <KEY> <file>   stores the answers outside the checkout, in
 //                                              <git dir>/ship-runner/<run>/ (never told to children)
 //   node runner.mjs status <run-dir>
-// Exit: 0 done, 1 runner error, 2 usage error, 3 the run dir's lock is held; 128+n on signal n.
+// Exit: 0 the run ended (see summary), 1 runner error, 2 usage error, 3 the run dir's lock is held;
+// 128+n on signal n.
 import { constants } from 'node:os';
 import { appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
@@ -353,7 +355,7 @@ function parseStart(root, [what, ...a]) {
     // the checked-out one
     const extra = a[1] === '--' ? a.slice(2) : a.length > 1 ? null : [];
     if (!extra) return `start verify: after <branch> only -- <verify-and-fix arguments>`;
-    if (extra.some((x) => /["\x00-\x1f\x7f]/.test(x))) return 'start verify: an argument after -- holds a quote or a control character';
+    if (extra.some((x) => /["\x00-\x1f\x7f]/.test(x))) return 'start verify: an argument after -- holds a double quote or a control character';
     const item = newItem(asKey(a[0], 'verify'));
     try {
       item.from = readFileSync(join(root, verifyLedger(a[0])), 'utf8').replace(/\r?\n$/, '').split(/\r?\n/).length;
@@ -641,7 +643,7 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
       save();
       if (item && ran && state.kind === 'queue' && !restoreCheckout(root, baseInfo.name, state, item, dir)) break;
       if (!item) {
-        // a single issue waits for its answers instead of ending
+        // a non-queue run (issue, plan, verify) waits for its answers instead of ending
         const only = state.items[0];
         if (state.kind !== 'queue' && only.status === 'waiting') {
           while (!answersReady(store, dir, only)) {

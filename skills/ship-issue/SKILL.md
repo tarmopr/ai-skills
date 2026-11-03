@@ -192,11 +192,16 @@ mode.
 
 Check that the plan's `From ship-issue` block matches this ledger, and update
 it (and its commit) if lines were added since I4. Then invoke **ship-plan**
-through the Skill tool, **with the absolute plan file path**, not the issue key:
+through the Skill tool, **with the absolute plan file path**, not the issue key,
+and `--session`:
 
 ```
-ship-plan <checkout>/docs/superpowers/plans/<yyyy-mm-dd>-<KEY-n>-<slug>.md
+ship-plan <checkout>/docs/superpowers/plans/<yyyy-mm-dd>-<KEY-n>-<slug>.md --session
 ```
+
+`--session` keeps ship-plan from starting a runner of its own (its "Runner or
+session" section): this run already is a session-mode run, or a runner child,
+so it never hands over to a new runner midway, whatever `## Runner` `Mode:` says.
 
 Write ship-plan's ledger path into this ledger's first line once it exists.
 An ignored plan exists only in the checkout where it was written and does not
@@ -257,7 +262,7 @@ Queued mode above applies, with these changes:
 
 ## Runner or session
 
-With `## Runner` `Mode: runner`, or the argument `--runner`, unless `printenv SHIP_RUNNER` prints a folder (a runner child), the ship runner runs the phases and this session only watches and relays: read [../ship-plan/runner-session.md](../ship-plan/runner-session.md) and follow it with `start issue <KEY>`. The runner needs that key: an issue key, or the slug of an existing no-issue ledger. A run from a description alone (no key yet, or `Tracker: none` with no ledger yet) runs in session mode. Otherwise ignore this section; the skill runs as above.
+With `## Runner` `Mode: runner`, or the argument `--runner`, unless `printenv SHIP_RUNNER` prints a folder (a runner child), the ship runner runs the phases and this session only watches and relays: read [../ship-plan/runner-session.md](../ship-plan/runner-session.md) and follow it with `start issue <KEY>`. The runner needs that key: an issue key, or the slug of an existing no-issue ledger. A run from a description alone (no key yet, or `Tracker: none` with no ledger yet) runs in session mode, all the way: I6 (and I0's resume row) pass `--session` to ship-plan, so it does not switch to the runner later. Otherwise ignore this section; the skill runs as above.
 
 ## Red flags
 
