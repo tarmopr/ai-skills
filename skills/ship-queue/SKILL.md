@@ -1,7 +1,7 @@
 ---
 name: ship-queue
 description: Use when the user wants every sub-issue of a parent issue shipped with ship-issue, one after another, unsupervised — "ship all sub-issues of PROJ-123", "queue these issues", "run ship-issue for each sub-issue", "ship the whole epic in order". Logs what could not finish, moves on, and ends with a summary of what the user must do next. Also use to resume such a queue after a context compaction.
-argument-hint: '<parent key> [show order] [keys…] [KEY: answers…]'
+argument-hint: '<parent key> [show order] [keys…] [KEY: answers…] [--runner]'
 allowed-tools:
   - Bash(git status)
   - Bash(git status --porcelain)
@@ -130,7 +130,7 @@ that would stop every sub-issue is found now.
 7. **Whose sub-issue it is.** A sub-issue assigned to someone other than you, or with an open PR (the host's *Find open PRs*, by search for its key) whose author is not you: `blocked: assigned to <name>` (or `PR <url> by <name>`), and it is not run: write its `Result:` line at once, with the next action "reassign it to you, then `/ship-queue <parent>`". No comment on it: it is someone else's issue, and the summary names it. Unassigned or assigned to you: it runs.
 8. **What every sub-issue would need from the config.** Every sub-issue branches from `origin/<base>`, so anything ship-issue's I3 would ask for and commit on its branch would be asked again by every sub-issue. Check the config on `<base>` for what ship-issue's I3 step 2 lists as config: `## Slack` (config, else `.claude/ship-plan.local.md`), the tracker section, an unknown config section. Any of them missing: stop with the list, and say to put it on `<base>` first.
 9. **Permissions,** in a permission mode that prompts: list the exact allow lines (`Bash(<command>)`) for every gate and Prerequisites command, as ship-issue's I3 does. They go in the user's settings, so they are asked once, here.
-10. **Merges that deploy:** when `## CI` `Merge deploys to:` names an environment that `## Allowed` `Merge that deploys to:` does not cover, say so now, with the exact line ship-plan section 5, step 3 would propose (none for a production-like name). The queue widens nothing. Without that line, each such sub-issue ends `awaiting merge`, and its dependents wait.
+10. **Merges that deploy:** when `## CI` `Merge deploys to:` names an environment that `## Allowed` `Merge that deploys to:` does not cover, say so now, with the exact line ship-plan section 5, step 3 ([phase-merge.md](../ship-plan/phase-merge.md)) would propose (none for a production-like name). The queue widens nothing. Without that line, each such sub-issue ends `awaiting merge`, and its dependents wait.
 11. **Order** (Q1).
 12. **Ask what is left in one batch,** with `AskUserQuestion` (at most 4 questions, the recommended option first, marked "(Recommended)"). This and `show order` are the only moments the queue asks. Each answer is an `Asked:` line and a `Ruling: user <date>`. Nothing left to ask: ask nothing.
 
@@ -273,6 +273,12 @@ handoff of its own; the queue writes one for the whole queue.
     - `waits for <KEY>`, `not started`: as new.
   - **Answers for a key with no pending question** (no `Waiting: batch` and no `Asked: … — pending` in its ledgers: already done before the queue, not in the queue, not a sub-issue): report them in the summary as not used, and never pass them to ship-issue: a run that is done is never resumed with answers it did not ask for.
   - Then Q3 and Q4 as usual.
+
+## Runner or session
+
+With `## Runner` `Mode: runner`, or a `--runner` flag (below), the ship runner runs the phases and this session only watches and relays: read [../ship-plan/runner-session.md](../ship-plan/runner-session.md) and follow it with `start queue …`, after Q0 and Q1 have computed the order and dependencies. Otherwise ignore this section; the skill runs as above.
+
+- **`--runner` is a flag only as a whole word at the start or the end of the argument** (`BILL-800 --runner`): read the argument without it. Anywhere else, or inside a word (in a `<KEY>: <answers>` part), it is part of the text and selects nothing. With no flag the argument is read exactly as if this section did not exist. It is never the parent key, a sub-issue key, `show order` or answers.
 
 ## Red flags
 

@@ -247,12 +247,49 @@ current checkout is busy. Dependencies come from `## Prerequisites`.
 
 ### `## Queue`
 
-Read by `ship-queue` only. It runs each sub-issue in a child session
-(`claude -p`), which nobody watches and which cannot answer a permission prompt.
+Read by `ship-queue`, which runs each sub-issue in a child session
+(`claude -p`) that nobody watches and that cannot answer a permission prompt,
+and by every session that watches a runner run (`## Runner`), which passes
+`Child permission mode:` to the runner.
 
 | Field | Meaning | Default |
 |---|---|---|
 | `Child permission mode:` | The `--permission-mode` of each child session: `auto`, `acceptEdits`, `dontAsk` or `bypassPermissions` | `auto` |
+
+For runner runs (`## Runner`), the runner never reads this field. The watching
+session passes its value to `runner.mjs start --permission-mode <m>` on a
+run's first start only: a rerun passes none and keeps the first start's mode,
+which the runner records in the git dir; a wider one is refused
+([runner-session.md](runner-session.md), Start). A change to this field
+therefore reaches only new runs. `bypassPermissions` is used by the runner
+only when the user started the session with `SHIP_RUNNER_ALLOW_BYPASS=1` in
+its environment (children never inherit it); otherwise it falls back to
+`auto`, which the run then keeps.
+
+### `## Runner`
+
+`Mode:` is read by the skills (their "Runner or session" section); every
+other field by the runner (`skills/ship-plan/scripts/runner.mjs`), which runs
+each ship phase as a `claude -p` child. Opt-in: the default is the
+single-session path. The runner also reads `## Repo` `Base branch:` (else
+origin/HEAD's branch, else `main`) and the `## Models` rows its children use.
+A value it cannot use (a `Phase:` row it has no phase for, a model with a
+character no model name has (it checks only letters, digits, `.`, `_`, `-`,
+`[` and `]`, not that the model exists), an effort it does not know, a field
+that is not a number) is ignored and named in
+a `config:` progress event at start; the base branch and the models in use are
+events too. Around every child the runner hashes the files a child loads
+(`.claude/settings*.json`, `.mcp.json`, `.claude/hooks/`, `agents/`,
+`commands/`, `skills/`, `CLAUDE.md`, `CLAUDE.local.md`, hook scripts): a change
+during a child is a warning, an event the watching session pushes to the phone
+and a line in the summary, never a stop ([runner-session.md](runner-session.md),
+Watch).
+
+| Field | Meaning | Default |
+|---|---|---|
+| `Mode:` | `session` runs the phases in the watching session; `runner` runs them as runner children. The flags `--runner` and `--session` choose for one run (each skill's "Runner or session"; ship-queue takes only `--runner`) | `session` |
+| `Implement chunk:` | Plan tasks one implement child takes before the next child continues | `5` |
+| `Child idle timeout:` | Minutes a child may write nothing to its output stream before the runner kills it and its process group; the item ends `blocked` `child idle <n> min` | `60` |
 
 ### `## Models`
 
@@ -278,9 +315,19 @@ start runs on Opus at high effort.
 | `Review round` | `verify-and-fix` section 4: every other review agent, every round | `opus`, `high` |
 | `Research` | `ship-issue`, `ship-plan`, `verify-and-fix`: an `Explore` agent the session sends to read code or logs | `sonnet`, `medium` |
 | `Queue run` | `ship-queue` Q2: each sub-issue's child session | `opus`, `high` |
+| `Phase: implement` | Runner: the implement child (plan tasks, in chunks) | `sonnet`, `high` |
+| `Phase: verify` | Runner: the verify child | `opus`, `high` |
+| `Phase: merge` | Runner: the merge child | `sonnet`, `high` |
+| `Phase: close` | Runner: the close child | `sonnet`, `medium` |
+
+The runner's spec and plan children use the `Spec stage` and `Plan stage` rows.
+It does not use `Spec stage (small)`: its spec child always takes `Spec stage`.
+It matches these six roles case-insensitively, and ignores a row whose model
+is not a model name or whose effort is not one of the five below.
 
 **The hook.** While a ship run's ledger is live (changed in the last 6 hours
-and not `Phase: done`), the plugin's `PreToolUse` hook refuses an Agent
+and not `Phase: done`), or a runner run's `.superpowers/ship-runner/*/state.json`
+is (changed in the last 6 hours, `stopped` null, and its lock does not name a dead runner), the plugin's `PreToolUse` hook refuses an Agent
 dispatch that passes no `model` or no `effort`, and its message names the
 ledger. Pass both from the role's row.
 

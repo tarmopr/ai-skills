@@ -1,9 +1,11 @@
 // Tests for the Agent-dispatch hook. Run: node --test hooks/*.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { decide, liveShipLedgers } from './agent-dispatch.mjs';
 
 const now = Date.now();
@@ -148,4 +150,51 @@ test('deny reason gives the absolute defaults path and what an unrelated session
   assert.match(r, /\/skills\/ship-plan\/config-format\.md/);
   assert.doesNotMatch(r, /defaults: ship-plan\/config-format\.md/);
   assert.match(r, /not part of that run/);
+});
+
+function runnerState(root, id, state, ageMs = 0) {
+  const dir = join(root, '.superpowers', 'ship-runner', id);
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, 'state.json');
+  writeFileSync(file, JSON.stringify(state));
+  const t = (now - ageMs) / 1000;
+  utimesSync(file, t, t);
+  return file;
+}
+
+test('live runner state counts as a live ship run', () => {
+  const dir = fresh();
+  const file = runnerState(dir, 'issue-X', { kind: 'issue', id: 'X', current: 'X', stopped: null });
+  const live = liveShipLedgers([dir], now);
+  assert.deepEqual(live, [file]);
+  assert.match(decide({ model: 'sonnet' }, live), /Missing: effort/);
+});
+
+test('runner state stopped, older than 6 h or unreadable: allow', () => {
+  const dir = fresh();
+  runnerState(dir, 'issue-A', { stopped: '2026-11-02T10:00:00Z' });
+  runnerState(dir, 'issue-B', { stopped: null }, 6 * 3600e3 + 1000);
+  const bad = join(dir, '.superpowers', 'ship-runner', 'issue-C');
+  mkdirSync(bad, { recursive: true });
+  writeFileSync(join(bad, 'state.json'), '{not json');
+  assert.deepEqual(liveShipLedgers([dir], now), []);
+});
+
+// review round 1, C8: a runner that died without writing `stopped` leaves no live run behind
+test('runner state with a lock: live only while the lock\'s runner pid is alive; no lock: the state decides', () => {
+  const dir = fresh();
+  const deadRun = runnerState(dir, 'issue-D', { stopped: null });
+  const dead = spawnSync(process.execPath, ['-e', '']).pid;
+  writeFileSync(join(dirname(deadRun), 'lock'), JSON.stringify({ runner: dead, child: null }));
+  const liveRun = runnerState(dir, 'issue-L', { stopped: null });
+  writeFileSync(join(dirname(liveRun), 'lock'), JSON.stringify({ runner: process.pid, child: null }));
+  const noLock = runnerState(dir, 'issue-N', { stopped: null });
+  assert.deepEqual(liveShipLedgers([dir], now).sort(), [liveRun, noLock].sort());
+});
+
+test('hook: an internal error allows the call and says why on stderr', () => {
+  const r = spawnSync(process.execPath, [join(dirname(fileURLToPath(import.meta.url)), 'agent-dispatch.mjs')], { input: '{not json', encoding: 'utf8' });
+  assert.equal(r.status, 0);
+  assert.equal(r.stdout, '');
+  assert.match(r.stderr, /agent-dispatch: .*JSON/);
 });

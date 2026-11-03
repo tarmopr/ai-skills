@@ -2,6 +2,10 @@
 
 Read when the current checkout is dirty or on another branch.
 
+**In Runner mode** (ship-issue's "Runner mode (ship-runner)" section) this
+file creates nothing: where a row below says "New worktree", write
+`Blocked: needs a new worktree — <the row's reason>` and end `RUNNER: blocked`.
+
 ship-plan must run where the repo's untracked setup exists: installed
 dependencies and the files the config's `## Worktree` `Copy:` lists.
 

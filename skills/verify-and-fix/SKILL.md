@@ -1,8 +1,10 @@
 ---
 name: verify-and-fix
 description: Use when a branch or PR on GitHub, GitHub Enterprise or Azure DevOps must be brought to merge-ready without supervision, or when asked to "verify", "review and fix", "get CI green", "triage the PR comments" or "address the reviewer comments", in a repo configured for ship-plan (.claude/ship-plan.md). Also use to resume such a loop after a context compaction.
-argument-hint: '[base branch name, default the config''s Base branch] [--comments]'
+argument-hint: '[base branch name, default the config''s Base branch] [--comments] [--runner | --session]'
 allowed-tools:
+  - Bash(printenv SHIP_RUNNER)
+  - Bash(printenv SHIP_RUNNER_KEY)
   - Bash(git fetch origin *)
   - Bash(git status *)
   - Bash(git diff *)
@@ -108,7 +110,7 @@ regressions: a later round often finds bugs an earlier round's fixes introduced.
 
 - **Host and tracker:** resolve `Host:` and `Tracker:` as [config-format.md](../ship-plan/config-format.md) says (`Host:` from the `origin` remote when absent; `Tracker:` from `## Jira`, `## Linear` or `## GitHub Issues` when absent). Then read `../ship-plan/hosts/<host>.md` (`github.md` or `azure-devops.md`). A reference below to an operation of the host names the section of that name in that file; one of the tracker names the section of that name in `../ship-plan/trackers/<tracker>.md` (`jira.md`, `linear.md` or `github.md`), read where the reference says.
 - **Ledger:** `mkdir -p .superpowers/verify-and-fix/<branch>` (here and below, every `/` in the branch name written as `-`), then `ledger.md` there. If `.superpowers/` is not listed in `.git/info/exclude`, append it there; never edit the repo's `.gitignore`. One line per round: the gate results, the findings with their grades, the fixes with their commits, and every `Ruling:` you made. After a context compaction, trust the ledger and `git log` over memory.
-- **Base:** `<base>` is a branch name: `$ARGUMENTS`, else the config's `Base branch:`, else the repo's default branch from the host's *Default branch*. Run `git fetch origin <base> --quiet` first; every diff below compares `origin/<base>...HEAD`. If `git rev-parse --verify --quiet origin/HEAD` prints nothing (common in a fresh clone), run `git remote set-head origin --auto`: the `security-review` skill diffs against `origin/HEAD` and fails without it. It changes local git metadata only.
+- **Base:** `<base>` is a branch name: the first word of `$ARGUMENTS` that does not start with `--` (never `--comments`, `--session` or `--runner`), else the config's `Base branch:`, else the repo's default branch from the host's *Default branch*. Run `git fetch origin <base> --quiet` first; every diff below compares `origin/<base>...HEAD`. If `git rev-parse --verify --quiet origin/HEAD` prints nothing (common in a fresh clone), run `git remote set-head origin --auto`: the `security-review` skill diffs against `origin/HEAD` and fails without it. It changes local git metadata only.
 - **Config:**
   - Read `.claude/ship-plan.md` by its reading rules: headings match case-insensitively; a heading that matches no known section is **unknown**. Its rows never run, and the report names it.
   - Then read the repo override files for this skill, `.claude/ship-plan/verify-and-fix/<file>.md`, as each shared file is read ([Repo override files](../ship-plan/config-format.md#repo-override-files)).
@@ -353,6 +355,29 @@ target file (`.claude/ship-plan/blockers.md` for a blocker). ship-plan's section
 Run on its own, leave these edits uncommitted and say so.
 
 A blocker you got past but did not write down will stop the next run too.
+
+## Runner mode (ship-runner)
+
+**A run is in Runner mode** when the ship runner started it as a child
+(`printenv SHIP_RUNNER` prints the runner's folder) and that folder's
+`state.json` has `kind` `verify` and a `current` field equal to what
+`printenv SHIP_RUNNER_KEY` prints: the item key the runner gave this child.
+Take it from there; never derive it from the branch's name. No
+`SHIP_RUNNER_KEY`, no Runner mode. Under `ship-plan` it never is: the
+runner's `kind` is then `issue`, `queue` or `plan`. The runner's prompt names phase `verify`, the only one.
+Nobody is watching. Everything above applies, with these changes:
+
+- **Ask nothing: never `AskUserQuestion`, and never wait for a reply,** at every point this skill would ask (section 1's one message, the stops of section 6). Write each question to this skill's ledger as `Asked: <the question, its options, the recommendation first> — pending`. With an open PR, also post them as one comment (the host's *PR comment*), numbered, ending with the answer line **"Answer in the session that started the run."** Without a PR, the ledger only. An outward-facing or destructive action is such a question, with its exact command; never run it. Carry on with everything the answers do not block (section 6).
+- **Answers** come back in a later runner prompt, after "The user's answers, copied exactly:". Rewrite each answered `Asked: … — pending` line in place with its answer, never as a second line: the runner counts every line that still ends in `— pending`.
+- **Progress lines:** at each milestone write `Progress: <text>` to the ledger: `review round <n>` (with each `Reviewed:` line), `CI <green|red>` (each time the PR's checks are read).
+- **Blocked:** when the loop ends `not clean` and no question waits for the user, write `Blocked: <reason>` to the ledger, the reason as the status line gives it.
+- **The `Done:` line** is still the ledger's last line, every time (section 7).
+- **Never touch what the runner guards:** never write an `answers-*` file (answers come only from the user, through the watching session), and never change `.claude/settings.json`, `.claude/settings.local.json`, `.mcp.json`, anything under `.claude/hooks/`, `.claude/agents/`, `.claude/commands/` or `.claude/skills/`, a `CLAUDE.md` or `CLAUDE.local.md`, or a script a settings hook names: the runner compares them before and after every child, and a change sends the user a warning to review it (the run goes on, and later children load the change). When the work itself needs one of them changed, write `Blocked: <the change needed>` instead, for the user to make and review.
+- **The final reply ends with exactly one line** `RUNNER: <phase-done|waiting|blocked|done> <text>`, and nothing after it: `waiting` when an `Asked: … — pending` line waits for the user; `blocked` with the reason of the `Blocked:` line; otherwise `done <the status line>`.
+
+## Runner or session
+
+With `## Runner` `Mode: runner`, or the argument `--runner`, unless `printenv SHIP_RUNNER` prints a folder (a runner child) or the argument `--session` was given (ship-plan passes it: this loop then runs inside ship-plan's run, in session mode, whatever `Mode:` says; `--session` is never the base branch; here either flag may stand anywhere among the arguments, which are only a branch and flags), the ship runner runs the phases and this session only watches and relays: read [../ship-plan/runner-session.md](../ship-plan/runner-session.md) and follow it with `start verify <the checked-out branch>`, and when this skill got arguments (its base branch, `--comments`; `--runner` and `--session` left out), add `-- <those arguments>`, each single-quoted: the runner passes them to its verify-and-fix child. Otherwise ignore this section; the skill runs as above.
 
 ## Red flags
 

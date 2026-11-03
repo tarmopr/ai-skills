@@ -29,6 +29,7 @@ files' shape. These scenarios pin behaviour.
 | S16 | [S16-github-issues.md](S16-github-issues.md) | GitHub with GitHub Issues: the tracker question, labels as status, no closing keyword, close only when Done means is met |
 | S17 | [S17-ship-queue.md](S17-ship-queue.md) | Four runs: ship-queue order, the loop and its outcomes, queued mode in ship-issue and ship-plan, resume with answers |
 | S18 | [S18-token-wave-1.md](S18-token-wave-1.md) | Four runs: the issue's size picks the Spec stage's model, review rounds sized and scoped to the diff, what the session reads itself, ship-queue's child sessions |
+| S19 | [S19-ship-runner.md](S19-ship-runner.md) | Four runs: the runner's start and numbered Monitor commands, a `waiting` event and the answer, a queue with a middle item waiting overnight, re-arming after a timeout at event 41, `Mode: session` never using the runner |
 
 ## How to run one
 
