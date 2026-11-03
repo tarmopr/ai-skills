@@ -4,7 +4,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { alive } from './runner-lib.mjs';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { closeSync, constants, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { open } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -854,6 +855,10 @@ test('a child that changes .claude/settings.local.json, .claude/settings.json or
     assert.ok(events(dir).includes(warned('A-1', file)), events(dir));
     assert.doesNotMatch(events(dir), / blocked /);
     assert.ok(summaryLine(dir).endsWith(` P-1 - summary 2 done; cost $0.84; guarded files changed: A-1 (${file})`), summaryLine(dir));
+    // round 5: status names them too, in the item's reason
+    const out = cli(root, ['status', dir]).stdout;
+    assert.ok(out.split('\n').some((l) => /^A-1 +done +/.test(l) && l.includes(`guarded files changed: ${file}`)), out);
+    assert.doesNotMatch(out, /^A-2 .*guarded/m);
   }
 });
 
@@ -1398,6 +1403,38 @@ test('a rerun never widens the first start\'s permission mode: wider exit 2, non
   const r = start(['--permission-mode', 'auto'], ['M-1', 'M-2', 'M-3', 'M-4']);
   assert.equal(r.status, 2);
   assert.match(r.stderr, /wider than this run's acceptEdits/);
+});
+
+// round 5: start() reads the mode record before it takes the lock, and the locked run reads it
+// again. A record made in between (a first start of the same run that has ended) holds: the
+// children never run wider than it.
+test('a mode record made between the start\'s check and its lock: the children run no wider than it', async () => {
+  const root = repo();
+  atVerify(root, 'M-1');
+  const log = join(root, 'm.json');
+  const dir = runDir(root, 'issue', 'M-1');
+  // the config is a FIFO: the runner stops reading it, after its check of the record, before its lock
+  const fifo = join(root, '.claude', 'ship-plan.md');
+  writeFileSync(join(root, '.git', 'info', 'exclude'), '.claude/\n');
+  mkdirSync(dirname(fifo));
+  execFileSync('mkfifo', [fifo]);
+  const runner = spawn(process.execPath, [RUNNER, 'start', 'issue', 'M-1'], { cwd: root, env: { ...ENV, ...ships('M-1'), FAKE_CLAUDE_LOG: log }, stdio: 'ignore' });
+  const exited = new Promise((r) => runner.on('exit', (c) => r(c)));
+  const early = exited.then((c) => {
+    closeSync(openSync(fifo, constants.O_RDONLY | constants.O_NONBLOCK)); // frees the open below
+    throw new Error(`the runner exited (${c}) before it read the config`);
+  });
+  const w = await Promise.race([open(fifo, 'w'), early]); // once the runner reads it
+  early.catch(() => {});
+  writeState(dir, { kind: 'issue', id: 'M-1', items: [{ key: 'M-1', phase: null, status: 'queued', reason: '', deps: [], sessions: [], answersFile: null }], current: null, stopped: null });
+  mkdirSync(dirname(recordAt(root, dir)), { recursive: true });
+  writeFileSync(recordAt(root, dir), 'dontAsk\n');
+  await w.close();
+  assert.equal(await exited, 0);
+  const seen = JSON.parse(readFileSync(log, 'utf8'));
+  assert.equal(seen.argv[seen.argv.indexOf('--permission-mode') + 1], 'dontAsk');
+  assert.equal(readState(dir).mode, 'dontAsk');
+  assert.match(events(dir), /child permission mode: dontAsk \(first start\)$/m);
 });
 
 // X6: a run id goes into shell commands the watching session writes

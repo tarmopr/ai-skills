@@ -207,4 +207,7 @@ test('runGit: a grafts file a child wrote is ignored', () => {
   const head = g('rev-parse', 'HEAD').trim();
   writeFileSync(join(root, '.git', 'info', 'grafts'), `${head}\n`); // HEAD made parentless
   assert.equal(runGit(root, ['rev-list', '--count', 'HEAD']).trim(), '2');
+  // round 5: GIT_GRAFT_FILE set makes git print its grafts-deprecated hint; a failure's message
+  // (git's stderr, quoted in events) holds only git's own error
+  assert.throws(() => runGit(root, ['rev-parse', '--verify', 'HEAD~9']), (e) => /fatal:/.test(String(e.stderr)) && !/hint:/.test(String(e.stderr)));
 });

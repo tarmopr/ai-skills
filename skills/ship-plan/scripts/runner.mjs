@@ -4,10 +4,10 @@
 //   (bypassPermissions only with SHIP_RUNNER_ALLOW_BYPASS=1 in the runner's env; never passed to children)
 //   node runner.mjs start issue <KEY>
 //   node runner.mjs start queue <PARENT> <KEY>,<KEY>… [--deps <KEY>:<DEP>,…]   (<KEY> waits for <DEP>)
-// <PARENT> and <branch>: letters, digits, . _ / # -. A rerun keeps the first start's permission mode.
 //   node runner.mjs start plan <path>          ship-plan from implement
 //   node runner.mjs start verify <branch> [-- <args>]   verify-and-fix alone, on the checked-out
 //                                              branch; <args> (base branch, --comments) passed to it
+// <PARENT> and <branch>: letters, digits, . _ / # -. A rerun keeps the first start's permission mode.
 // Every start but verify needs a clean checkout on the base branch (.superpowers/ aside).
 //   node runner.mjs answer <run-dir> <KEY> <file>   stores the answers outside the checkout, in
 //                                              <git dir>/ship-runner/answers/<run>/ (never told to children)
@@ -599,7 +599,7 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
       // so does one that ended any other way (blocked, cut off, …): an earlier closing Done: must
       // not end it again with no child. Not one with a question still pending after the old
       // snapshot (a child that asked, then was cut off): its questions are in the lines after it.
-      // (`waiting` and a held answersFile, K1, imply such a question; kept as cheap guards.)
+      // (`waiting` and a held answersFile, K1, imply such a question; kept as cheap checks.)
       if (state.kind === 'verify') {
         for (const i of state.items) {
           if (i.status === 'done') Object.assign(i, { status: 'queued', reason: '', phase: null, answersUnused: undefined });
@@ -651,6 +651,11 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
       kept = mode;
       makeDir(dirname(modeFile(root, dir)));
       writeFileSync(modeFile(root, dir), `${kept}\n`);
+    } else if (WIDTH[mode] > WIDTH[kept]) {
+      // a record made after start() checked it (a first start of this run that ended in between):
+      // the children never run wider than it
+      mode = kept;
+      modeFrom = 'first start';
     }
     state.mode = kept;
     const save = () => {
@@ -851,6 +856,7 @@ function status([dirArg]) {
       i.reason,
       received(i) ? 'answers received' : '',
       i.answersUnused ? `answers not used (${i.answersUnused})` : '',
+      i.guardedChanged?.length ? `guarded files changed: ${listed(i.guardedChanged)}` : '',
     ].filter(Boolean).join('; ');
     rows.push([i.key, i.status, i.phase ?? '-', reason, `$${costOf(i).toFixed(2)}`, String(minutesOf(i))].map(clean));
   }

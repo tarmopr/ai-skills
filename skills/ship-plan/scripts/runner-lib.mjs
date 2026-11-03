@@ -9,10 +9,11 @@ import { dirname, join, resolve } from 'node:path';
 // config, or write a hook: the runner's own git (status, switch) would run that code. Both are
 // switched off here, and SHIP_RUNNER_ALLOW_BYPASS is never in git's env, so what git runs anyway
 // (a filter, an alias) never gets it. `refs/replace/` objects and an `info/grafts` file a child
-// added are ignored (GIT_NO_REPLACE_OBJECTS, GIT_GRAFT_FILE): a plan read from a run branch is that
-// commit's own. Returns stdout; a failure throws as execFileSync does (git's words in e.stderr);
-// { encoding: 'buffer' } returns bytes.
-export const SAFE_GIT = ['-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=/dev/null'];
+// added are ignored (GIT_NO_REPLACE_OBJECTS, GIT_GRAFT_FILE), as defence in depth: a plan read from
+// a run branch is that commit's own. git's hint that grafts are deprecated is off, so git's words in
+// a failure are its error alone. Returns stdout; a failure throws as execFileSync does (git's words
+// in e.stderr); { encoding: 'buffer' } returns bytes.
+export const SAFE_GIT = ['-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=/dev/null', '-c', 'advice.graftFileDeprecated=false'];
 export function runGit(cwd, args, { encoding = 'utf8' } = {}) {
   const env = { ...process.env, GIT_NO_REPLACE_OBJECTS: '1', GIT_GRAFT_FILE: '/dev/null' };
   delete env.SHIP_RUNNER_ALLOW_BYPASS;

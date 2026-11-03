@@ -135,9 +135,9 @@ function readLedgers(root, key, opts = {}) {
   return {
     outcome,
     finishedBy,
-    // ship-plan writes `Branch: <name>` on a body line of its own (the last one wins); ship-issue on
-    // its first line
-    branch: (plan ?? []).slice(1).map((l) => /^Branch: (\S+)\s*$/.exec(l)?.[1]).filter(Boolean).at(-1) || planFields.Branch || issueFields.Branch || null,
+    // ship-plan writes `Branch: <name>` on a body line of its own (the last one wins; its first word,
+    // backticks stripped); ship-issue on its first line
+    branch: (plan ?? []).slice(1).map((l) => /^Branch:\s*`?([^\s`]+)/.exec(l)?.[1]).filter(Boolean).at(-1) || planFields.Branch || issueFields.Branch || null,
     phase: unknown ? 'unknown' : phase,
     unknown,
     waiting: Boolean(batch) || pending > 0,
@@ -318,8 +318,9 @@ export function tailProgress(root, key, onLine, intervalMs = 5000, opts = {}, on
 
 // What the next child loads from the checkout (permission rules, hooks, MCP servers, agents,
 // commands, skills, memory files): a child that changes one could widen what every later child may
-// do, so a change during a child is reported (runIssue: a warning, never a stop). The run's own files under .claude/ (ship-plan.md, ship-plan/, ship-issue/) are written by
-// children by design and never guarded.
+// do, so a change during a child is reported (runIssue: a warning, never a stop). The run's own
+// files under .claude/ (ship-plan.md, ship-plan/, ship-issue/) are written by children by design
+// and never guarded.
 export const GUARDED_FILES = [
   '.claude/settings.json', '.claude/settings.local.json', '.mcp.json',
   'CLAUDE.md', 'CLAUDE.local.md', '.claude/CLAUDE.md', '.claude/CLAUDE.local.md',
@@ -447,7 +448,8 @@ const plural = (n) => `${n} question${n === 1 ? '' : 's'}`;
 
 // Run the issue's phases until it is done, waiting, blocked or cut off.
 // ctx: { root, dir, models: {[row]: {model, effort}}, mode, env, skill = 'ship-issue',
-//        args = item.key, chunkSize = 5, tailMs = 5000, idleMs?, ledgers?: LedgerOpts, save?(item) }.
+//        args = item.key, chunkSize = 5, tailMs = 5000, idleMs?, ledgers?: LedgerOpts, save?(item),
+//        beforeEnd?(item), answersDir? }.
 // A child that fails on a usage limit cuts the item off (the run stops); any other child failure
 // blocks it with the error's first 300 characters. ctx.stop is set (and the event ends "; run
 // stopped") when no later child should start: a failure of the environment (no claude, an API or

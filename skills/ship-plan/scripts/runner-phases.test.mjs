@@ -617,11 +617,14 @@ test('runIssue: a child that changes guarded files -> a progress event names the
 // (SKILL.md "The ledger", phase-implement.md section 1), never on the first line. A `start plan`
 // run (no ship-issue ledger) found no branch, so a plan committed only on that branch was "not found".
 test('runIssue, a plan run: the plan only on the run branch, named by the ledger\'s Branch: body line -> read from it', async () => {
-  const root = planOnBranch();
-  rmSync(join(root, ISSUE));
-  writeFileSync(join(root, PLAN_LEDGER), `${planFirst('2')}\nBranch: feat/bill-7\nProgress: task 1 done\n`);
-  const log = join(root, 'fake.json');
-  const ledgers = { ledger: PLAN_LEDGER, planDoc: 'docs/plan.md' };
-  await runIssue(ctxFor(root, { FAKE_CLAUDE: 'ok:RUNNER: phase-done', FAKE_CLAUDE_LOG: log }, { chunkSize: 1, ledgers }), item());
-  assert.match(JSON.parse(readFileSync(log, 'utf8')).stdin, /plan tasks 2–2\.$/);
+  // round 5: the line's first word, backticks stripped (`Branch: \`feat/x\` (from main)`)
+  for (const line of ['Branch: feat/bill-7', 'Branch: `feat/bill-7` (from main)']) {
+    const root = planOnBranch();
+    rmSync(join(root, ISSUE));
+    writeFileSync(join(root, PLAN_LEDGER), `${planFirst('2')}\n${line}\nProgress: task 1 done\n`);
+    const log = join(root, 'fake.json');
+    const ledgers = { ledger: PLAN_LEDGER, planDoc: 'docs/plan.md' };
+    await runIssue(ctxFor(root, { FAKE_CLAUDE: 'ok:RUNNER: phase-done', FAKE_CLAUDE_LOG: log }, { chunkSize: 1, ledgers }), item());
+    assert.match(JSON.parse(readFileSync(log, 'utf8')).stdin, /plan tasks 2–2\.$/, line);
+  }
 });
