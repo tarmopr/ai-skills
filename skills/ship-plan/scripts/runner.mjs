@@ -624,20 +624,21 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
       }
     }
     // origin/<base> as it is now, before any child of this start, and the tips of each item's run
-    // branch (its ledgers' Branch:, local and on origin): the commits a guarded change may come
-    // from (K2, K4; a child switches to either by design). Never fetched by the runner: a child
-    // controls the git config a fetch would run with. An upstream change after this is a stop; the
-    // rerun records afresh.
-    const commitOf = (ref) => {
+    // branch (its ledgers' Branch:, local and on origin), each with its merge-base with that base:
+    // the commits a guarded change may come from (K2, K4; a child switches to either by design).
+    // A tip vouches only for its own item, and only for a path its branch left as it forked (the
+    // guard checks that). Never fetched by the runner: a child controls the git config a fetch
+    // would run with. An upstream change after this is a stop; the rerun records afresh.
+    const commitOf = (...args) => {
       try {
-        return git(root, 'rev-parse', '--verify', '-q', `${ref}^{commit}`) || null;
+        return git(root, ...args) || null;
       } catch {
-        return null; // no such ref: nothing recorded for it
+        return null; // no such ref, or no common commit: nothing recorded for it
       }
     };
     const refName = (b) => /^[A-Za-z0-9._/#-]+$/.test(b) && !b.startsWith('-') && !b.includes('..');
-    const recordedBase = refName(baseInfo.name) ? commitOf(`refs/remotes/origin/${baseInfo.name}`) : null;
-    const tips = [];
+    const recordedBase = refName(baseInfo.name) ? commitOf('rev-parse', '--verify', '-q', `refs/remotes/origin/${baseInfo.name}^{commit}`) : null;
+    const tipsOf = {}; // item key -> [{ tip, fork }]
     for (const i of state.items) {
       let b = null;
       try {
@@ -645,9 +646,12 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
       } catch {
         // a ledger that cannot be read: no branch recorded (the item's own run reports it)
       }
-      if (!b || !refName(b)) continue;
-      for (const c of [commitOf(`refs/heads/${b}`), commitOf(`refs/remotes/origin/${b}`)]) {
-        if (c && c !== recordedBase && !tips.includes(c)) tips.push(c);
+      if (!recordedBase || !b || !refName(b)) continue;
+      const tips = (tipsOf[i.key] = []);
+      for (const ref of [`refs/heads/${b}`, `refs/remotes/origin/${b}`]) {
+        const tip = commitOf('rev-parse', '--verify', '-q', `${ref}^{commit}`);
+        const fork = tip && commitOf('merge-base', tip, recordedBase);
+        if (tip && fork && tip !== recordedBase && !tips.some((t) => t.tip === tip)) tips.push({ tip, fork });
       }
     }
     // A child window left open by a runner that was stopped (a signal, a kill): what that child
@@ -689,7 +693,7 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
 
     const base = {
       root, dir, models: cfg.models, mode, env: {}, chunkSize: cfg.chunkSize, idleMs: cfg.idleMinutes * 60000,
-      skill: run.skill, args: run.args, save, answersDir: store, base: recordedBase, tips,
+      skill: run.skill, args: run.args, save, answersDir: store, base: recordedBase,
     };
     const pollMs = Number(process.env.SHIP_RUNNER_POLL_MS) || 30000;
     let ran = false; // a queue item has run in this start
@@ -739,7 +743,7 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
       save();
       // closed once the item's outcome is known, before its event (runIssue's end): an `answer`
       // right after a `waiting` event finds no open window
-      const ctx = { ...base, ledgers, beforeEnd: () => { window[1] ??= Date.now(); } };
+      const ctx = { ...base, tips: tipsOf[item.key] ?? [], ledgers, beforeEnd: () => { window[1] ??= Date.now(); } };
       current = item;
       try {
         await runIssue(ctx, item);

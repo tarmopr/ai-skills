@@ -564,7 +564,8 @@ function hashAt(root, commit, rel) {
 
 // What the guard takes before a child: the guarded hashes, the git status of the guarded paths
 // (null when git cannot tell), and the commits the run recorded when it started, before any child:
-// `base`, origin/<base>'s (null without one), and `tips`, those of the items' run branches.
+// `base`, origin/<base>'s (null without one), and `tips`, [{ tip, fork }] for this item's run
+// branch (local and origin), fork its merge-base with base.
 export function guardSnapshot(root, base, tips = []) {
   const hashes = guardedHashes(root);
   const dirty = statusEntries(root, gitPaths(chainsOf(root, Object.keys(hashes))));
@@ -573,46 +574,61 @@ export function guardSnapshot(root, base, tips = []) {
 
 const listed = (ps) => `${ps.slice(0, 5).join(', ')}${ps.length > 5 ? ` and ${ps.length - 5} more` : ''}`;
 
-// Why the run stops after a child (K2, K4), or null. A guarded path whose hash differs from the
-// snapshot counts, unless its content is exactly that of a commit recorded at the start (a child
-// switches to origin/<base>, or to its run branch, by design): the bytes, or a link's target and
-// what it resolves to, equal to that commit's; or the path absent after the child and that commit
-// really having nothing there (F1: no entry, not a path beyond a link). Fail closed: never when no
-// recorded commit matches or git cannot read one (a link out of the checkout), and never with git
-// status saying the path differs from HEAD before or after the child (status only refuses, never
-// vouches: the child controls refs, the index and the config).
-// The reason: `guarded file <p> differs from the recorded base <sha> [and the run branch tip(s)
-// <sha>, …]: …` for content no recorded commit has (the child's, or upstream's after the run
-// started), else `child changed <p>`.
+// What a checkout of commit sha would hold at rel, as guardedHashes says it: 'absent' only when the
+// commit really has nothing there (absentAt); null when that cannot be told or vouched for (a
+// folder, a path beyond a link, a link out of the checkout, a submodule, git failing).
+function valueAt(root, commit, rel) {
+  try {
+    if (absentAt(root, commit, rel)) return 'absent';
+    const v = hashAt(root, commit, rel);
+    return v === 'absent' ? null : v;
+  } catch {
+    return null;
+  }
+}
+
+// Why the run stops after a child (K2, K4), or null. The guarded paths whose hash differs from the
+// snapshot count, unless ONE commit recorded at the start accounts for all of them together (a
+// child switches to origin/<base>, or to its item's run branch, by design): each path's content
+// (the bytes, or a link's target and what it resolves to) equal to that commit's, or the path gone
+// and that commit really having nothing there (F1). A run branch tip counts only when, for every
+// one of those paths, it holds what its merge-base with the base holds: the branch never changed
+// them, so its copy is an older upstream one, never a change an earlier child committed there.
+// Fail closed: never with git status saying a path differs from HEAD before or after the child
+// (status only refuses, never vouches: the child controls refs, the index and the config), nor
+// with a link out of the checkout. The reason: `guarded file <p> differs from the recorded base
+// <sha> [and the run branch tip(s) <sha>, …]: …` for the paths the closest recorded commit does not
+// account for, else `child changed <p>`.
 export function guardedChildChange(root, snap) {
   const after = guardedHashes(root);
   const changed = guardedChanges(snap.hashes, after);
   if (!changed.length) return null;
-  const tips = snap.tips ?? [];
-  const commits = [snap.base, ...tips].filter(Boolean);
-  if (!commits.length) return `child changed ${listed(changed)}`;
+  const tips = snap.base ? snap.tips ?? [] : [];
+  if (!snap.base) return `child changed ${listed(changed)}`;
+  const at = new Map(); // commit -> path -> valueAt
+  const value = (c, p) => {
+    if (!at.has(c)) at.set(c, new Map());
+    const m = at.get(c);
+    if (!m.has(p)) m.set(p, valueAt(root, c, p));
+    return m.get(p);
+  };
+  const untouched = ({ tip, fork }) => changed.every((p) => value(tip, p) !== null && value(tip, p) === value(fork, p));
+  const candidates = [snap.base, ...tips.filter(untouched).map((t) => t.tip)];
+  const accounted = (c) => changed.filter((p) => value(c, p) !== null && value(c, p) === (after[p] ?? 'absent'));
+  // the commit that accounts for the most paths (the base first): all of them, or the reason
+  let best = [];
+  for (const c of candidates) {
+    const got = accounted(c);
+    if (got.length > best.length) best = got;
+  }
   const chains = chainsOf(root, changed);
   const now = statusEntries(root, gitPaths(chains));
   const offBase = [];
   const mine = [];
   for (const p of changed) {
-    const value = after[p] ?? 'absent';
-    let match = false;
-    let absentish = false; // some recorded commit has no file there (a folder, or beyond a link)
-    for (const c of commits) {
-      try {
-        if (value === 'absent') {
-          if (absentAt(root, c, p)) match = true;
-          else if (hashAt(root, c, p) === 'absent') absentish = true;
-        } else if (hashAt(root, c, p) === value) match = true;
-      } catch {
-        // git cannot read it: not vouched for
-      }
-      if (match) break;
-    }
-    if (!match) {
-      // absent after the child where a recorded commit has no plain entry either: the child's doing
-      (absentish ? mine : offBase).push(p);
+    if (!best.includes(p)) {
+      // gone after the child where the base has a folder or a link on the way: the child's doing
+      ((after[p] ?? 'absent') === 'absent' && value(snap.base, p) === null ? mine : offBase).push(p);
       continue;
     }
     const c = chains.get(p);
@@ -623,7 +639,7 @@ export function guardedChildChange(root, snap) {
     const one = offBase.length === 1;
     const from = [
       snap.base ? `the recorded base ${snap.base.slice(0, 12)}` : null,
-      tips.length ? `the run branch tip${tips.length === 1 ? '' : 's'} ${tips.map((t) => t.slice(0, 12)).join(', ')}` : null,
+      tips.length ? `the run branch tip${tips.length === 1 ? '' : 's'} ${tips.map((t) => t.tip.slice(0, 12)).join(', ')}` : null,
     ].filter(Boolean).join(' and ');
     why.push(`guarded file${one ? '' : 's'} ${listed(offBase)} ${one ? 'differs' : 'differ'} from ${from}: changed by the child or upstream; review, then rerun`);
   }
@@ -636,8 +652,8 @@ const plural = (n) => `${n} question${n === 1 ? '' : 's'}`;
 // Run the issue's phases until it is done, waiting, blocked or cut off.
 // ctx: { root, dir, models: {[row]: {model, effort}}, mode, env, skill = 'ship-issue',
 //        args = item.key, chunkSize = 5, tailMs = 5000, idleMs?, ledgers?: LedgerOpts, save?(item),
-//        base?: origin/<base>'s commit recorded when the run started, tips?: the run branches'
-//        commits recorded then (guardedChildChange) }.
+//        base?: origin/<base>'s commit recorded when the run started, tips?: [{ tip, fork }] of this
+//        item's run branch recorded then (guardedChildChange) }.
 // A child that fails on a usage limit cuts the item off (the run stops); any other child failure
 // blocks it with the error's first 300 characters. ctx.stop is set (and the event ends "; run
 // stopped") when no later child should start: a failure of the environment (no claude, an API or

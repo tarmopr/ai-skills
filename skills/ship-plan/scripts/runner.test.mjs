@@ -1852,3 +1852,94 @@ test('the base recorded once per start: child 1 fetches an upstream CLAUDE.md ch
   assert.match(byKey(s, 'A-2').reason, offBase('CLAUDE.md'));
   assert.ok(byKey(s, 'A-2').reason.includes(`recorded base ${start.slice(0, 12)}:`), byKey(s, 'A-2').reason);
 });
+
+// T9 (review round 3): K1 keeps a verify item's old ledger snapshot while it holds consumed
+// answers: a rerun after the answered child was cut off resumes it with them
+test('start verify: answered, the answered child cut off, a rerun: the resumed child gets the answers', () => {
+  const root = repo();
+  git(root, 'switch', '-q', '-c', 'feat/a');
+  const vf = '.superpowers/verify-and-fix/feat-a/ledger.md';
+  const dir = runDir(root, 'verify', 'feat/a');
+  // a first start's child asked (a single run waits for its answers, so its state is written here)
+  put(root, vf, [Q]);
+  writeState(dir, {
+    kind: 'verify', id: 'feat/a', current: null, stopped: new Date().toISOString(), root,
+    items: [{ key: 'feat-a', phase: 'verify', status: 'waiting', reason: '1 question', deps: [], answersFile: null, from: 0,
+      sessions: [{ phase: 'verify', sessionId: 's-1', costUsd: 0.1, turns: 1, minutes: 0 }], windows: [] }],
+  });
+  writeFileSync(join(root, 'a.txt'), 'postgres\n');
+  assert.equal(cli(root, ['answer', dir, 'feat-a', join(root, 'a.txt')]).status, 0);
+  let r = cli(root, ['start', 'verify', 'feat/a'], { FAKE_CLAUDE: 'error' });
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(readState(dir).items.map((i) => [i.status, i.answersFile]), [['cut off', 'answers-feat-a@1.md']]);
+  const log = join(root, 'v.json');
+  r = cli(root, ['start', 'verify', 'feat/a'], {
+    FAKE_CLAUDE: 'ok:RUNNER: done', FAKE_CLAUDE_LOG: log,
+    FAKE_CLAUDE_LEDGER_APPEND: ops([{ when: 'copied exactly', file: vf, replace: [[Q, 'Asked: which db? — postgres']], append: ['Done: x — clean'] }]),
+  });
+  assert.equal(r.status, 0, r.stderr);
+  const seen = JSON.parse(readFileSync(log, 'utf8'));
+  assert.match(seen.stdin, /copied exactly:\npostgres\n$/);
+  assert.deepEqual(seen.argv.slice(-2), ['--resume', 's-1']);
+  assert.deepEqual(readState(dir).items.map((i) => [i.status, i.from]), [['done', 0]]);
+});
+
+// K4, security review of the first K4: a tip vouches only for paths its branch never changed, only
+// for its own item, and one recorded commit must account for every changed path together
+test('an earlier child\'s guarded change committed on the run branch: the rerun that switches to it stops', () => {
+  const root = guardedRepo();
+  git(root, 'switch', '-q', '-c', 'feat/A-1');
+  put(root, 'CLAUDE.md', ['evil']);
+  git(root, 'commit', '-q', '--no-verify', '-am', 'an earlier child');
+  git(root, 'switch', '-q', 'main');
+  const r = cli(root, ['start', 'issue', 'A-1'], { ...ships('A-1'), FAKE_CLAUDE_GIT: childGit(['switch', '-q', 'feat/A-1']) });
+  assert.equal(r.status, 0, r.stderr);
+  const dir = runDir(root, 'issue', 'A-1');
+  assert.equal(readFileSync(join(root, 'CLAUDE.md'), 'utf8'), 'evil\n');
+  assert.equal(reasonOf(dir)[0], 'blocked', events(dir));
+  assert.match(reasonOf(dir)[1], /^guarded file CLAUDE\.md differs from the recorded base [0-9a-f]{12} and the run branch tip [0-9a-f]{12}: /);
+});
+
+test('another item\'s run branch tip never vouches for this item', () => {
+  const root = guardedRepo();
+  atVerify(root, 'A-2');
+  git(root, 'branch', 'feat/A-2'); // at v1
+  upstream(root, [['CLAUDE.md', 'v2']], { fetched: true });
+  git(root, 'merge', '-q', '--ff-only', 'origin/main');
+  // A-1 (no branch of its own) moves to A-2's branch, older than the base
+  const r = cli(root, ['start', 'queue', 'P-1', 'A-1'], { FAKE_CLAUDE_BY_KEY: JSON.stringify({ 'A-1': { ...ships('A-1'), FAKE_CLAUDE_GIT: childGit(['switch', '-q', 'feat/A-2']) } }) });
+  assert.equal(r.status, 0, r.stderr);
+  const dir = runDir(root, 'queue', 'P-1');
+  // a queue started with A-2 too records its tip, for A-2 alone
+  assert.equal(reasonOf(dir)[0], 'blocked', events(dir));
+  assert.match(reasonOf(dir)[1], offBase('CLAUDE.md'));
+  rmSync(dir, { recursive: true });
+  git(root, 'switch', '-q', 'main');
+  atVerify(root, 'A-1'); // its ledger at verify again
+  const r2 = cli(root, ['start', 'queue', 'P-1', 'A-1,A-2'], { FAKE_CLAUDE_BY_KEY: JSON.stringify({ 'A-1': { ...ships('A-1'), FAKE_CLAUDE_GIT: childGit(['switch', '-q', 'feat/A-2']) }, 'A-2': ships('A-2') }) });
+  assert.equal(r2.status, 0, r2.stderr);
+  assert.equal(byKey(readState(dir), 'A-1').status, 'blocked', events(dir));
+  assert.match(byKey(readState(dir), 'A-1').reason, /^guarded file CLAUDE\.md differs from the recorded base [0-9a-f]{12}: /);
+});
+
+test('changed guarded files each equal to a different recorded commit (base and tip): a mix, stop', () => {
+  const root = guardedRepo();
+  git(root, 'branch', 'feat/A-1'); // CLAUDE.md v1, settings {}
+  upstream(root, [['CLAUDE.md', 'v2'], ['.claude/settings.json', '{"permissions":{}}']], { fetched: true });
+  // the checkout's main has its own copies of both, so the child's end differs from it in both
+  put(root, 'CLAUDE.md', ['v0']);
+  put(root, '.claude/settings.json', ['{"v":0}']);
+  git(root, 'commit', '-q', '--no-verify', '-am', 'local');
+  const r = cli(root, ['start', 'issue', 'A-1'], {
+    ...ships('A-1'),
+    // CLAUDE.md as the tip has it, settings.json as the base has it
+    FAKE_CLAUDE_GIT: childGit(['switch', '-q', 'feat/A-1'], ['checkout', 'origin/main', '--', '.claude/settings.json'], ['commit', '-q', '--no-verify', '-m', 'mix']),
+  });
+  assert.equal(r.status, 0, r.stderr);
+  const dir = runDir(root, 'issue', 'A-1');
+  assert.equal(readFileSync(join(root, 'CLAUDE.md'), 'utf8'), 'v1\n');
+  assert.equal(readFileSync(join(root, '.claude', 'settings.json'), 'utf8'), '{"permissions":{}}\n');
+  assert.equal(git(root, 'status', '--porcelain'), '');
+  assert.equal(reasonOf(dir)[0], 'blocked', events(dir));
+  assert.match(reasonOf(dir)[1], /^guarded file CLAUDE\.md differs from the recorded base /);
+});
