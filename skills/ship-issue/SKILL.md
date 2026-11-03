@@ -5,6 +5,7 @@ argument-hint: '[issue key | a description of the problem] [answers to a parked 
 allowed-tools:
   - Bash(printenv SHIP_QUEUE_PARENT)
   - Bash(printenv SHIP_RUNNER)
+  - Bash(printenv SHIP_RUNNER_KEY)
   - Bash(git switch -c feature/*)
   - Bash(git switch -c fix/*)
   - Bash(git switch -c docs/*)
@@ -240,12 +241,13 @@ above applies, with these changes:
 
 ## Runner mode (ship-runner)
 
-**A run is in Runner mode** when the ship runner started it as a child
-(`printenv SHIP_RUNNER` prints the runner's folder) and that folder's
-`state.json` has a `current` field naming this run's issue: the key the
-runner passed as the argument (with no issue, the slug). A `SHIP_RUNNER`
-whose `state.json` names another item, or none, does not make a run a runner
-child. The runner's prompt names the phase. Nobody is watching. Everything in
+**A run is in Runner mode** when the ship runner started it as a child:
+`printenv SHIP_RUNNER` prints the runner's folder, `printenv SHIP_RUNNER_KEY`
+prints the item key the runner gave this child (the issue key, or with no
+issue the slug), and that folder's `state.json` has a `current` field equal
+to that key. Take the key from `SHIP_RUNNER_KEY`; never derive it. A
+`SHIP_RUNNER` with no `SHIP_RUNNER_KEY`, or whose `state.json` names another
+item, or none, does not make a run a runner child. The runner's prompt names the phase. Nobody is watching. Everything in
 Queued mode above applies, with these changes:
 
 - **The answer line** of the batch comment is **"Answer in the session that started the run."**, in place of the `/ship-queue` one. The answers come back in a later runner prompt, after "The user's answers, copied exactly:". Rewrite each answered `Asked: … — pending` line in place with its answer, never as a second line: the runner counts every line that still ends in `— pending`. Then go on as I0 says for a resume with answers.

@@ -5,6 +5,7 @@ argument-hint: '[plan file path, or issue key]'
 allowed-tools:
   - Bash(printenv SHIP_QUEUE_PARENT)
   - Bash(printenv SHIP_RUNNER)
+  - Bash(printenv SHIP_RUNNER_KEY)
   - Bash(git switch -c feature/*)
   - Bash(git switch -c fix/*)
   - Bash(git switch -c docs/*)
@@ -347,16 +348,14 @@ changes:
 
 ## Runner mode (ship-runner)
 
-**A run is in Runner mode** when the ship runner started it as a child
-(`printenv SHIP_RUNNER` prints the runner's folder) and that folder's
-`state.json` has a `current` field naming this run: the run issue's key (its
-ledger's first-line `Issue:`, or the plan's `From ship-issue` block before the
-ledger exists); with no issue (`Issue: none`) under ship-issue, the slug its
-ship-issue ledger's folder is named with (`.superpowers/ship-issue/<slug>/`);
-or, for a run the runner started on a plan alone, the plan file's name
-without `.md`, every character but letters, digits, `.`, `_` and `-` written
-as `-`. A `SHIP_RUNNER` whose `state.json` names another
-item, or none, does not make a run a runner child. The runner's prompt names
+**A run is in Runner mode** when the ship runner started it as a child:
+`printenv SHIP_RUNNER` prints the runner's folder, `printenv SHIP_RUNNER_KEY`
+prints the item key the runner gave this child (an issue key, a no-issue
+ship-issue slug, or the key of a run on a plan alone), and that folder's
+`state.json` has a `current` field equal to that key. Take the key from
+`SHIP_RUNNER_KEY`; never derive it from a ledger, a plan's file name or a
+branch. A `SHIP_RUNNER` with no `SHIP_RUNNER_KEY`, or whose `state.json` names
+another item, or none, does not make a run a runner child. The runner's prompt names
 the phase (`implement`, `verify`, `merge` or `close`) and, for `implement`, a
 range of plan tasks. Nobody is watching. Everything in Queued mode above
 applies, with these changes:

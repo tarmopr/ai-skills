@@ -395,14 +395,15 @@ function safe(fn) {
   }
 }
 
-// The pid holding the run dir: its runner, alive; or, the runner dead, its child or anything left
-// in the child's process group still alive (it may still write the ledgers). Null when nothing
-// holds it.
+// What holds the run dir, as `held by …` says it: its runner's pid, alive; or, the runner dead, its
+// child's process group, the child or anything left in its group still alive (it may still write
+// the ledgers). Null when nothing holds it.
 function holder(dir) {
   const prev = readLock(dir);
   const live = (pid) => Number.isInteger(pid) && pid > 0 && alive(pid);
-  if (prev && live(prev.runner)) return prev.runner;
-  if (prev && (live(prev.child) || (Number.isInteger(prev.child) && prev.child > 0 && groupAlive(prev.child)))) return prev.child;
+  if (prev && live(prev.runner)) return String(prev.runner);
+  const g = prev?.child;
+  if (live(g) || (Number.isInteger(g) && g > 0 && groupAlive(g))) return `process group ${g}: the child of a runner that is gone; end it with kill -- -${g}`;
   return null;
 }
 
@@ -472,7 +473,9 @@ async function start(rest) {
   } else {
     const changed = changedPaths(root);
     if (head !== base.name || changed.error || changed.paths.length) {
-      return usage(`start: the checkout must be clean and on ${base.name} (it is on ${head}${changed.paths?.length ? ', with uncommitted changes' : ''}${changed.error ? `; ${changed.error}` : ''})`);
+      const paths = changed.paths ?? [];
+      const listed = `${paths.slice(0, 5).join(', ')}${paths.length > 5 ? ` and ${paths.length - 5} more` : ''}`;
+      return usage(`start: the checkout must be clean and on ${base.name} (it is on ${head}${paths.length ? `, with uncommitted changes: ${listed}` : ''}${changed.error ? `; ${changed.error}` : ''})`);
     }
   }
   const stale = existing ? [] : leftovers(root, dir);
@@ -519,7 +522,7 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
     } else safe(() => emit(dir, slug, '-', 'summary', 'no run state'));
     if (keep) {
       safe(() => setChildPid(dir, keep));
-      console.error(`runner: child process group ${keep} is still alive; lock kept`);
+      console.error(`runner: child process group ${keep} is still alive; lock kept (end it with kill -- -${keep})`);
     } else if (!written) console.error('runner: state.json not written; lock kept');
     else safe(() => releaseLock(dir));
   };
@@ -589,12 +592,13 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
       // resume from files: what was cut short runs again; the ledgers say where
       // verify again on a branch verified before: a new run, from a fresh snapshot of its ledger
       // so does one that ended any other way (blocked, cut off, …): an earlier closing Done: must
-      // not end it again with no child. Not a waiting one, nor one holding answers: their questions
-      // are in the lines after the old snapshot.
+      // not end it again with no child. Not a waiting one, one holding answers, nor one with a
+      // question still pending after the old snapshot (a child that asked, then was cut off): their
+      // questions are in the lines after it.
       if (state.kind === 'verify') {
         for (const i of state.items) {
           if (i.status === 'done') Object.assign(i, { status: 'queued', reason: '', phase: null, answersUnused: undefined });
-          if (i.status !== 'waiting' && !i.answersFile) i.from = run.items[0].from;
+          if (i.status !== 'waiting' && !i.answersFile && !pendingQuestions(root, i.key, ledgerOpts(root, state, i)).length) i.from = run.items[0].from;
         }
       }
       for (const i of state.items) {

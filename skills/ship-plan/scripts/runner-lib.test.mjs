@@ -1,11 +1,11 @@
 // Tests for the ship runner state, lock and event log. Run: node --test skills/ship-plan/scripts/
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, utimesSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, linkSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { acquireLock, emit, readLock, readState, releaseLock, runDir, runGit, setChildPid, writeState } from './runner-lib.mjs';
+import { acquireLock, answersNamed, emit, readAnswers, readLock, readState, releaseLock, runDir, runGit, setChildPid, writeState } from './runner-lib.mjs';
 
 const fresh = () => mkdtempSync(join(tmpdir(), 'runner-lib-'));
 
@@ -168,4 +168,30 @@ test('runGit: fsmonitor and hooks off, SHIP_RUNNER_ALLOW_BYPASS never in git\'s 
     if (was === undefined) delete process.env.SHIP_RUNNER_ALLOW_BYPASS;
     else process.env.SHIP_RUNNER_ALLOW_BYPASS = was;
   }
+});
+
+// T11 (review round 3): an answers file is read only as a plain file with one name
+test('readAnswers: a plain file is read; a symlink (O_NOFOLLOW) and a second hard link throw', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'runner-lib-'));
+  const plain = join(dir, 'answers-A-1.md');
+  writeFileSync(plain, '1A\n');
+  assert.equal(readAnswers(plain), '1A\n');
+  const target = join(dir, 'events.log');
+  writeFileSync(target, 'a child wrote this\n');
+  symlinkSync(target, join(dir, 'answers-A-2.md'));
+  assert.throws(() => readAnswers(join(dir, 'answers-A-2.md')), (e) => e.code === 'ELOOP' || /is a link/.test(e.message));
+  linkSync(target, join(dir, 'answers-A-3.md'));
+  assert.throws(() => readAnswers(join(dir, 'answers-A-3.md')), /answers-A-3\.md is a link, not a plain file/);
+});
+
+// X10: an answers file name of the item's own, never a path or another key's
+test('answersNamed: answers-<KEY>.md or answers-<KEY>@<n>.md for this key only; consumed takes only @<n>', () => {
+  assert.ok(answersNamed('A-1', 'answers-A-1.md'));
+  assert.ok(answersNamed('A-1', 'answers-A-1@12.md'));
+  assert.ok(answersNamed('#12.x', 'answers-#12.x@1.md', { consumed: true }));
+  assert.ok(!answersNamed('A-1', 'answers-A-1.md', { consumed: true }));
+  for (const bad of ['answers-A-2@1.md', '../answers-A-1@1.md', '/tmp/answers-A-1@1.md', 'answers-A-1@1.md/x', 'answers-A-1@rejected-1.md', 'answers-A-1@1xmd']) {
+    assert.ok(!answersNamed('A-1', bad), bad);
+  }
+  assert.ok(!answersNamed('#12.x', 'answers-#12Ax@1.md'), 'a . in the key is literal');
 });

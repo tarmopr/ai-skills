@@ -206,7 +206,8 @@ test('rerun after kill with dead child pid: resumes the same item and phase, no 
   writeFileSync(join(dir, 'lock'), JSON.stringify({ runner: deadPid(), child: process.pid }));
   const held = cli(root, ['start', 'issue', 'K-1'], ships('K-1'));
   assert.equal(held.status, 3);
-  assert.equal(held.stdout.trim(), `held by ${process.pid}`);
+  // F3: what is left is the dead runner's child's process group, and how to end it
+  assert.equal(held.stdout.trim(), `held by process group ${process.pid}: the child of a runner that is gone; end it with kill -- -${process.pid}`);
   assert.deepEqual(children(dir), ['K-1-verify-1.jsonl']);
 
   // both dead: the rerun takes over and runs verify once
@@ -429,7 +430,8 @@ test('start refuses a checkout that is dirty or not on the base branch; verify n
   put(root, 'src/wip.js', ['x']);
   let r = cli(root, ['start', 'issue', 'C-1'], ships('C-1'));
   assert.equal(r.status, 2);
-  assert.match(r.stderr, /^runner: start: the checkout must be clean and on main \(it is on main, with uncommitted changes\)\n$/);
+  // F3: the first 5 paths (git status's, an untracked folder whole)
+  assert.match(r.stderr, /^runner: start: the checkout must be clean and on main \(it is on main, with uncommitted changes: src\/\)\n$/);
   assert.equal(existsSync(runDir(root, 'issue', 'C-1')), false);
   commit(root);
   git(root, 'switch', '-q', '-c', 'feat/other');
@@ -1942,4 +1944,66 @@ test('changed guarded files each equal to a different recorded commit (base and 
   assert.equal(git(root, 'status', '--porcelain'), '');
   assert.equal(reasonOf(dir)[0], 'blocked', events(dir));
   assert.match(reasonOf(dir)[1], /^guarded file CLAUDE\.md differs from the recorded base /);
+});
+
+// D5: the runner tells each child its item key (SHIP_RUNNER_KEY), the one state.json's current names
+test('a child gets SHIP_RUNNER_KEY, its item key: a verify branch #12-fix is 12-fix', () => {
+  const root = repo();
+  git(root, 'switch', '-q', '-c', '#12-fix');
+  const log = join(root, 'k.json');
+  const r = cli(root, ['start', 'verify', '#12-fix'], {
+    FAKE_CLAUDE: 'ok:RUNNER: done', FAKE_CLAUDE_LOG: log,
+    FAKE_CLAUDE_LEDGER_APPEND: ops([{ file: '.superpowers/verify-and-fix/#12-fix/ledger.md', append: ['Done: x — clean'] }]),
+  });
+  assert.equal(r.status, 0, r.stderr);
+  const dir = runDir(root, 'verify', '#12-fix');
+  assert.equal(JSON.parse(readFileSync(log, 'utf8')).shipRunnerKey, '12-fix');
+  assert.deepEqual(readState(dir).items.map((i) => [i.key, i.status]), [['12-fix', 'done']]);
+});
+
+// F3: a verify rerun took a fresh ledger snapshot unless the item was waiting or held answers, so a
+// question a cut-off child had asked was hidden; the old snapshot stays while lines after it wait
+test('start verify again after a child that asked and was cut off: the old snapshot is kept, the question still waits', () => {
+  const root = repo();
+  git(root, 'switch', '-q', '-c', 'feat/q');
+  const vf = '.superpowers/verify-and-fix/feat-q/ledger.md';
+  const dir = runDir(root, 'verify', 'feat/q');
+  let r = cli(root, ['start', 'verify', 'feat/q'], { FAKE_CLAUDE: 'error', FAKE_CLAUDE_LEDGER_APPEND: ops([{ file: vf, append: [Q] }]) });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(readState(dir).items[0].status, 'cut off');
+  const log = join(root, 'q.json');
+  const runner = spawnSync(process.execPath, [RUNNER, 'start', 'verify', 'feat/q'], { cwd: root, env: { ...ENV, FAKE_CLAUDE: 'ok:RUNNER: done', FAKE_CLAUDE_LOG: log }, encoding: 'utf8', timeout: 3000 });
+  // a single run waits for its answers: stopped by the timeout, with the item waiting and no child
+  assert.equal(existsSync(log), false, 'no child');
+  assert.deepEqual(readState(dir).items.map((i) => [i.status, i.from]), [['waiting', 0]], runner.stderr);
+  r = cli(root, ['status', dir]);
+  assert.match(r.stdout, /Pending questions:\nfeat-q: Asked: which db\? — pending\n/);
+});
+
+// F3: the start refusal names the uncommitted paths, the first 5
+test('start refuses a dirty checkout naming the first 5 changed paths and how many more', () => {
+  const root = repo();
+  atVerify(root, 'C-1');
+  for (let n = 1; n <= 7; n++) put(root, `f${n}.md`, ['x']);
+  const r = cli(root, ['start', 'issue', 'C-1'], ships('C-1'));
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /\(it is on main, with uncommitted changes: f1\.md, f2\.md, f3\.md, f4\.md, f5\.md and 2 more\)\n$/);
+});
+
+// T11: status shows `answers received` only for a plain answers file in the store
+test('status: an answers file that is a link is not shown as received', () => {
+  const root = repo();
+  atVerify(root, 'S-1', 'S-2');
+  const dir = runDir(root, 'queue', 'P-1');
+  writeState(dir, {
+    kind: 'queue', id: 'P-1', current: null, stopped: '2026-11-03T00:00:00Z',
+    items: ['S-1', 'S-2'].map((key) => ({ key, phase: 'verify', status: 'waiting', reason: '1 question', deps: [], sessions: [], answersFile: null })),
+  });
+  mkdirSync(answersAt(root, dir), { recursive: true });
+  writeFileSync(join(answersAt(root, dir), 'answers-S-1.md'), '1A\n');
+  symlinkSync(join(answersAt(root, dir), 'answers-S-1.md'), join(answersAt(root, dir), 'answers-S-2.md'));
+  const r = cli(root, ['status', dir]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /^S-1 +waiting +verify +1 question; answers received /m);
+  assert.match(r.stdout, /^S-2 +waiting +verify +1 question +\$/m);
 });

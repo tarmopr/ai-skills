@@ -154,7 +154,9 @@ function runOnce({ dir, cwd, key, phase, prompt, model, effort, mode, resume, en
 
     const child = spawn(process.env.CLAUDE_BIN || 'claude', childArgs({ model, effort, mode, resume }), {
       cwd,
-      env: { ...process.env, ...env, SHIP_RUNNER: dir },
+      // the run dir and the item's key (state.json's `current` while it runs), set last: the child
+      // reads its key here instead of deriving it
+      env: { ...process.env, ...env, SHIP_RUNNER: dir, SHIP_RUNNER_KEY: key },
       stdio: ['pipe', 'pipe', 'pipe'],
       detached: process.platform !== 'win32', // its own process group, so an idle kill ends its children too
     });

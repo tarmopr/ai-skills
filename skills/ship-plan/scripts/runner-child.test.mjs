@@ -55,6 +55,15 @@ test('runChild: env passed through, SHIP_RUNNER is the run dir', async () => {
   assert.equal(JSON.parse(readFileSync(log, 'utf8')).shipRunner, dir);
 });
 
+// D5 (review round 3): the child is told its item key, never left to derive it
+test('runChild: SHIP_RUNNER_KEY is the item key, over any the env passes', async () => {
+  const dir = fresh();
+  const log = join(dir, 'fake.json');
+  const r = await runChild(base(dir, { FAKE_CLAUDE: 'ok:RUNNER: done', FAKE_CLAUDE_LOG: log, SHIP_RUNNER_KEY: 'OTHER-9' }));
+  assert.equal(r.ok, true);
+  assert.equal(JSON.parse(readFileSync(log, 'utf8')).shipRunnerKey, 'BILL-1');
+});
+
 test('runChild error / crash: ok false, error text set', async () => {
   const dir = fresh();
   const e = await runChild(base(dir, { FAKE_CLAUDE: 'error' }));
