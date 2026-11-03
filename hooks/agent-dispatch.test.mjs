@@ -1,9 +1,11 @@
 // Tests for the Agent-dispatch hook. Run: node --test hooks/*.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { decide, liveShipLedgers } from './agent-dispatch.mjs';
 
 const now = Date.now();
@@ -176,4 +178,23 @@ test('runner state stopped, older than 6 h or unreadable: allow', () => {
   mkdirSync(bad, { recursive: true });
   writeFileSync(join(bad, 'state.json'), '{not json');
   assert.deepEqual(liveShipLedgers([dir], now), []);
+});
+
+// review round 1, C8: a runner that died without writing `stopped` leaves no live run behind
+test('runner state with a lock: live only while the lock\'s runner pid is alive; no lock: the state decides', () => {
+  const dir = fresh();
+  const deadRun = runnerState(dir, 'issue-D', { stopped: null });
+  const dead = spawnSync(process.execPath, ['-e', '']).pid;
+  writeFileSync(join(dirname(deadRun), 'lock'), JSON.stringify({ runner: dead, child: null }));
+  const liveRun = runnerState(dir, 'issue-L', { stopped: null });
+  writeFileSync(join(dirname(liveRun), 'lock'), JSON.stringify({ runner: process.pid, child: null }));
+  const noLock = runnerState(dir, 'issue-N', { stopped: null });
+  assert.deepEqual(liveShipLedgers([dir], now).sort(), [liveRun, noLock].sort());
+});
+
+test('hook: an internal error allows the call and says why on stderr', () => {
+  const r = spawnSync(process.execPath, [join(dirname(fileURLToPath(import.meta.url)), 'agent-dispatch.mjs')], { input: '{not json', encoding: 'utf8' });
+  assert.equal(r.status, 0);
+  assert.equal(r.stdout, '');
+  assert.match(r.stderr, /agent-dispatch: .*JSON/);
 });

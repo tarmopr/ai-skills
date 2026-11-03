@@ -34,8 +34,30 @@ function ended(text, root) {
   return false;
 }
 
+// Whether pid is a running process (EPERM: it is, owned by someone else).
+function alive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return e.code !== 'ESRCH';
+  }
+}
+
+// A runner run's lock names a runner that is gone: it died without writing `stopped`. A missing
+// or unreadable lock says nothing (state.json decides).
+function deadRunner(runDir) {
+  let lock;
+  try {
+    lock = JSON.parse(readFileSync(join(runDir, 'lock'), 'utf8'));
+  } catch {
+    return false;
+  }
+  return Number.isInteger(lock?.runner) && !alive(lock.runner);
+}
+
 // Ledgers of a ship run under any root: changed in the last 6 hours and not ended;
-// plus runner runs (ship-runner/*/state.json): fresh and `stopped` null.
+// plus runner runs (ship-runner/*/state.json): fresh, `stopped` null, and no lock of a dead runner.
 export function liveShipLedgers(roots, nowMs) {
   const live = [];
   for (const root of roots) {
@@ -72,6 +94,7 @@ export function liveShipLedgers(roots, nowMs) {
       try {
         if (statSync(file).mtimeMs < nowMs - LIVE_MS) continue;
         if (JSON.parse(readFileSync(file, 'utf8')).stopped != null) continue;
+        if (deadRunner(join(base, run))) continue;
         live.push(file);
       } catch {
         // no readable state in this run folder
@@ -119,8 +142,9 @@ function main() {
         }),
       );
     }
-  } catch {
-    // allow
+  } catch (e) {
+    // allow, and say why
+    process.stderr.write(`agent-dispatch: ${e?.message ?? e}\n`);
   }
   process.exit(0);
 }
