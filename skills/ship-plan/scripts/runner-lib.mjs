@@ -8,11 +8,12 @@ import { dirname, join, resolve } from 'node:path';
 // Every git call of the runner. A child can set `core.fsmonitor` or `core.hooksPath` in the git
 // config, or write a hook: the runner's own git (status, switch) would run that code. Both are
 // switched off here, and SHIP_RUNNER_ALLOW_BYPASS is never in git's env, so what git runs anyway
-// (a filter, an alias) never gets it. Returns stdout; a failure throws as execFileSync does
-// (git's words in e.stderr); { encoding: 'buffer' } returns bytes.
+// (a filter, an alias) never gets it. `refs/replace/` objects a child added are ignored
+// (GIT_NO_REPLACE_OBJECTS): the guard reads a commit's own blobs. Returns stdout; a failure throws
+// as execFileSync does (git's words in e.stderr); { encoding: 'buffer' } returns bytes.
 export const SAFE_GIT = ['-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=/dev/null'];
 export function runGit(cwd, args, { encoding = 'utf8' } = {}) {
-  const env = { ...process.env };
+  const env = { ...process.env, GIT_NO_REPLACE_OBJECTS: '1' };
   delete env.SHIP_RUNNER_ALLOW_BYPASS;
   return execFileSync('git', [...SAFE_GIT, ...args], { cwd, env, encoding, stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024 });
 }
@@ -49,6 +50,13 @@ export function readState(dir) {
     if (e.code === 'ENOENT') return null;
     throw Object.assign(new Error(`${file}: ${e.message}`), { code: e.code });
   }
+}
+
+// The name of an answers file of item `key` in the store: answers-<KEY>.md as `answer` writes it,
+// or answers-<KEY>@<n>.md once used (consumed: true accepts only that); never a path.
+export function answersNamed(key, name, { consumed = false } = {}) {
+  const k = String(key).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`^answers-${k}${consumed ? '@\\d+' : '(?:@\\d+)?'}\\.md$`).test(String(name));
 }
 
 // An answers file is the user's only as a plain file with one name: a symlink, or a second hard

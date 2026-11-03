@@ -61,7 +61,9 @@ const waitsThenShips = (k, extra = {}) => ({
 const cli = (root, args, env = {}) => spawnSync(process.execPath, [RUNNER, ...args], { cwd: root, env: { ...ENV, ...env }, encoding: 'utf8', timeout: 60000 });
 // C1 (review round 1): `answer` stores answers in the checkout's git dir, never in the run dir a
 // child is told about (SHIP_RUNNER); the runner reads them only there
-const answersAt = (root, dir) => join(root, '.git', 'ship-runner', basename(dir));
+const answersAt = (root, dir) => join(root, '.git', 'ship-runner', 'answers', basename(dir));
+// the record of a run's first permission mode, beside the answers stores (X10: its own folder)
+const recordAt = (root, dir) => join(root, '.git', 'ship-runner', 'modes', `${basename(dir)}.mode`);
 const events = (dir) => (existsSync(join(dir, 'events.log')) ? readFileSync(join(dir, 'events.log'), 'utf8') : '');
 const byKey = (state, k) => state.items.find((i) => i.key === k);
 const children = (dir) => readdirSync(dir).filter((f) => f.endsWith('.jsonl')).sort();
@@ -168,7 +170,7 @@ test('answered mid-run: goes before untouched items, resumes its own session (Re
   const root = repo();
   atVerify(root, 'B-1', 'B-2', 'B-3');
   const dir = runDir(root, 'queue', 'P-1');
-  const answersRel = join('.git', 'ship-runner', basename(dir), 'answers-B-1.md');
+  const answersRel = join('.git', 'ship-runner', 'answers', basename(dir), 'answers-B-1.md');
   const log = join(root, 'b1.json');
   const env = {
     'B-1': waitsThenShips('B-1', { FAKE_CLAUDE_LOG: log }),
@@ -343,11 +345,11 @@ test('killed during an answered child: the rerun resumes with the consumed answe
   const dir = runDir(root, 'issue', 'R-1');
   writeState(dir, {
     kind: 'issue', id: 'R-1', current: 'R-1', stopped: null,
-    items: [{ key: 'R-1', phase: 'verify', status: 'running', reason: '', deps: [], answersFile: 'answers-R-1-1.md',
+    items: [{ key: 'R-1', phase: 'verify', status: 'running', reason: '', deps: [], answersFile: 'answers-R-1@1.md',
       sessions: [{ phase: 'verify', sessionId: 's-3', costUsd: 0.1, turns: 1, minutes: 0 }] }],
   });
   mkdirSync(answersAt(root, dir), { recursive: true });
-  writeFileSync(join(answersAt(root, dir), 'answers-R-1-1.md'), 'postgres\n'); // consumed; answers-R-1.md is gone
+  writeFileSync(join(answersAt(root, dir), 'answers-R-1@1.md'), 'postgres\n'); // consumed; answers-R-1.md is gone
   writeFileSync(join(dir, 'lock'), JSON.stringify({ runner: deadPid(), child: deadPid() }));
   const log = join(root, 'r.json');
   const r = cli(root, ['start', 'issue', 'R-1'], waitsThenShips('R-1', { FAKE_CLAUDE_LOG: log }));
@@ -361,9 +363,9 @@ test('killed during an answered child: the rerun resumes with the consumed answe
   const root2 = repo();
   atVerify(root2, 'R-1');
   const dir2 = runDir(root2, 'issue', 'R-1');
-  writeState(dir2, { ...readState(dir), root: root2, stopped: null, items: [{ ...readState(dir).items[0], status: 'running', answersFile: 'answers-R-1-1.md' }] });
+  writeState(dir2, { ...readState(dir), root: root2, stopped: null, items: [{ ...readState(dir).items[0], status: 'running', answersFile: 'answers-R-1@1.md' }] });
   mkdirSync(answersAt(root2, dir2), { recursive: true });
-  writeFileSync(join(answersAt(root2, dir2), 'answers-R-1-1.md'), 'postgres\n');
+  writeFileSync(join(answersAt(root2, dir2), 'answers-R-1@1.md'), 'postgres\n');
   const log2 = join(root2, 'r.json');
   assert.equal(cli(root2, ['start', 'issue', 'R-1'], { ...ships('R-1'), FAKE_CLAUDE_LOG: log2 }).status, 0);
   const seen2 = JSON.parse(readFileSync(log2, 'utf8'));
@@ -520,7 +522,7 @@ test('start queue: answers for the running item arrive during its child, which i
   const root = repo();
   atVerify(root, 'A-1', 'A-2');
   const dir = runDir(root, 'queue', 'P-1');
-  const answersRel = join('.git', 'ship-runner', basename(dir), 'answers-A-1.md');
+  const answersRel = join('.git', 'ship-runner', 'answers', basename(dir), 'answers-A-1.md');
   const env = { 'A-1': { FAKE_CLAUDE: 'error', FAKE_CLAUDE_LEDGER_APPEND: ops([{ file: answersRel, append: ['postgres'] }]) }, 'A-2': ships('A-2') };
   const r = cli(root, ['start', 'queue', 'P-1', 'A-1,A-2'], { FAKE_CLAUDE_BY_KEY: JSON.stringify(env) });
   assert.equal(r.status, 0, r.stderr);
@@ -708,11 +710,11 @@ test('consumed answers file gone while the questions still wait: an event says s
   const dir = runDir(root, 'queue', 'P-9');
   writeState(dir, {
     kind: 'queue', id: 'P-9', current: 'V-1', stopped: null,
-    items: [{ key: 'V-1', phase: 'verify', status: 'running', reason: '', deps: [], answersFile: 'answers-V-1-1.md',
+    items: [{ key: 'V-1', phase: 'verify', status: 'running', reason: '', deps: [], answersFile: 'answers-V-1@1.md',
       sessions: [{ phase: 'verify', sessionId: 's-3', costUsd: 0.1, turns: 1, minutes: 0 }] }],
   });
   assert.equal(cli(root, ['start', 'queue', 'P-9', 'V-1'], { FAKE_CLAUDE: 'crash' }).status, 0);
-  assert.match(events(dir), / V-1 verify progress answers file answers-V-1-1\.md is gone; the questions wait again$/m);
+  assert.match(events(dir), / V-1 verify progress answers file answers-V-1@1\.md is gone; the questions wait again$/m);
   assert.deepEqual(children(dir), []);
   assert.equal(readState(dir).items[0].status, 'waiting');
 });
@@ -763,7 +765,7 @@ test('answers a child wrote itself: in the run dir never read; in the store duri
   atVerify(root, 'J-1');
   const dir = runDir(root, 'queue', 'P-1');
   const runRel = join(dir.slice(root.length + 1), 'answers-J-1.md');
-  const storeRel = join('.git', 'ship-runner', basename(dir), 'answers-J-1.md');
+  const storeRel = join('.git', 'ship-runner', 'answers', basename(dir), 'answers-J-1.md');
   const selfAnswer = (file) => ({ 'J-1': waitsThenShips('J-1', {
     FAKE_CLAUDE: 'ok:RUNNER: waiting 1 question',
     FAKE_CLAUDE_LEDGER_APPEND: ops([{ when: 'for phase verify.', file: planLedger('J-1'), append: [Q] }, { file, append: ['postgres'] }]),
@@ -887,7 +889,7 @@ test('answers a child wrote and backdated (mtime before its window, ctime inside
   const root = repo();
   atVerify(root, 'U-1');
   const dir = runDir(root, 'queue', 'P-1');
-  const storeRel = join('.git', 'ship-runner', basename(dir), 'answers-U-1.md');
+  const storeRel = join('.git', 'ship-runner', 'answers', basename(dir), 'answers-U-1.md');
   const env = { 'U-1': {
     FAKE_CLAUDE: 'ok:RUNNER: waiting 1 question',
     FAKE_CLAUDE_LEDGER_APPEND: ops([{ file: planLedger('U-1'), append: [Q] }, { file: storeRel, append: ['postgres'] }]),
@@ -903,7 +905,7 @@ test('answers a background grandchild writes after its parent child exited: neve
   const root = repo();
   atVerify(root, 'G-1');
   const dir = runDir(root, 'queue', 'P-1');
-  const storeRel = join('.git', 'ship-runner', basename(dir), 'answers-G-1.md');
+  const storeRel = join('.git', 'ship-runner', 'answers', basename(dir), 'answers-G-1.md');
   const env = { 'G-1': {
     FAKE_CLAUDE: 'ok:RUNNER: waiting 1 question',
     FAKE_CLAUDE_LEDGER_APPEND: ops([{ file: planLedger('G-1'), append: [Q] }]),
@@ -1106,7 +1108,7 @@ test('answers for a blocked item arriving during another item\'s child: the bloc
   const root = repo();
   atVerify(root, 'A-1', 'A-2');
   const dir = runDir(root, 'queue', 'P-1');
-  const answersRel = join('.git', 'ship-runner', basename(dir), 'answers-A-1.md');
+  const answersRel = join('.git', 'ship-runner', 'answers', basename(dir), 'answers-A-1.md');
   const env = {
     'A-1': { FAKE_CLAUDE: 'ok:RUNNER: blocked CI secret missing' },
     'A-2': { ...ships('A-2'), FAKE_CLAUDE_LEDGER_APPEND: ops([{ file: planLedger('A-2'), firstLine: planFirst('A-2', 'done') }, { file: answersRel, append: ['postgres'] }]) },
@@ -1259,7 +1261,7 @@ test('a linked worktree: answers stored in its own git dir and used; .superpower
   writeFileSync(join(wt, 'a.txt'), 'postgres\n');
   const a = cli(wt, ['answer', dir, 'W-1', join(wt, 'a.txt')]);
   assert.equal(a.status, 0, a.stderr);
-  assert.equal(a.stdout.trim(), `answers stored: ${join(main, '.git', 'worktrees', 'wt', 'ship-runner', basename(dir), 'answers-W-1.md')}`);
+  assert.equal(a.stdout.trim(), `answers stored: ${join(main, '.git', 'worktrees', 'wt', 'ship-runner', 'answers', basename(dir), 'answers-W-1.md')}`);
   assert.equal(cli(wt, ['start', 'queue', 'P-1', 'W-1'], env).status, 0);
   assert.equal(readState(dir).items[0].status, 'done');
   assert.match(JSON.parse(readFileSync(log, 'utf8')).stdin, /copied exactly:\npostgres\n$/);
@@ -1453,6 +1455,7 @@ test('a rerun never widens the first start\'s permission mode: wider exit 2, non
     const r = start(['--permission-mode', wider], ['M-1', 'M-2'], { SHIP_RUNNER_ALLOW_BYPASS: '1' });
     assert.equal(r.status, 2, wider);
     assert.match(r.stderr, new RegExp(`--permission-mode ${wider} is wider than this run's acceptEdits`));
+    assert.ok(r.stderr.includes(recordAt(root, dir)), `F2: the message names the record: ${r.stderr}`);
     assert.equal(existsSync(log), false);
   }
   assert.equal(start([], ['M-1', 'M-2']).status, 0);
@@ -1639,7 +1642,7 @@ test('the first-mode record: checked without state.json; missing or unreadable f
   const root = repo();
   const log = join(root, 'm.json');
   const dir = runDir(root, 'queue', 'P-1');
-  const record = join(answersAt(root, dir) + '.mode');
+  const record = recordAt(root, dir);
   const start = (flags, keys) => {
     atVerify(root, ...keys);
     const byKey = Object.fromEntries(keys.map((k) => [k, ships(k)]));
@@ -1656,6 +1659,7 @@ test('the first-mode record: checked without state.json; missing or unreadable f
   const a = start(['--permission-mode', 'auto'], ['M-1']);
   assert.equal(a.status, 2, a.stderr);
   assert.match(a.stderr, /wider than this run's acceptEdits/);
+  assert.ok(a.stderr.includes(record), `F2: the message names the record: ${a.stderr}`);
 
   for (const broken of [null, 'yolo\n']) {
     if (broken === null) rmSync(record);
@@ -1663,10 +1667,92 @@ test('the first-mode record: checked without state.json; missing or unreadable f
     const w = start(['--permission-mode', 'acceptEdits'], ['M-1']);
     assert.equal(w.status, 2, w.stderr);
     assert.match(w.stderr, /no readable record of this run's first permission mode: it runs only as dontAsk; to start a new run instead, delete .*queue-P-1/);
+    assert.ok(w.stderr.includes(record), `F2: the message names the record: ${w.stderr}`);
   }
   const n = start([], ['M-1', 'M-2']);
   assert.equal(n.status, 0, n.stderr);
   assert.equal(childMode(), 'dontAsk');
   assert.equal(readFileSync(record, 'utf8'), 'dontAsk\n');
   assert.equal(readState(dir).mode, 'dontAsk');
+});
+
+// review round 3, batch G2
+
+// X9/F2/T8: the record of the first mode and the answers store outlived a deleted run dir: every
+// later start with that id was capped at the old mode, and the old answers could feed the new run
+test('a start whose run dir is gone: the stale mode record and answers store are removed, with an event; a new run', () => {
+  const root = repo();
+  atVerify(root, 'M-1');
+  put(root, planLedger('M-1'), [planFirst('M-1', '3'), Q]);
+  const dir = runDir(root, 'queue', 'P-1');
+  assert.equal(cli(root, ['start', '--permission-mode', 'dontAsk', 'queue', 'P-1', 'M-1']).status, 0); // waits, no child
+  writeFileSync(join(root, 'a.txt'), 'old\n');
+  assert.equal(cli(root, ['answer', dir, 'M-1', join(root, 'a.txt')]).status, 0);
+  assert.equal(readFileSync(recordAt(root, dir), 'utf8'), 'dontAsk\n');
+  rmSync(dir, { recursive: true });
+  const r = cli(root, ['start', '--permission-mode', 'auto', 'queue', 'P-1', 'M-1'], waitsThenShips('M-1'));
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(readFileSync(recordAt(root, dir), 'utf8'), 'auto\n');
+  assert.equal(readState(dir).mode, 'auto');
+  assert.match(events(dir), /child permission mode: auto \(flag\)$/m);
+  // the old answers are gone with the old run: the item waits for new ones
+  assert.deepEqual(children(dir), []);
+  assert.deepEqual(readState(dir).items.map((i) => [i.status, i.answersFile]), [['waiting', null]]);
+  assert.equal(existsSync(join(answersAt(root, dir), 'answers-M-1.md')), false);
+  const said = `run dir gone: removed the old run's mode record ${recordAt(root, dir)} and answers store ${answersAt(root, dir)}; a new run`;
+  assert.ok(events(dir).includes(` P-1 - progress ${said}\n`), events(dir));
+});
+
+// X10: the mode records and the answers stores in their own folders
+test('the git dir holds the mode records under ship-runner/modes/ and the answers stores under ship-runner/answers/', () => {
+  const root = repo();
+  atVerify(root, 'W-1');
+  assert.equal(cli(root, ['start', 'queue', 'P-1', 'W-1'], { FAKE_CLAUDE_BY_KEY: JSON.stringify({ 'W-1': { ...waitsThenShips('W-1'), FAKE_CLAUDE: 'ok:RUNNER: waiting' } }) }).status, 0);
+  const dir = runDir(root, 'queue', 'P-1');
+  writeFileSync(join(root, 'a.txt'), '1A\n');
+  assert.equal(cli(root, ['answer', dir, 'W-1', join(root, 'a.txt')]).status, 0);
+  assert.deepEqual(readdirSync(join(root, '.git', 'ship-runner')).sort(), ['answers', 'modes']);
+  assert.deepEqual(readdirSync(join(root, '.git', 'ship-runner', 'modes')), ['queue-P-1.mode']);
+  assert.deepEqual(readdirSync(answersAt(root, dir)), ['answers-W-1.md']);
+});
+
+// X10: state.json's answersFile is a name in the store, answers-<KEY>@<n>.md: never a path out of it,
+// never another item's
+test('state.json naming an answers file outside the store, or another item\'s: never read, an event says so', () => {
+  const root0 = repo();
+  for (const bad of ['../../../../secret.txt', join(root0, 'secret.txt'), 'answers-X-9@1.md']) {
+    const root = bad.startsWith('/') ? root0 : repo();
+    atVerify(root, 'R-1');
+    put(root, planLedger('R-1'), [planFirst('R-1', '3'), Q]);
+    writeFileSync(join(root, 'secret.txt'), 'forged\n');
+    const dir = runDir(root, 'queue', 'P-1');
+    mkdirSync(answersAt(root, dir), { recursive: true });
+    writeFileSync(join(answersAt(root, dir), 'answers-X-9@1.md'), 'forged\n');
+    writeState(dir, {
+      kind: 'queue', id: 'P-1', current: null, stopped: new Date().toISOString(), root,
+      items: [{ key: 'R-1', phase: 'verify', status: 'cut off', reason: '', deps: [], answersFile: bad,
+        sessions: [{ phase: 'verify', sessionId: 's-3', costUsd: 0.1, turns: 1, minutes: 0 }], windows: [] }],
+    });
+    const log = join(root, 'r.json');
+    const r = cli(root, ['start', 'queue', 'P-1', 'R-1'], waitsThenShips('R-1', { FAKE_CLAUDE_LOG: log }));
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(existsSync(log), false, `${bad}: no child`);
+    assert.deepEqual(readState(dir).items.map((i) => [i.status, i.answersFile]), [['waiting', null]], bad);
+    assert.ok(events(dir).includes(` R-1 verify progress state.json names the answers file ${bad}, not one of R-1's in the store; ignored\n`), events(dir));
+  }
+});
+
+// X10: a child can add refs/replace/ objects; the guard reads the objects themselves
+test('a child that replaces the recorded base\'s blob with its own (git replace): the guard is not fooled, run stopped', () => {
+  const root = guardedRepo();
+  const r = cli(root, ['start', 'issue', 'A-1'], {
+    FAKE_CLAUDE: 'ok:RUNNER: done',
+    FAKE_CLAUDE_LEDGER_APPEND: ops([{ file: planLedger('A-1'), firstLine: planFirst('A-1', 'done') }, { file: 'CLAUDE.md', firstLine: 'v2' }]),
+    FAKE_CLAUDE_GIT: childGit(['switch', '-q', '-c', 'feat/A-1'], ['commit', '-q', '--no-verify', '-am', 'widen'], ['replace', 'origin/main:CLAUDE.md', 'HEAD:CLAUDE.md']),
+  });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(git(root, 'cat-file', 'blob', 'origin/main:CLAUDE.md'), 'v2\n', 'the replacement is in place');
+  const dir = runDir(root, 'issue', 'A-1');
+  assert.equal(reasonOf(dir)[0], 'blocked', events(dir));
+  assert.match(reasonOf(dir)[1], offBase('CLAUDE.md'));
 });

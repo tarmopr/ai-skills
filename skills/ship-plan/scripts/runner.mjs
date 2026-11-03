@@ -15,10 +15,10 @@
 // Exit: 0 the run ended (see summary), 1 runner error, 2 usage error, 3 the run dir's lock is held;
 // 128+n on signal n.
 import { constants } from 'node:os';
-import { appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
-import { basename, join, resolve } from 'node:path';
+import { appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { basename, dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { acquireLock, alive, clean, emit, groupAlive, makeDir, plainFile, readLock, readState, releaseLock, runDir, runGit, setChildPid, writeState } from './runner-lib.mjs';
+import { acquireLock, alive, answersNamed, clean, emit, groupAlive, makeDir, plainFile, readLock, readState, releaseLock, runDir, runGit, setChildPid, writeState } from './runner-lib.mjs';
 import { findPlanLedger, ledgerOutcome, pendingQuestions, PHASE_ROWS, PHASES, phaseFromLedgers, runIssue } from './runner-phases.mjs';
 import { endChildren, haltChildren } from './runner-child.mjs';
 import { nextItem } from './runner-queue.mjs';
@@ -175,21 +175,41 @@ const KEY = /^#?[A-Za-z0-9][A-Za-z0-9._-]*$/;
 // shell commands.
 const RUN_ID = /^[A-Za-z0-9._/#-]+$/;
 
+// A path for a message, or what stands in when there is no git dir.
+const named = (fn) => {
+  try {
+    return fn();
+  } catch {
+    return '(no git dir)';
+  }
+};
+
+// What a run whose dir was deleted left in the git dir: [what, path] for its mode record and its
+// answers store, those that exist ([] when there is no git dir).
+function leftovers(root, dir) {
+  try {
+    return [['mode record', modeFile(root, dir)], ['answers store', answersStore(root, dir)]].filter(([, p]) => existsSync(p));
+  } catch {
+    return [];
+  }
+}
+
 // The checkout's own git dir (per worktree), and the dir its info/exclude lives in.
 const gitDir = (root) => git(root, 'rev-parse', '--absolute-git-dir');
 const gitCommonDir = (root) => resolve(root, git(root, 'rev-parse', '--git-common-dir'));
 
-// Where `answer` stores a run's answers: <git dir>/ship-runner/<run>/, outside the checkout. A
-// child is told the run dir (SHIP_RUNNER), never this one, so it has no path to answer its own
-// questions by; the runner reads answers only here.
-const answersStore = (root, dir) => join(gitDir(root), 'ship-runner', basename(dir));
+// Where `answer` stores a run's answers: <git dir>/ship-runner/answers/<run>/, outside the
+// checkout, and the runner reads answers only here. A child is told the run dir (SHIP_RUNNER),
+// never this one: a mitigation, not a defence (a child runs as the same user and can find it;
+// the window check and the watching session do the rest, see runner-session.md).
+const answersStore = (root, dir) => join(gitDir(root), 'ship-runner', 'answers', basename(dir));
 
 const answersName = (key) => `answers-${key}.md`;
 
-// The record of the run's first permission mode: <git dir>/ship-runner/<run>.mode, beside the
-// answers store (a child can edit state.json, which only copies it; the git dir is never named to
-// a child). The mode it holds, or null when there is none or it cannot be read.
-const modeFile = (root, dir) => `${answersStore(root, dir)}.mode`;
+// The record of the run's first permission mode: <git dir>/ship-runner/modes/<run>.mode, apart
+// from the answers stores (a child can edit state.json, which only copies it; the git dir is never
+// named to a child). The mode it holds, or null when there is none or it cannot be read.
+const modeFile = (root, dir) => join(gitDir(root), 'ship-runner', 'modes', `${basename(dir)}.mode`);
 function recordedMode(root, dir) {
   try {
     const m = readFileSync(modeFile(root, dir), 'utf8').trim();
@@ -430,16 +450,18 @@ async function start(rest) {
   if (prev && (prev.kind !== run.kind || prev.id !== run.id)) return usage(`start ${run.kind}: ${dir} holds the run ${prev.kind} ${prev.id}`);
   // A rerun keeps the first start's mode, from its record (checked with or without a state.json):
   // none given takes it, a wider one is refused. An existing run with no readable record is taken
-  // as the narrowest mode (fail closed).
-  const recorded = recordedMode(root, dir);
+  // as the narrowest mode (fail closed). With no run dir this is a new run: a record (and an
+  // answers store) a deleted run dir left behind is removed below, never taken as this run's (X9).
   const existing = prev !== null || existsSync(dir);
+  const recorded = existing ? recordedMode(root, dir) : null;
   const first = recorded ?? (existing ? 'dontAsk' : null);
   if (first && modeFrom === 'default') {
     mode = first;
     modeFrom = recorded ? 'first start' : 'no mode record, narrowest';
   } else if (first && WIDTH[mode] > WIDTH[first]) {
-    if (!recorded) return usage(`start: no readable record of this run's first permission mode: it runs only as dontAsk; to start a new run instead, delete ${dir}`);
-    return usage(`start: --permission-mode ${mode} is wider than this run's ${first} (its first start's); a rerun never widens it`);
+    const record = named(() => modeFile(root, dir));
+    if (!recorded) return usage(`start: no readable record of this run's first permission mode: it runs only as dontAsk; to start a new run instead, delete ${dir} (the next start then removes the record ${record} and the answers store ${named(() => answersStore(root, dir))})`);
+    return usage(`start: --permission-mode ${mode} is wider than this run's ${first} (its first start's, recorded in ${record}); a rerun never widens it`);
   }
 
   const cfg = readConfig(root);
@@ -453,18 +475,21 @@ async function start(rest) {
       return usage(`start: the checkout must be clean and on ${base.name} (it is on ${head}${changed.paths?.length ? ', with uncommitted changes' : ''}${changed.error ? `; ${changed.error}` : ''})`);
     }
   }
+  const stale = existing ? [] : leftovers(root, dir);
+  for (const [, p] of stale) rmSync(p, { recursive: true, force: true });
+  const cleared = stale.length ? `run dir gone: removed the old run's ${stale.map(([what, p]) => `${what} ${p}`).join(' and ')}; a new run` : null;
   const lock = acquireLock(dir, process.pid);
   if (!lock.ok) {
     console.log(`held by ${lock.holder}`);
     return 3;
   }
-  return runLocked({ root, dir, run, cfg, base, mode, modeFrom, allowBypass });
+  return runLocked({ root, dir, run, cfg, base, mode, modeFrom, allowBypass, cleared });
 }
 
 // Everything after the lock is taken. Whatever happens (an error, a signal, an uncaught error), the
 // run ends with a summary event and `stopped` set in state.json; the lock is released last, and
 // kept when state.json could not be written or a child's process group outlived the stop.
-async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, allowBypass }) {
+async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, allowBypass, cleared }) {
   const slug = run.id.replaceAll('/', '-');
   let state = null;
   let code = 0;
@@ -554,6 +579,13 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
     const changes = [];
     if (!state) state = { kind: run.kind, id: run.id, items: run.items, current: null, stopped: null };
     else {
+      // answersFile names a used answers file of the item in the store; anything else (a path, another
+      // item's file) a child wrote: ignored. The unused name is found from the store again.
+      for (const i of state.items) {
+        if (!i.answersFile || answersNamed(i.key, i.answersFile, { consumed: true })) continue;
+        if (i.answersFile !== answersName(i.key)) emit(dir, i.key, i.phase ?? '-', 'progress', `state.json names the answers file ${i.answersFile}, not one of ${i.key}'s in the store; ignored`);
+        i.answersFile = null;
+      }
       // resume from files: what was cut short runs again; the ledgers say where
       // verify again on a branch verified before: a new run, from a fresh snapshot of its ledger
       // so does one that ended any other way (blocked, cut off, …): an earlier closing Done: must
@@ -591,9 +623,6 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
         changes.push(...waits);
       }
     }
-    // A child window left open by a runner that was stopped (a signal, a kill): what that child
-    // started may have outlived it, so the window runs until now, and an answers file written
-    // since for that item is rejected too.
     // origin/<base> as it is now, before any child of this start: the one base a guarded change
     // may come from (K2). Never fetched by the runner: a child controls the git config a fetch
     // would run with. An upstream change after this is a stop; the rerun records a fresh one.
@@ -605,6 +634,9 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
         // no origin/<base>: a guarded change is never taken as upstream's
       }
     }
+    // A child window left open by a runner that was stopped (a signal, a kill): what that child
+    // started may have outlived it, so the window runs until now, and an answers file written
+    // since for that item is rejected too.
     const startedAt = Date.now();
     for (const i of state.items) for (const w of i.windows ?? []) w[1] ??= startedAt;
     state.root = root;
@@ -616,7 +648,7 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
     let kept = recordedMode(root, dir);
     if (!kept) {
       kept = mode;
-      makeDir(store);
+      makeDir(dirname(modeFile(root, dir)));
       writeFileSync(modeFile(root, dir), `${kept}\n`);
     }
     state.mode = kept;
@@ -625,6 +657,7 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
       writeState(dir, state);
     };
     save();
+    if (cleared) emit(dir, slug, '-', 'progress', cleared);
     if (changes.length) emit(dir, slug, '-', 'progress', `queue changed: ${changes.join('; ')}`);
     if (excludeRunFiles(root)) emit(dir, slug, '-', 'progress', '.superpowers/ added to the git info/exclude');
 

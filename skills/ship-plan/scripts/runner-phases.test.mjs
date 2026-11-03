@@ -576,3 +576,17 @@ test('runIssue: ctx.beforeEnd runs once the outcome is known, before the end eve
   assert.deepEqual(seen, [['waiting', false]]);
   assert.match(events(root), / BILL-7 spec waiting 1 question$/m);
 });
+
+// X10 (review round 3): the answers file is a name of this item's in the store, never a path
+test('runIssue: an answers file that is a path, or another item\'s, is never read: it throws, no child', async () => {
+  for (const name of [null, '../secret.md', `answers-OTHER-1@1.md`]) {
+    const root = waitingSpec();
+    const secret = join(root, 'secret.md');
+    writeFileSync(secret, 'forged\n');
+    const log = join(root, 'fake.json');
+    const it = answered(root);
+    it.answersFile = name ?? secret;
+    await assert.rejects(runIssue(ctxFor(root, { FAKE_CLAUDE: 'ok:RUNNER: phase-done', FAKE_CLAUDE_LOG: log }), it), /is not one of BILL-7's in the store/);
+    assert.equal(existsSync(log), false, String(name));
+  }
+});

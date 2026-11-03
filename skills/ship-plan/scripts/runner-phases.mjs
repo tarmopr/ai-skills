@@ -4,7 +4,7 @@
 import { createHash } from 'node:crypto';
 import { lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, join, parse, posix, relative, resolve, sep } from 'node:path';
-import { emit, readAnswers, runGit } from './runner-lib.mjs';
+import { answersNamed, emit, readAnswers, runGit } from './runner-lib.mjs';
 import { isEnvError, isLimitError, resumeOrFresh, runChild } from './runner-child.mjs';
 
 export const PHASES = ['spec', 'plan', 'implement', 'verify', 'merge', 'close'];
@@ -614,9 +614,9 @@ export async function runIssue(ctx, item) {
   const key = item.key;
   const skill = ctx.skill ?? 'ship-issue';
   const args = ctx.args ?? key;
-  let answers = item.answersFile
-    ? readAnswers(isAbsolute(item.answersFile) ? item.answersFile : join(ctx.answersDir ?? dir, item.answersFile))
-    : null;
+  // only a name in the store, this item's (state.json, which names it, is a child's to edit)
+  if (item.answersFile && !answersNamed(key, item.answersFile)) throw new Error(`answers file ${item.answersFile} is not one of ${key}'s in the store`);
+  let answers = item.answersFile ? readAnswers(join(ctx.answersDir ?? dir, item.answersFile)) : null;
 
   // the outcome saved (ctx.beforeEnd first: the runner closes the item's child window there)
   // before its event: whoever acts on the event finds state.json saying so already
