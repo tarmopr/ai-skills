@@ -280,7 +280,8 @@ The logs are read by index, not in full: see below.
 **Where they are:** `<logs>` is `.claude/` under the config's `## Logs` `Location: repo`
 (the default), or the local store under `Location: local`
 ([`## Logs`](config-format.md#-logs)). While the store holds no log, read the tracked copies
-under `.claude/`: only section 0 (or ship-issue's I0, when it runs first) copies them in.
+under `.claude/`: only section 0 (or ship-issue's I0, when it runs first; or `verify-and-fix` run on
+its own) copies them in.
 Every log path below and in the other skills is under `<logs>`.
 
 `blockers.md` and the `interruptions.md` files are kept under a size budget

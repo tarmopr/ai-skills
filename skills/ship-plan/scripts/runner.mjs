@@ -44,7 +44,8 @@ const MODEL_NAME = /^[A-Za-z0-9.[\]_-]+$/;
 
 /**
  * What the runner reads from `.claude/ship-plan.md`: `## Runner` `Implement chunk:` (default 5) and
- * `Child idle timeout:` (minutes, default 60), `## Repo` `Base branch:`, and `## Models` rows over
+ * `Child idle timeout:` (minutes, default 60), `## Repo` `Base branch:`, `## Logs` `Location:` (local or
+ * repo, default repo: logsLocal), and `## Models` rows over
  * MODEL_DEFAULTS (roles matched case-insensitively). Never the permission mode: a child can edit
  * the working tree and every local git ref, so the mode comes only from `start --permission-mode`.
  * Headings match case-insensitively; a field line may start with `- `. A value the runner cannot
@@ -100,7 +101,9 @@ export function parseConfig(text) {
     }
     models[role] = { model, effort: effort || MODEL_DEFAULTS[role].effort };
   }
-  return { chunkSize, idleMinutes, base: field('repo', 'Base branch'), models, warnings };
+  const location = field('logs', 'Location').toLowerCase();
+  if (location && location !== 'repo' && location !== 'local') warnings.push(`Location: "${location}" is not repo or local; using repo`);
+  return { chunkSize, idleMinutes, base: field('repo', 'Base branch'), models, logsLocal: location === 'local', warnings };
 }
 
 function readConfig(root) {
@@ -678,7 +681,7 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
     emit(dir, slug, '-', 'progress', `models: ${used.join(', ')}`);
 
     const base = {
-      root, dir, models: cfg.models, mode, env: {}, chunkSize: cfg.chunkSize, idleMs: cfg.idleMinutes * 60000,
+      root, dir, models: cfg.models, mode, env: {}, chunkSize: cfg.chunkSize, idleMs: cfg.idleMinutes * 60000, logsLocal: cfg.logsLocal,
       skill: run.skill, args: run.args, save, answersDir: store,
     };
     const pollMs = Number(process.env.SHIP_RUNNER_POLL_MS) || 30000;

@@ -1,8 +1,8 @@
 // Child launcher and stream reader for the ship runner.
 // Starts `claude -p` with stream-json output, logs every stdout line, and reads the final result.
 import { spawn } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, realpathSync } from 'node:fs';
-import { dirname, isAbsolute, join, relative, sep } from 'node:path';
+import { appendFileSync, existsSync, lstatSync, mkdirSync, realpathSync } from 'node:fs';
+import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path';
 import { createInterface } from 'node:readline';
 import { emit, groupAlive, makeDir, runGit, setChildPid } from './runner-lib.mjs';
 
@@ -14,8 +14,9 @@ export function childArgs({ model, effort, mode, resume, addDir }) {
 }
 
 // The local log store (`## Logs` `Location: local`): <main checkout>/.superpowers/ship-logs, the main
-// checkout being the parent of the common git dir. Returned only when it lies outside cwd (a linked
-// worktree), where a child's edits there need --add-dir; otherwise, and outside git, null.
+// checkout being the parent of the common git dir, which must be named `.git` (a bare clone has no
+// main checkout). Returned only when it lies outside cwd (a linked worktree), where a child's edits
+// there need --add-dir; otherwise, and outside git, null.
 export function logStore(cwd) {
   let common;
   try {
@@ -23,9 +24,37 @@ export function logStore(cwd) {
   } catch {
     return null;
   }
+  if (basename(common) !== '.git') return null;
   const store = join(dirname(common), '.superpowers', 'ship-logs');
   const rel = relative(realpathSync(cwd), store);
   return rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel) ? store : null;
+}
+
+// The store to pass as --add-dir: { dir } (its real path), {} when there is none to grant, or
+// { why } when it is refused. A child may have swapped .superpowers or ship-logs for a symlink (to
+// $HOME, say), so each folder is made 0700 if missing, then must be a real folder, checked before
+// the next is made through it, and the store must resolve to where it should be.
+export function grantLogStore(cwd) {
+  const store = logStore(cwd);
+  if (!store) return {};
+  const main = dirname(dirname(store));
+  try {
+    for (const d of [join(main, '.superpowers'), store]) {
+      try {
+        mkdirSync(d, { mode: 0o700 });
+      } catch (e) {
+        if (e.code !== 'EEXIST') throw e;
+      }
+      const st = lstatSync(d);
+      if (st.isSymbolicLink()) return { why: `${d} is a symlink` };
+      if (!st.isDirectory()) return { why: `${d} is not a folder` };
+    }
+    const real = realpathSync(store);
+    if (real !== join(realpathSync(main), '.superpowers', 'ship-logs')) return { why: `${store} resolves to ${real}` };
+    return { dir: real };
+  } catch (e) {
+    return { why: `${store}: ${e.code || e.message}` };
+  }
 }
 
 const MARKER = /^RUNNER: (phase-done|waiting|blocked|done)\b ?(.*)$/gm;
@@ -140,7 +169,7 @@ export async function endChildren(opts) {
 
 // One child run. Returns the ChildResult plus whether it failed the way a dead resume fails.
 // idleMs: no stdout line for that long kills the child's process group (default: never).
-function runOnce({ dir, cwd, key, phase, prompt, model, effort, mode, resume, env, idleMs }) {
+function runOnce({ dir, cwd, key, phase, prompt, model, effort, mode, resume, env, idleMs, logsLocal }) {
   if (halted) return new Promise(() => {}); // the runner is ending: it writes the end itself
   makeDir(dir);
   const file = logFile(dir, key, phase);
@@ -160,6 +189,10 @@ function runOnce({ dir, cwd, key, phase, prompt, model, effort, mode, resume, en
       }
     }
   };
+  // `## Logs` `Location: local` only: a child in a linked worktree may write the log store
+  const grant = logsLocal ? grantLogStore(cwd) : {};
+  if (grant.why) soft('events', () => emit(dir, key, phase, 'progress', `log store not granted: ${grant.why}`));
+  const addDir = grant.dir ?? null;
   return new Promise((resolve) => {
     let sessionId = null;
     let result = null;
@@ -168,10 +201,6 @@ function runOnce({ dir, cwd, key, phase, prompt, model, effort, mode, resume, en
     let idle = null;
     let rateLimited = false;
 
-    // made now so --add-dir names a folder that exists; the child's first log write fills it
-    let addDir = logStore(cwd);
-    if (addDir) soft('log store not created', () => mkdirSync(addDir, { recursive: true }));
-    if (addDir && !existsSync(addDir)) addDir = null;
     const child = spawn(process.env.CLAUDE_BIN || 'claude', childArgs({ model, effort, mode, resume, addDir }), {
       cwd,
       // the run dir and the item's key (state.json's `current` while it runs), set last: the child

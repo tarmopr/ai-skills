@@ -73,7 +73,10 @@ const deadPid = () => spawnSync(process.execPath, ['-e', '']).pid;
 
 test('parseConfig: ## Runner chunk, ## Models rows over defaults; never a permission mode', () => {
   // B4/B8/B12 (review round 1) added base, idleMinutes and warnings to the result
-  assert.deepEqual(parseConfig(''), { chunkSize: 5, idleMinutes: 60, base: '', models: MODEL_DEFAULTS, warnings: [] });
+  assert.deepEqual(parseConfig(''), { chunkSize: 5, idleMinutes: 60, base: '', models: MODEL_DEFAULTS, logsLocal: false, warnings: [] });
+  assert.equal(parseConfig('## logs\n- Location: `Local`\n').logsLocal, true);
+  assert.equal(parseConfig('## Logs\nLocation: repo\n').logsLocal, false);
+  assert.deepEqual(parseConfig('## Logs\nLocation: elsewhere\n').warnings, ['Location: "elsewhere" is not repo or local; using repo']);
   assert.deepEqual(MODEL_DEFAULTS['Phase: close'], { model: 'sonnet', effort: 'medium' });
   const cfg = parseConfig([
     '## runner ', 'Mode: runner', 'Implement chunk: 3', '',
@@ -1314,6 +1317,26 @@ test('a linked worktree: answers stored in its own git dir and used; .superpower
   assert.match(JSON.parse(readFileSync(log, 'utf8')).stdin, /copied exactly:\npostgres\n$/);
   assert.match(readFileSync(join(main, '.git', 'info', 'exclude'), 'utf8'), /^\.superpowers\/$/m);
   assert.equal(git(wt, 'status', '--porcelain', '--untracked-files=all'), '');
+});
+
+// ## Logs Location: local: a child in a linked worktree may write the main checkout's log store;
+// under repo it gets no --add-dir
+test('## Logs Location: a runner child in a linked worktree gets the log store as --add-dir only under local', () => {
+  for (const loc of ['local', 'repo']) {
+    const main = repo();
+    put(main, '.claude/ship-plan.md', ['## Logs', `Location: ${loc}`]);
+    commit(main);
+    git(main, 'switch', '-q', '-c', 'other');
+    const wt = join(realpathSync(mkdtempSync(join(tmpdir(), 'runner-wt-'))), 'wt');
+    git(main, 'worktree', 'add', '-q', wt, 'main');
+    atVerify(wt, 'L-1');
+    const log = join(wt, 'l.json');
+    assert.equal(cli(wt, ['start', 'issue', 'L-1'], { ...ships('L-1'), FAKE_CLAUDE_LOG: log }).status, 0);
+    const argv = JSON.parse(readFileSync(log, 'utf8')).argv;
+    const store = join(main, '.superpowers', 'ship-logs');
+    if (loc === 'local') assert.deepEqual(argv.slice(argv.indexOf('--add-dir'), argv.indexOf('--add-dir') + 2), ['--add-dir', store], loc);
+    else assert.ok(!argv.includes('--add-dir'), loc);
+  }
 });
 
 // K1: a verify run started again after it ended blocked (or cut off, or not started) reads its

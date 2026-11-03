@@ -324,7 +324,8 @@ tool that misbehaves, a gate that lies) and you get past it, **record it in the 
 Run on its own, update `<logs>/ship-plan/blockers.md` (create it from
 [log-formats.md](../ship-plan/log-formats.md) if it is missing). Under `## Logs` `Location: local`
 ([format](../ship-plan/config-format.md#-logs)) that is the local store, edited in place and never
-committed, and every item below that would write a tracked file (an override file, the config) is
+committed (before the first write to a store that holds no log, copy the tracked logs in and add
+`.superpowers/` to `info/exclude`, as `## Logs` says), and every item below that would write a tracked file (an override file, the config) is
 proposed in the report instead, with its exact text and target file; the report names the store's path. **Under `ship-plan`, edit no file,** for this entry or any item below:
 record each one, whether it would be written or proposed, as a `Lesson:` line in ship-plan's ledger that names its
 target file (`ship-plan/blockers.md` for a blocker). ship-plan's section 8 writes them on its lessons branch at the end of its run, so they never land in the product PR.

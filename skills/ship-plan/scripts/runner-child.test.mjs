@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -36,23 +36,47 @@ const gitRepo = () => {
   return { main, wt };
 };
 
-test('logStore: the main checkout store from a linked worktree; null inside the main checkout or outside git', () => {
+test('logStore: the main checkout store from a linked worktree; null inside the main checkout, outside git or for a bare clone', () => {
   const { main, wt } = gitRepo();
   assert.equal(logStore(wt), join(main, '.superpowers', 'ship-logs'));
   assert.equal(logStore(main), null);
   assert.equal(logStore(fresh()), null);
+  const bare = join(realpathSync(fresh()), 'b.git');
+  execFileSync('git', ['clone', '-q', '--bare', main, bare], { stdio: 'ignore' });
+  const bwt = join(realpathSync(fresh()), 'bwt');
+  execFileSync('git', ['worktree', 'add', '-q', bwt, 'main'], { cwd: bare, stdio: 'ignore' });
+  assert.equal(logStore(bwt), null); // common dir b.git: no main checkout to hold the store
 });
 
 test('runChild: a child in a linked worktree gets the log store as --add-dir, created', async () => {
   const { main, wt } = gitRepo();
   const dir = fresh();
   const log = join(dir, 'argv.json');
-  const r = await runChild(base(dir, { FAKE_CLAUDE: 'ok:RUNNER: done', FAKE_CLAUDE_LOG: log }, { cwd: wt }));
+  const r = await runChild(base(dir, { FAKE_CLAUDE: 'ok:RUNNER: done', FAKE_CLAUDE_LOG: log }, { cwd: wt, logsLocal: true }));
   assert.equal(r.ok, true);
   const store = join(main, '.superpowers', 'ship-logs');
   assert.deepEqual(JSON.parse(readFileSync(log, 'utf8')).argv.slice(-2), ['--add-dir', store]);
-  assert.ok(existsSync(store));
+  assert.equal(lstatSync(store).mode & 0o777, 0o700);
 });
+
+// security review of 805dc4c: a child that swaps .superpowers or ship-logs for a symlink (to $HOME)
+// must not widen the next child's write scope through --add-dir
+for (const [what, link] of [['ship-logs', ['.superpowers', 'ship-logs']], ['.superpowers', ['.superpowers']]]) {
+  test(`runChild: a symlinked ${what} gets no --add-dir, and one event says why`, async () => {
+    const { main, wt } = gitRepo();
+    const elsewhere = fresh();
+    if (link.length === 2) mkdirSync(join(main, '.superpowers'));
+    symlinkSync(elsewhere, join(main, ...link));
+    const dir = fresh();
+    const log = join(dir, 'argv.json');
+    const r = await runChild(base(dir, { FAKE_CLAUDE: 'ok:RUNNER: done', FAKE_CLAUDE_LOG: log }, { cwd: wt, logsLocal: true }));
+    assert.equal(r.ok, true);
+    assert.ok(!JSON.parse(readFileSync(log, 'utf8')).argv.includes('--add-dir'));
+    const ev = readFileSync(join(dir, 'events.log'), 'utf8').split('\n').filter((l) => / progress log store not granted: /.test(l));
+    assert.equal(ev.length, 1);
+    assert.deepEqual(readdirSync(elsewhere), []); // nothing made through the link
+  });
+}
 
 test('parseMarker: last RUNNER line wins; none -> null', () => {
   assert.deepEqual(parseMarker('x\nRUNNER: waiting 2 questions\n'), { status: 'waiting', text: '2 questions' });
@@ -338,4 +362,42 @@ test('endChildren: SIGTERM, then SIGKILL for a child that ignores it; returns th
   assert.equal(left.length, 1);
   assert.ok(Number.isInteger(left[0]) && left[0] > 0);
   await running2;
+});
+
+const argvOf = (log) => JSON.parse(readFileSync(log, 'utf8')).argv;
+const notGranted = (dir) => (existsSync(join(dir, 'events.log')) ? readFileSync(join(dir, 'events.log'), 'utf8') : '')
+  .split('\n').filter((l) => / progress log store not granted: /.test(l));
+
+test('runChild: under Location: repo a child in a linked worktree gets no --add-dir and no store', async () => {
+  const { main, wt } = gitRepo();
+  const dir = fresh();
+  const log = join(dir, 'argv.json');
+  assert.equal((await runChild(base(dir, { FAKE_CLAUDE: 'ok:RUNNER: done', FAKE_CLAUDE_LOG: log }, { cwd: wt }))).ok, true);
+  assert.ok(!argvOf(log).includes('--add-dir'));
+  assert.equal(existsSync(join(main, '.superpowers')), false);
+});
+
+test('runChild: a child in the main checkout gets no --add-dir, even under Location: local', async () => {
+  const { main } = gitRepo();
+  const dir = fresh();
+  const log = join(dir, 'argv.json');
+  assert.equal((await runChild(base(dir, { FAKE_CLAUDE: 'ok:RUNNER: done', FAKE_CLAUDE_LOG: log }, { cwd: main, logsLocal: true }))).ok, true);
+  assert.ok(!argvOf(log).includes('--add-dir'));
+  assert.deepEqual(notGranted(dir), []);
+});
+
+test('runChild: a store that cannot be made gets no --add-dir, one event, and the run goes on', async () => {
+  const { main, wt } = gitRepo();
+  mkdirSync(join(main, '.superpowers'), { mode: 0o500 }); // no write: ship-logs cannot be made
+  const dir = fresh();
+  const log = join(dir, 'argv.json');
+  try {
+    const r = await runChild(base(dir, { FAKE_CLAUDE: 'ok:RUNNER: done', FAKE_CLAUDE_LOG: log }, { cwd: wt, logsLocal: true }));
+    assert.equal(r.ok, true);
+    assert.ok(!argvOf(log).includes('--add-dir'));
+    assert.equal(notGranted(dir).length, 1);
+    assert.match(notGranted(dir)[0], /EACCES/);
+  } finally {
+    chmodSync(join(main, '.superpowers'), 0o700);
+  }
 });

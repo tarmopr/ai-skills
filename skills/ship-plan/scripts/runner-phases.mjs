@@ -506,7 +506,7 @@ export async function runIssue(ctx, item) {
 
     const opts = {
       dir, cwd: root, key, phase, prompt, model: pick.model, effort: pick.effort,
-      mode: ctx.mode ?? 'auto', resume, env: ctx.env ?? {}, idleMs: ctx.idleMs,
+      mode: ctx.mode ?? 'auto', resume, env: ctx.env ?? {}, idleMs: ctx.idleMs, logsLocal: ctx.logsLocal,
     };
     // hashed before the tail starts: a hash that throws leaves no timer behind
     const guarded = guardedHashes(root);
