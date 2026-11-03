@@ -238,14 +238,16 @@ function planText(root, ledgers) {
   }
   const rel = relative(root, ledgers.planDoc).split(sep).join('/');
   const b = ledgers.branch;
+  let said = '';
   for (const ref of b && !b.startsWith('-') ? [b, `origin/${b}`] : []) {
     try {
-      return { text: execFileSync('git', ['show', `${ref}:${rel}`], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }) };
-    } catch {
-      // not on this ref: try the next
+      return { text: execFileSync('git', ['show', `${ref}:${rel}`], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }) };
+    } catch (e) {
+      // not on this ref: try the next; git's words on the run's own branch go in the reason
+      said ||= String(e.stderr ?? '').trim().replace(/\s*\n\s*/g, ' ') || e.message;
     }
   }
-  return { missing: `plan ${rel} not found in the checkout${b ? ` or on ${b}` : ', and the ledgers name no branch'}` };
+  return { missing: `plan ${rel} not found in the checkout${b ? ` or on ${b}` : ', and the ledgers name no branch'}${said ? ` (git: ${said})` : ''}` };
 }
 
 // The first chunk with a task the ship-plan ledger has no `Progress: task <n> done|parked` line
@@ -455,9 +457,10 @@ export async function runIssue(ctx, item) {
       dir, cwd: root, key, phase, prompt, model: pick.model, effort: pick.effort,
       mode: ctx.mode ?? 'auto', resume, env: ctx.env ?? {}, idleMs: ctx.idleMs,
     };
+    // hashed before the tail starts: a hash that throws leaves no timer behind
+    const guarded = guardedHashes(root);
     const stop = tailProgress(root, key, (line) => emit(dir, key, phase, 'progress', line), ctx.tailMs ?? 5000, ctx.ledgers,
       (e) => emit(dir, key, phase, 'progress', `ledger read failed: ${e.code || e.message}`));
-    const guarded = guardedHashes(root);
     let r;
     try {
       r = resume ? await resumeOrFresh({ ...opts, freshPrompt: prompt }) : await runChild(opts);

@@ -1,10 +1,10 @@
 // Tests for the ship runner state, lock and event log. Run: node --test skills/ship-plan/scripts/
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, statSync, utimesSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { acquireLock, emit, readState, releaseLock, runDir, setChildPid, writeState } from './runner-lib.mjs';
+import { acquireLock, emit, readLock, readState, releaseLock, runDir, setChildPid, writeState } from './runner-lib.mjs';
 
 const fresh = () => mkdtempSync(join(tmpdir(), 'runner-lib-'));
 
@@ -132,4 +132,21 @@ test('emit: control characters are stripped from the line, a tab is kept', () =>
   emit(dir, 'K-1', 'spec', 'progress', 'Progress: \x1b[31mred\x1b[0m\x07 a\tb\r\x00\x9bc');
   const line = readFileSync(join(dir, 'events.log'), 'utf8');
   assert.match(line, /^\S+ K-1 spec progress Progress: \[31mred\[0m a\tb c\n$/);
+});
+
+// review round 2, batch E1 (S4)
+test('readState: a state.json that is not JSON throws with its path', () => {
+  const dir = fresh();
+  writeFileSync(join(dir, 'state.json'), '{ not json');
+  assert.throws(() => readState(dir), (e) => e.message.includes(join(dir, 'state.json')) && /JSON/.test(e.message));
+});
+
+test('readLock: missing -> null; unparseable -> null (acquireLock judges it by age); any other read error throws', () => {
+  const dir = fresh();
+  assert.equal(readLock(dir), null);
+  writeFileSync(join(dir, 'lock'), '{ half');
+  assert.equal(readLock(dir), null);
+  const dir2 = fresh();
+  mkdirSync(join(dir2, 'lock')); // a folder: EISDIR
+  assert.throws(() => readLock(dir2), /EISDIR/);
 });

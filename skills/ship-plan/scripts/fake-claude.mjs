@@ -6,7 +6,10 @@
 //   crash             exit 1, no output
 //   crashafter        init and assistant lines (a session id), then exit 1 with no result line
 //   apierror          a result line with is_error: true and an API authentication error
-//   hang              an init line, then nothing, never exits by itself
+//   hang              an init line, then nothing, never exits by itself; ignores SIGTERM when
+//                     FAKE_CLAUDE_IGNORE_TERM=1 (only SIGKILL ends it)
+//   badresult         a result line whose `result` and `errors` cannot be turned into text (an
+//                     object with no usable toString): the runner's reading of it throws
 //   grandchild        starts a grandchild that holds stdout open for FAKE_CLAUDE_HOLD_MS (default 3000),
 //                     then ok output (marker from FAKE_CLAUDE_MARKER) and exit; the grandchild's pid
 //                     goes to FAKE_CLAUDE_PIDFILE when set, and it ignores SIGTERM when
@@ -25,12 +28,16 @@
 // FAKE_CLAUDE_LATE_WRITE: JSON {file, ms, text}: a background grandchild (same process group,
 //   stdio ignored) writes text to file ms after the child starts, whether or not the child has
 //   exited by then.
+// FAKE_CLAUDE_CHMOD: JSON [[file, mode], …]: each file's mode set (e.g. 0 makes it unreadable).
+// FAKE_CLAUDE_MKDIR: JSON [dir, …]: each dir made (recursively); $PPID in a path is the parent's
+//   (the runner's) pid.
+// FAKE_CLAUDE_LINK: JSON [[target, link, 'hard'|'sym'], …]: each link made, its folder first.
 // FAKE_CLAUDE_GIT: JSON [[<git arg>, …], …], each run as `git <args>` in cwd after the ledger ops.
 // FAKE_CLAUDE_BY_KEY: JSON {<key>: {<env var>: <value>}}; the key is the prompt's
 //   `with the arguments "<key>"`; its values override the env vars above for that child.
 // The log's `head` is cwd's .git/HEAD (the branch the child started on), or null.
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, linkSync, mkdirSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 const chunks = [];
@@ -59,6 +66,12 @@ if (process.env.FAKE_CLAUDE_LATE_WRITE) {
 }
 if (process.env.FAKE_CLAUDE_STDERR) process.stderr.write(process.env.FAKE_CLAUDE_STDERR);
 if (process.env.FAKE_CLAUDE_RM) rmSync(process.env.FAKE_CLAUDE_RM, { recursive: true, force: true });
+for (const [file, m] of JSON.parse(process.env.FAKE_CLAUDE_CHMOD || '[]')) chmodSync(file, m);
+for (const d of JSON.parse(process.env.FAKE_CLAUDE_MKDIR || '[]')) mkdirSync(d.replaceAll('$PPID', String(process.ppid)), { recursive: true });
+for (const [target, link, how] of JSON.parse(process.env.FAKE_CLAUDE_LINK || '[]')) {
+  mkdirSync(dirname(link), { recursive: true });
+  (how === 'sym' ? symlinkSync : linkSync)(target, link);
+}
 for (const args of JSON.parse(process.env.FAKE_CLAUDE_GIT || '[]')) execFileSync('git', args, { stdio: 'ignore' });
 
 const mode = process.env.FAKE_CLAUDE || 'ok:RUNNER: done';
@@ -83,12 +96,17 @@ else if (mode === 'error') {
 } else if (mode === 'apierror') {
   out({ type: 'system', subtype: 'init', cwd: process.cwd(), tools: [] });
   out({ type: 'result', subtype: 'success', is_error: true, num_turns: 0, total_cost_usd: 0, duration_ms: 500, result: 'API Error: 401 {"type":"authentication_error","message":"invalid x-api-key"}' });
+} else if (mode === 'badresult') {
+  out({ type: 'system', subtype: 'init', cwd: process.cwd(), tools: [] });
+  const bad = { toString: 1, valueOf: 1 };
+  out({ type: 'result', subtype: 'error_during_execution', is_error: true, num_turns: 0, total_cost_usd: 0, result: bad, errors: [bad] });
 } else if (mode === 'crash') process.exit(1);
 else if (mode === 'crashafter') {
   out({ type: 'system', subtype: 'init', cwd: process.cwd(), tools: ['Skill'] });
   out({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'working' }] } });
   process.exitCode = 1;
 } else if (mode === 'hang') {
+  if (process.env.FAKE_CLAUDE_IGNORE_TERM === '1') process.on('SIGTERM', () => {});
   out({ type: 'system', subtype: 'init', cwd: process.cwd(), tools: ['Skill'] });
   setInterval(() => {}, 1 << 30);
 } else if (mode === 'grandchild') {

@@ -17,9 +17,9 @@ import { constants } from 'node:os';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { acquireLock, alive, clean, emit, readLock, readState, releaseLock, runDir, writeState } from './runner-lib.mjs';
+import { acquireLock, alive, clean, emit, groupAlive, readLock, readState, releaseLock, runDir, setChildPid, writeState } from './runner-lib.mjs';
 import { findPlanLedger, ledgerOutcome, pendingQuestions, PHASE_ROWS, PHASES, phaseFromLedgers, runIssue } from './runner-phases.mjs';
-import { killChildren } from './runner-child.mjs';
+import { endChildren, haltChildren } from './runner-child.mjs';
 import { nextItem } from './runner-queue.mjs';
 
 // `## Models` rows the runner's children use, with their defaults.
@@ -272,8 +272,10 @@ const asKey = (name) => name.replace(/[^A-Za-z0-9._-]/g, '-');
 function parseStart(root, [what, ...a]) {
   if (!a[0]) return `start ${what ?? ''}: missing argument`;
   const notKey = (k) => `start ${what}: "${k}" is not an issue key (letters, digits, . _ -, an optional leading #)`;
+  const extra = (from) => (a.length > from ? `start ${what}: unexpected argument "${a[from]}"` : null);
   if (what === 'issue') {
     if (!KEY.test(a[0])) return notKey(a[0]);
+    if (extra(1)) return extra(1);
     return { kind: 'issue', id: a[0], items: [newItem(a[0])], skill: 'ship-issue' };
   }
   if (what === 'queue') {
@@ -283,9 +285,12 @@ function parseStart(root, [what, ...a]) {
     if (bad) return notKey(bad);
     const twice = keys.find((k, n) => keys.indexOf(k) !== n);
     if (twice) return `start queue: ${twice} is in the list twice`;
+    // after the keys only `--deps <KEY>:<DEP>,…`, with a value
+    if (a.length > 2 && a[2] !== '--deps') return extra(2);
+    if (a[2] === '--deps' && !a[3]) return 'start queue: --deps needs <KEY>:<DEP>,…';
+    if (extra(4)) return extra(4);
     const deps = Object.fromEntries(keys.map((k) => [k, []]));
-    const at = a.indexOf('--deps');
-    for (const pair of at === -1 ? [] : (a[at + 1] ?? '').split(',').filter(Boolean)) {
+    for (const pair of (a[3] ?? '').split(',').filter(Boolean)) {
       const [k, d] = pair.split(':').map((x) => x.trim());
       if (!Object.hasOwn(deps, k) || !Object.hasOwn(deps, d)) return `start queue: --deps ${pair}: both keys must be in the queue`;
       if (k === d) return `start queue: --deps ${pair}: a key cannot wait for itself`;
@@ -294,6 +299,7 @@ function parseStart(root, [what, ...a]) {
     return { kind: 'queue', id: a[0], items: keys.map((k) => newItem(k, deps[k])), skill: 'ship-issue' };
   }
   if (what === 'plan') {
+    if (extra(1)) return extra(1);
     if (!existsSync(resolve(root, a[0]))) return `start plan: no plan at ${a[0]}`;
     return { kind: 'plan', id: a[0], items: [newItem(asKey(basename(a[0]).replace(/\.md$/, '')))], skill: 'ship-plan', args: a[0] };
   }
@@ -325,13 +331,14 @@ function safe(fn) {
   }
 }
 
-// The pid holding the run dir: its runner, alive; or, the runner dead, its child still alive (it
-// still writes the ledgers). Null when nothing holds it.
+// The pid holding the run dir: its runner, alive; or, the runner dead, its child or anything left
+// in the child's process group still alive (it may still write the ledgers). Null when nothing
+// holds it.
 function holder(dir) {
   const prev = readLock(dir);
-  const live = (pid) => Number.isInteger(pid) && alive(pid);
+  const live = (pid) => Number.isInteger(pid) && pid > 0 && alive(pid);
   if (prev && live(prev.runner)) return prev.runner;
-  if (prev && live(prev.child)) return prev.child;
+  if (prev && (live(prev.child) || (Number.isInteger(prev.child) && prev.child > 0 && groupAlive(prev.child)))) return prev.child;
   return null;
 }
 
@@ -388,40 +395,88 @@ async function start(rest) {
   return runLocked({ root, dir, run, cfg, base, mode, modeFrom, allowBypass });
 }
 
-// Everything after the lock is taken. Whatever happens (an error, a signal), the run ends with a
-// summary event, `stopped` set in state.json, and the lock released, last.
+// Everything after the lock is taken. Whatever happens (an error, a signal, an uncaught error), the
+// run ends with a summary event and `stopped` set in state.json; the lock is released last, and
+// kept when state.json could not be written or a child's process group outlived the stop.
 async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, allowBypass }) {
   const slug = run.id.replaceAll('/', '-');
   let state = null;
   let code = 0;
   let ended = false;
-  const finish = () => {
+  // the item whose runIssue call is under way (a runner error marks it blocked, whatever its status)
+  let current = null;
+  // A signal or an uncaught error is ending the run (stop): children are halted, and the main path
+  // parks at its next await, so it never writes over the end.
+  let stopping = false;
+  const parked = () => new Promise(() => {});
+  // keep: the pid of a child's process group still alive: the lock stays, naming it, so no rerun
+  // starts a second child beside it. A state.json that cannot be written still says the run is
+  // going (stopped: null): the lock stays too, naming this runner, which is soon dead, so the next
+  // start and the agent-dispatch hook see that it is not.
+  const finish = (keep = null) => {
     if (ended) return;
     ended = true;
+    let written = !state;
     if (state) {
       state.current = null;
       safe(() => emit(dir, slug, '-', 'summary', summaryText(state)));
       state.stopped = new Date().toISOString();
-      safe(() => writeState(dir, state));
+      safe(() => {
+        writeState(dir, state);
+        written = true;
+      });
     } else safe(() => emit(dir, slug, '-', 'summary', 'no run state'));
-    safe(() => releaseLock(dir));
+    if (keep) {
+      safe(() => setChildPid(dir, keep));
+      console.error(`runner: child process group ${keep} is still alive; lock kept`);
+    } else if (!written) console.error('runner: state.json not written; lock kept');
+    else safe(() => releaseLock(dir));
   };
-  const onSignal = (sig) => {
-    killChildren('SIGTERM');
-    if (state) {
-      const why = `runner stopped (${sig})`;
-      for (const i of state.items) {
-        if (i.status === 'running') {
-          Object.assign(i, { status: 'cut off', reason: why });
-          safe(() => emit(dir, i.key, i.phase ?? '-', 'cutoff', why));
-        } else if (i.status === 'queued') Object.assign(i, { status: 'not started', reason: why });
-      }
+  // A runner error: the item under way blocked, every queued one not started, with the reason.
+  const markError = (why) => {
+    for (const i of state?.items ?? []) {
+      if (i === current ? !['done', 'waiting', 'blocked', 'cut off'].includes(i.status) : i.status === 'running') Object.assign(i, { status: 'blocked', reason: why });
+      else if (i.status === 'queued') Object.assign(i, { status: 'not started', reason: why });
     }
-    finish();
-    process.exit(128 + (constants.signals[sig] ?? 0));
+  };
+  // Stop now: halt the children, mark the items, end every child's process group (SIGTERM, SIGKILL
+  // after 1 s, then up to 3 s for it to be gone), write the end, exit.
+  const stop = async (exitCode, mark) => {
+    if (stopping) return;
+    stopping = true;
+    haltChildren();
+    let left = [];
+    try {
+      safe(mark);
+      left = await endChildren();
+      if (left.length) safe(() => emit(dir, slug, '-', 'progress', `child process group ${left.join(', ')} still alive after SIGKILL; lock kept`));
+    } finally {
+      finish(left[0] ?? null);
+      process.exit(exitCode);
+    }
+  };
+  const onSignal = (sig) => stop(128 + (constants.signals[sig] ?? 0), () => {
+    const why = `runner stopped (${sig})`;
+    for (const i of state?.items ?? []) {
+      if (i.status === 'running') {
+        Object.assign(i, { status: 'cut off', reason: why });
+        safe(() => emit(dir, i.key, i.phase ?? '-', 'cutoff', why));
+      } else if (i.status === 'queued') Object.assign(i, { status: 'not started', reason: why });
+    }
+  });
+  // an error thrown outside the awaited chain (an event handler, a timer): a runner error
+  const onCrash = (e) => {
+    const msg = e?.message ?? String(e);
+    console.error(`runner: ${msg}`);
+    stop(1, () => {
+      markError(`runner error: ${msg}`);
+      safe(() => emit(dir, '-', '-', 'blocked', `runner error: ${msg}`));
+    });
   };
   const SIGNALS = ['SIGTERM', 'SIGINT', 'SIGHUP'];
   for (const sig of SIGNALS) process.on(sig, onSignal);
+  process.on('uncaughtException', onCrash);
+  process.on('unhandledRejection', onCrash);
 
   try {
     state = readState(dir);
@@ -504,7 +559,10 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
         // a single issue waits for its answers instead of ending
         const only = state.items[0];
         if (state.kind !== 'queue' && only.status === 'waiting') {
-          while (!answersReady(store, dir, only)) await new Promise((r) => setTimeout(r, pollMs));
+          while (!answersReady(store, dir, only)) {
+            await new Promise((r) => setTimeout(r, pollMs));
+            if (stopping) await parked();
+          }
           continue;
         }
         break;
@@ -534,8 +592,10 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
       (item.windows ??= []).push(window);
       save();
       const ctx = { ...base, ledgers };
+      current = item;
       try {
         await runIssue(ctx, item);
+        current = null;
       } finally {
         window[1] = Date.now();
         state.current = null;
@@ -560,13 +620,17 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
       }
     }
   } catch (e) {
+    if (stopping) await parked();
     code = 1;
     const why = `runner error: ${e.message}`;
     console.error(`runner: ${e.message}`);
-    if (state) for (const i of state.items) if (i.status === 'running') Object.assign(i, { status: 'blocked', reason: why });
+    markError(why);
     safe(() => emit(dir, '-', '-', 'blocked', why));
   } finally {
+    if (stopping) await parked();
     for (const sig of SIGNALS) process.off(sig, onSignal);
+    process.off('uncaughtException', onCrash);
+    process.off('unhandledRejection', onCrash);
     finish();
   }
   return code;

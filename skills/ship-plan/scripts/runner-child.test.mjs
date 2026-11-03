@@ -1,12 +1,12 @@
 // Tests for the child launcher and stream reader. Run: node --test 'skills/ship-plan/scripts/*.test.mjs'
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { acquireLock, alive } from './runner-lib.mjs';
-import { childArgs, isEnvError, isLimitError, parseMarker, redact, resumeOrFresh, runChild } from './runner-child.mjs';
+import { childArgs, endChildren, isEnvError, isLimitError, parseMarker, redact, resumeOrFresh, runChild } from './runner-child.mjs';
 
 process.env.CLAUDE_BIN = join(dirname(fileURLToPath(import.meta.url)), 'fake-claude.mjs');
 
@@ -255,4 +255,46 @@ test('redact: GitHub, OpenAI/Anthropic, Slack, AWS keys and bearer tokens, whole
   for (const t of cases) assert.equal(redact(`a ${t} b`), 'a [redacted] b', t);
   assert.equal(redact('Authorization: Bearer eyJhbG.ciOi-J_IU~z+/9=, next'), 'Authorization: [redacted], next');
   assert.equal(redact('sk-short and AKIA123 stay'), 'sk-short and AKIA123 stay');
+});
+
+// review round 2, batch E1
+// S4: a child that could not be spawned never started a session, but a fresh child would fail the
+// same way: it is not a dead resume
+test('resumeOrFresh: a resume that cannot be spawned is returned as it is, no fresh child', async () => {
+  const dir = fresh();
+  const saved = process.env.CLAUDE_BIN;
+  process.env.CLAUDE_BIN = join(dir, 'no-such-claude');
+  try {
+    const r = await resumeOrFresh(base(dir, {}, { resume: 's-old', freshPrompt: 'FRESH' }));
+    assert.equal(r.ok, false);
+    assert.match(r.error, /^spawn failed: ENOENT/);
+    assert.equal(r.failedResume, undefined);
+    assert.equal(existsSync(join(dir, 'events.log')), false);
+    assert.deepEqual(readdirSync(dir).filter((f) => f.endsWith('.jsonl')), ['BILL-1-spec-1.jsonl']);
+  } finally {
+    process.env.CLAUDE_BIN = saved;
+  }
+});
+
+// S1/T3/X3: what a runner stopped by a signal does with its children
+test('endChildren: SIGTERM, then SIGKILL for a child that ignores it; returns the groups still alive', async () => {
+  const dir = fresh();
+  const running = runChild(base(dir, { FAKE_CLAUDE: 'hang', FAKE_CLAUDE_IGNORE_TERM: '1' }));
+  const file = join(dir, 'BILL-1-spec-1.jsonl');
+  for (let i = 0; i < 400 && !(existsSync(file) && /"init"/.test(readFileSync(file, 'utf8'))); i++) await new Promise((r) => setTimeout(r, 25));
+  const t0 = Date.now();
+  assert.deepEqual(await endChildren(), []);
+  assert.ok(Date.now() - t0 >= 900, 'SIGKILL only after the SIGTERM grace');
+  const r = await running;
+  assert.match(r.error, /killed by SIGKILL/);
+
+  // a group that cannot be ended (left alive whatever the signal): its pid comes back
+  const dir2 = fresh();
+  const running2 = runChild(base(dir2, { FAKE_CLAUDE: 'hang' }));
+  for (let i = 0; i < 400 && !existsSync(join(dir2, 'BILL-1-spec-1.jsonl')); i++) await new Promise((r) => setTimeout(r, 25));
+  await new Promise((r) => setTimeout(r, 100));
+  const left = await endChildren({ isAlive: () => true, graceMs: 50, waitMs: 50 });
+  assert.equal(left.length, 1);
+  assert.ok(Number.isInteger(left[0]) && left[0] > 0);
+  await running2;
 });

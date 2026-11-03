@@ -934,3 +934,163 @@ test('a child that changes a hook, agent, command, skill, CLAUDE.md or a hook sc
   // the new files leave the checkout busy for A-2; what matters here: no "child changed"
   assert.doesNotMatch(events(runDir(root, 'queue', 'P-1')), /child changed/);
 });
+
+// review round 2, batch E1 (runner lifecycle and answers)
+
+// The runner in the background, once its child has started (its transcript has the init line,
+// written after the fake's own SIGTERM handler is set). { runner, exited, child }.
+async function runnerWithChild(root, dir, args, env) {
+  const runner = spawn(process.execPath, [RUNNER, ...args], { cwd: root, env: { ...ENV, ...env }, stdio: ['ignore', 'ignore', 'pipe'] });
+  let stderr = '';
+  runner.stderr.on('data', (d) => { stderr += d; });
+  const exited = new Promise((r) => runner.on('close', (code, signal) => r({ code, signal, stderr })));
+  let child = null;
+  const ready = () => existsSync(dir) && readdirSync(dir).some((f) => f.endsWith('.jsonl') && /"init"/.test(readFileSync(join(dir, f), 'utf8')));
+  for (let i = 0; i < 400 && !(child && ready()); i++) {
+    await new Promise((r) => setTimeout(r, 25));
+    try { child = JSON.parse(readFileSync(join(dir, 'lock'), 'utf8')).child; } catch { /* not yet */ }
+  }
+  assert.ok(child && ready(), 'the child never started');
+  return { runner, exited, child };
+}
+const killQuietly = (pid) => { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } };
+
+// S1/T3/X3: a child that ignores SIGTERM must not outlive the runner's lock
+test('SIGTERM to the runner, its child ignoring SIGTERM: the runner waits, SIGKILLs it, then releases the lock', async () => {
+  const root = repo();
+  atVerify(root, 'T-1');
+  const dir = runDir(root, 'issue', 'T-1');
+  const { runner, exited, child } = await runnerWithChild(root, dir, ['start', 'issue', 'T-1'], { FAKE_CLAUDE: 'hang', FAKE_CLAUDE_IGNORE_TERM: '1' });
+  try {
+    runner.kill('SIGTERM');
+    const { code } = await exited;
+    assert.equal(code, 143);
+    // the child is dead (a group still alive would keep the lock, naming it: see runner-child.test)
+    assert.equal(alive(child), false);
+    assert.equal(existsSync(join(dir, 'lock')), false);
+    const s = readState(dir);
+    assert.ok(s.stopped);
+    assert.deepEqual([s.items[0].status, s.items[0].reason], ['cut off', 'runner stopped (SIGTERM)']);
+    // nothing after the stop: one child, one summary
+    assert.deepEqual(children(dir), ['T-1-verify-1.jsonl']);
+    assert.equal(events(dir).split('\n').filter((l) => / summary /.test(l)).length, 1);
+  } finally {
+    killQuietly(child);
+  }
+});
+
+// T5: every signal the runner handles stops a queue the same way
+test('SIGINT or SIGHUP during a 2-item queue: the running item cut off, the queued one not started, exit 128+n', async () => {
+  for (const [sig, code] of [['SIGINT', 130], ['SIGHUP', 129]]) {
+    const root = repo();
+    atVerify(root, 'Q-1', 'Q-2');
+    const dir = runDir(root, 'queue', 'P-1');
+    const env = { FAKE_CLAUDE_BY_KEY: JSON.stringify({ 'Q-1': { FAKE_CLAUDE: 'hang' }, 'Q-2': ships('Q-2') }) };
+    const { runner, exited, child } = await runnerWithChild(root, dir, ['start', 'queue', 'P-1', 'Q-1,Q-2'], env);
+    try {
+      runner.kill(sig);
+      assert.equal((await exited).code, code, sig);
+      const why = `runner stopped (${sig})`;
+      assert.deepEqual(readState(dir).items.map((i) => [i.key, i.status, i.reason]), [['Q-1', 'cut off', why], ['Q-2', 'not started', why]], sig);
+      assert.equal(alive(child), false, sig);
+      assert.equal(existsSync(join(dir, 'lock')), false, sig);
+      assert.deepEqual(starts(dir), ['Q-1'], sig);
+      assert.match(events(dir), new RegExp(` P-1 - summary 1 cut off, 1 not started; cost \\$0\\.00$`, 'm'), sig);
+    } finally {
+      killQuietly(child);
+    }
+  }
+});
+
+// S4: an error thrown outside the awaited chain (here: a result line the runner cannot read) ends
+// the run like any runner error, not with the lock and a "running" item left behind
+test('an uncaught error while locked: item blocked runner error, the rest not started, summary, stopped set, lock released, exit 1', () => {
+  const root = repo();
+  atVerify(root, 'U-1', 'U-2');
+  const r = cli(root, ['start', 'queue', 'P-1', 'U-1,U-2'], { FAKE_CLAUDE_BY_KEY: JSON.stringify({ 'U-1': { FAKE_CLAUDE: 'badresult' }, 'U-2': ships('U-2') }) });
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /^runner: .*primitive/m);
+  const dir = runDir(root, 'queue', 'P-1');
+  const s = readState(dir);
+  assert.ok(s.stopped);
+  assert.equal(byKey(s, 'U-1').status, 'blocked');
+  assert.match(byKey(s, 'U-1').reason, /^runner error: .*primitive/);
+  assert.equal(byKey(s, 'U-2').status, 'not started');
+  assert.match(byKey(s, 'U-2').reason, /^runner error: /);
+  assert.match(events(dir), /^\S+ - - blocked runner error: /m);
+  assert.match(events(dir), / P-1 - summary 1 blocked, 1 not started; /);
+  assert.equal(existsSync(join(dir, 'lock')), false);
+  assert.deepEqual(starts(dir), ['U-1']);
+});
+
+// S2: a runner error before the item's child started (its plan ledger cannot be read)
+test('a runner error before the item starts: that item blocked, the queued ones not started, each with the reason', () => {
+  const root = repo();
+  atVerify(root, 'A-1', 'A-2');
+  const pl = join(root, planLedger('A-1'));
+  execFileSync('rm', [pl]);
+  mkdirSync(pl); // a folder: reading it fails with EISDIR
+  const r = cli(root, ['start', 'queue', 'P-1', 'A-1,A-2'], { FAKE_CLAUDE_BY_KEY: JSON.stringify({ 'A-1': ships('A-1'), 'A-2': ships('A-2') }) });
+  assert.equal(r.status, 1, r.stderr);
+  const dir = runDir(root, 'queue', 'P-1');
+  const s = readState(dir);
+  assert.deepEqual(s.items.map((i) => [i.key, i.status]), [['A-1', 'blocked'], ['A-2', 'not started']]);
+  for (const i of s.items) assert.match(i.reason, /^runner error: .*EISDIR/);
+  assert.deepEqual(children(dir), []);
+});
+
+// T4: a runner error after the item's child ran (a guarded file the child made unreadable)
+test('a runner error after the item started: the running item blocked runner error, the queued one not started', () => {
+  const root = repo();
+  put(root, '.claude/settings.json', ['{}']); // ignored (*.json): the checkout stays clean
+  atVerify(root, 'A-1', 'A-2');
+  const env = { 'A-1': { ...ships('A-1'), FAKE_CLAUDE_CHMOD: ops([['.claude/settings.json', 0]]) }, 'A-2': ships('A-2') };
+  const r = cli(root, ['start', 'queue', 'P-1', 'A-1,A-2'], { FAKE_CLAUDE_BY_KEY: JSON.stringify(env) });
+  assert.equal(r.status, 1, r.stderr);
+  const dir = runDir(root, 'queue', 'P-1');
+  const s = readState(dir);
+  assert.deepEqual([byKey(s, 'A-1').status, byKey(s, 'A-1').phase], ['blocked', 'verify']);
+  assert.match(byKey(s, 'A-1').reason, /^runner error: .*EACCES/);
+  assert.equal(byKey(s, 'A-2').status, 'not started');
+  assert.match(byKey(s, 'A-2').reason, /^runner error: .*EACCES/);
+  assert.deepEqual(starts(dir), ['A-1']);
+  assert.equal(existsSync(join(dir, 'lock')), false);
+});
+
+// S4: state.json not written at the end -> it still says the run is going (stopped: null); a
+// lock naming the dead runner tells the hook and the next start it is not
+test('state.json cannot be written at the end: the lock is kept (naming the dead runner), exit 1', () => {
+  const root = repo();
+  atVerify(root, 'S-1');
+  const dir = runDir(root, 'issue', 'S-1');
+  // the runner writes state.json through state.json.<its pid>.tmp: a folder there makes it fail
+  const r = cli(root, ['start', 'issue', 'S-1'], { ...ships('S-1'), FAKE_CLAUDE_MKDIR: ops([join(dir, 'state.json.$PPID.tmp')]) });
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /lock kept/);
+  const lock = JSON.parse(readFileSync(join(dir, 'lock'), 'utf8'));
+  assert.equal(lock.runner, r.pid);
+  assert.equal(alive(lock.runner), false);
+  assert.equal(readState(dir).stopped, null);
+  assert.match(events(dir), / S-1 - summary /);
+});
+
+// S4: parseStart takes exactly the arguments of its run
+test('start: an extra or unknown argument, or --deps with no value, is refused (exit 2)', () => {
+  const root = repo();
+  put(root, 'docs/p.md', ['# Plan']);
+  commit(root);
+  const cases = [
+    ['issue', 'A-1', 'B-1'],
+    ['queue', 'P-1', 'A-1,A-2', '--dep', 'A-2:A-1'],
+    ['queue', 'P-1', 'A-1,A-2', '--deps'],
+    ['queue', 'P-1', 'A-1,A-2', '--deps', ''],
+    ['queue', 'P-1', 'A-1,A-2', '--deps', 'A-2:A-1', 'extra'],
+    ['plan', 'docs/p.md', 'more'],
+  ];
+  for (const args of cases) {
+    const r = cli(root, ['start', ...args]);
+    assert.equal(r.status, 2, `${args.join(' ')}: ${r.stderr}`);
+    assert.match(r.stderr, /^runner: start /, args.join(' '));
+  }
+  assert.equal(existsSync(join(root, '.superpowers', 'ship-runner')), false);
+});

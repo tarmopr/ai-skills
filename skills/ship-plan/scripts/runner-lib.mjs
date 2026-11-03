@@ -17,12 +17,14 @@ export function clean(text) {
   return String(text).replace(/\r\n|[\r\n]/g, ' ').replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, '');
 }
 
+// The run's state.json, or null when there is none. Any other failure throws, naming the file.
 export function readState(dir) {
+  const file = join(dir, 'state.json');
   try {
-    return JSON.parse(readFileSync(join(dir, 'state.json'), 'utf8'));
+    return JSON.parse(readFileSync(file, 'utf8'));
   } catch (e) {
     if (e.code === 'ENOENT') return null;
-    throw e;
+    throw Object.assign(new Error(`${file}: ${e.message}`), { code: e.code });
   }
 }
 
@@ -44,12 +46,30 @@ export function alive(pid) {
   }
 }
 
-// { runner, child } pids, or null.
-export function readLock(dir) {
+// Whether any process of the process group led by pid is left (EPERM: one exists, another user's).
+export function groupAlive(pid) {
   try {
-    return JSON.parse(readFileSync(join(dir, 'lock'), 'utf8'));
+    process.kill(-pid, 0);
+    return true;
+  } catch (e) {
+    return e.code === 'EPERM';
+  }
+}
+
+// { runner, child } pids, or null: no lock, or one that cannot be parsed (empty, mid-write; acquireLock
+// judges it by its age). A lock that cannot be read at all (EACCES, EISDIR, …) throws.
+export function readLock(dir) {
+  let text;
+  try {
+    text = readFileSync(join(dir, 'lock'), 'utf8');
+  } catch (e) {
+    if (e.code === 'ENOENT') return null;
+    throw e;
+  }
+  try {
+    return JSON.parse(text);
   } catch {
-    return null; // missing or unreadable lock counts as no holder
+    return null;
   }
 }
 

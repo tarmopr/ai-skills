@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -477,7 +477,9 @@ test('runIssue: implement with the plan nowhere to read -> blocked, no child', a
   const root2 = planOnBranch();
   execFileSync('git', ['branch', '-D', 'feat/bill-7'], { cwd: root2, stdio: 'pipe' });
   const it2 = await runIssue(ctxFor(root2, { FAKE_CLAUDE: 'ok:RUNNER: phase-done' }), item());
-  assert.deepEqual([it2.status, it2.reason], ['blocked', 'plan docs/plan.md not found in the checkout or on feat/bill-7']);
+  // S4 (review round 2): git's own words are kept in the reason
+  assert.equal(it2.status, 'blocked');
+  assert.match(it2.reason, /^plan docs\/plan\.md not found in the checkout or on feat\/bill-7 \(git: fatal: .*feat\/bill-7.*\)$/);
 });
 
 test('ledgerOutcome: the Outcome: line under the first line; with two, the one nearer the top (the newer)', () => {
@@ -515,4 +517,17 @@ test('findPlanLedger: an unreadable ship-plan folder is an error, not "no ledger
   mkdirSync(join(root, '.superpowers'), { recursive: true });
   writeFileSync(join(root, '.superpowers', 'ship-plan'), 'not a folder');
   assert.throws(() => findPlanLedger(root, 'docs/plan.md'), /ENOTDIR/);
+});
+
+// review round 2, batch E1 (S4): the guard's first hash failing must not leave the progress tail
+// running
+test('runIssue: a guarded file that cannot be read before the child -> it throws, and no progress tail is left running', async () => {
+  const root = repo({ issue: [issueFirst(2)] });
+  mkdirSync(join(root, '.claude'), { recursive: true });
+  writeFileSync(join(root, '.claude', 'settings.json'), '{}');
+  chmodSync(join(root, '.claude', 'settings.json'), 0);
+  await assert.rejects(runIssue(ctxFor(root, { FAKE_CLAUDE: 'ok:RUNNER: phase-done' }, { tailMs: 20 }), item()), /EACCES/);
+  writeFileSync(join(root, ISSUE), `${issueFirst(2)}\nProgress: late line\n`);
+  await new Promise((r) => setTimeout(r, 150));
+  assert.doesNotMatch(events(root), /late line/);
 });

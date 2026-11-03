@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
-import { emit, setChildPid } from './runner-lib.mjs';
+import { emit, groupAlive, setChildPid } from './runner-lib.mjs';
 
 export function childArgs({ model, effort, mode, resume }) {
   const args = ['-p', '--output-format', 'stream-json', '--verbose', '--model', model, '--effort', effort, '--permission-mode', mode];
@@ -59,8 +59,16 @@ function isResumeFailure(result) {
   return texts.some((t) => /No conversation found/.test(t));
 }
 
-// Children still running, so a runner that is stopped by a signal can end them (killChildren).
+// Children still running, so a runner that is stopped (a signal, an uncaught error) can end them
+// (endChildren).
 const active = new Set();
+
+// Set once the runner is ending (haltChildren): no child starts after it, and a running child's
+// result is never handed back, so nothing the runner's main path does can race its end.
+let halted = false;
+export function haltChildren() {
+  halted = true;
+}
 
 // The child and everything it started: the child leads its own process group (spawned detached).
 function killGroup(child, signal) {
@@ -72,49 +80,52 @@ function killGroup(child, signal) {
   }
 }
 
-export function killChildren(signal = 'SIGTERM') {
-  for (const child of active) killGroup(child, signal);
-}
-
 // After the child exits, how long its stdout may stay open (a grandchild can hold it) before the
 // runner stops reading it.
 const DRAIN_MS = 1000;
 // After an idle kill with SIGTERM, how long before SIGKILL.
 const KILL_GRACE_MS = 5000;
-// After the child exits: how long what it left in its process group gets after SIGTERM before
-// SIGKILL, and how long the runner then waits for the group to be gone.
+// When a child's process group is ended: how long it gets after SIGTERM before SIGKILL, and how
+// long the runner then waits for the group to be gone.
 const END_GRACE_MS = 1000;
 const END_WAIT_MS = 3000;
 
-// Whether any process of the group led by pid is left (a zombie leader is reaped by now).
-function groupAlive(pid) {
-  try {
-    process.kill(-pid, 0);
-    return true;
-  } catch (e) {
-    return e.code === 'EPERM';
-  }
+// End the process groups these children lead (a background job, a grandchild included) and wait
+// until they are gone: SIGTERM, SIGKILL after graceMs, then up to waitMs. Returns the pids of the
+// groups still alive. A process that left its group (setsid) is out of reach: no same-user defence
+// is complete. Windows: nothing to do (no process groups).
+async function endGroups(kids, { isAlive = groupAlive, graceMs = END_GRACE_MS, waitMs = END_WAIT_MS } = {}) {
+  if (process.platform === 'win32') return [];
+  const left = () => kids.filter((c) => c.pid && isAlive(c.pid));
+  const until = async (ms) => {
+    for (const t0 = Date.now(); left().length && Date.now() - t0 < ms;) await new Promise((r) => setTimeout(r, 25));
+  };
+  if (!left().length) return [];
+  for (const c of left()) killGroup(c, 'SIGTERM');
+  await until(graceMs);
+  for (const c of left()) killGroup(c, 'SIGKILL');
+  await until(waitMs);
+  return left().map((c) => c.pid);
 }
 
-// End what the child left in its process group (a background job, a grandchild) and wait until
-// the group is gone: the item's window may close only then, so nothing the child started can
-// write after it. A process that left the group (setsid) is out of reach: no same-user defence
-// is complete. Windows: nothing to do (no process groups).
-async function endGroup(child) {
-  if (process.platform === 'win32' || !child.pid || !groupAlive(child.pid)) return;
-  const until = async (ms) => {
-    for (const t0 = Date.now(); groupAlive(child.pid) && Date.now() - t0 < ms;) await new Promise((r) => setTimeout(r, 25));
-  };
-  killGroup(child, 'SIGTERM');
-  await until(END_GRACE_MS);
-  if (!groupAlive(child.pid)) return;
-  killGroup(child, 'SIGKILL');
-  await until(END_WAIT_MS);
+// After the child exits: what it left in its group is ended before the item's window may close,
+// so nothing the child started can write after it.
+const endGroup = (child) => endGroups([child]);
+
+// Every running child's group ended, as endGroups does; for a runner that is stopping (after
+// haltChildren). Returns the pids of the groups still alive: the runner keeps its lock for them.
+export async function endChildren(opts) {
+  if (process.platform === 'win32') {
+    for (const c of active) killGroup(c, 'SIGTERM');
+    return [];
+  }
+  return endGroups([...active], opts);
 }
 
 // One child run. Returns the ChildResult plus whether it failed the way a dead resume fails.
 // idleMs: no stdout line for that long kills the child's process group (default: never).
 function runOnce({ dir, cwd, key, phase, prompt, model, effort, mode, resume, env, idleMs }) {
+  if (halted) return new Promise(() => {}); // the runner is ending: it writes the end itself
   mkdirSync(dir, { recursive: true });
   const file = logFile(dir, key, phase);
   appendFileSync(file, ''); // claim the number before the child starts
@@ -184,6 +195,7 @@ function runOnce({ dir, cwd, key, phase, prompt, model, effort, mode, resume, en
     const finish = async (code, signal) => {
       if (finished) return;
       finished = true;
+      if (halted) return; // the runner is ending: endChildren has the group, the lock stays as it is
       clearTimeout(idleTimer);
       clearTimeout(killTimer);
       if (!spawnError) await endGroup(child);
@@ -197,6 +209,7 @@ function runOnce({ dir, cwd, key, phase, prompt, model, effort, mode, resume, en
         child.stderr.destroy();
         lines.close();
       }
+      if (halted) return;
       soft('lock not updated', () => setChildPid(dir, null));
       const errors = [];
       if (idle) errors.push(idle); // the kill explains the missing result line and the exit code
@@ -211,8 +224,9 @@ function runOnce({ dir, cwd, key, phase, prompt, model, effort, mode, resume, en
       if (errors.length && rateLimited) errors.push('rate limit rejected');
       if (errors.length && stderr.trim()) errors.push(`stderr: ${redact(stderr).trim().slice(-STDERR_TAIL)}`);
       resolve({
-        // dead: the CLI said so, or the child never started a session (no session id, no result)
-        resumeFailed: isResumeFailure(result) || (!result && !sessionId && !idle),
+        // dead: the CLI said so, or the child started but never a session (no session id, no
+        // result); one that could not be spawned is not: a fresh child would fail the same way
+        resumeFailed: isResumeFailure(result) || (!result && !sessionId && !idle && !spawnError),
         child: {
           ok: errors.length === 0,
           sessionId,
