@@ -367,7 +367,7 @@ changes it, not when drafting a config either.
 - **The local store** is `<main checkout>/.superpowers/ship-logs/`, where `<main checkout>` is the parent of `git rev-parse --path-format=absolute --git-common-dir`, so every worktree of the clone shares it. Inside it, the same names: `ship-plan/blockers.md` and so on, and `Used:` and `Removed:` lines name them that way. Not in `.git/`: Claude Code treats it as a protected path, and edits there prompt, or are denied under `dontAsk`.
 - **Git does not keep it:** `git clean -fdx` deletes it, a new clone or machine starts empty, and a deleted entry cannot be restored from git history.
 - **Switching from `repo`:** the first run under `local` whose store holds no log copies the tracked logs that exist (`.claude/ship-plan/*.md`, `.claude/ship-issue/interruptions.md`) into it, adds `.superpowers/` to `<git-common-dir>/info/exclude` if missing, then works there. It never deletes the tracked copies; the report says they can be removed in a normal PR.
-- **Tracked lessons are proposed, not written,** under `local`: an override file (ship-issue's `evidence.md` included) or a config line goes in the report with its exact text and target file, for the user to add in a normal PR ([phase-close.md](phase-close.md), section 8).
+- **Tracked lessons are proposed, not written,** under `local`: an override file (ship-issue's `evidence.md` included) or a config line goes in the report with its exact text and target file, for the user to add in a normal PR ([phase-close.md](phase-close.md), section 8). A procedure compaction would move out of a log stays there until its home holds it.
 
 ### `## Never do`
 
