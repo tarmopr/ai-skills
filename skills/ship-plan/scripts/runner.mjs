@@ -186,20 +186,17 @@ const answersStore = (root, dir) => join(gitDir(root), 'ship-runner', basename(d
 
 const answersName = (key) => `answers-${key}.md`;
 
-// The run's first permission mode, kept in state.json and beside the answers store,
-// <git dir>/ship-runner/<run>.mode (a child can edit state.json; the git dir is never named to it).
+// The record of the run's first permission mode: <git dir>/ship-runner/<run>.mode, beside the
+// answers store (a child can edit state.json, which only copies it; the git dir is never named to
+// a child). The mode it holds, or null when there is none or it cannot be read.
 const modeFile = (root, dir) => `${answersStore(root, dir)}.mode`;
-// The narrower of the two copies; null for a run with neither.
-function firstMode(root, dir, state) {
-  let stored = null;
+function recordedMode(root, dir) {
   try {
-    stored = readFileSync(modeFile(root, dir), 'utf8').trim();
+    const m = readFileSync(modeFile(root, dir), 'utf8').trim();
+    return Object.hasOwn(WIDTH, m) ? m : null;
   } catch {
-    // none yet, or no git dir
+    return null; // none yet, unreadable, or no git dir
   }
-  let first = null;
-  for (const m of [state?.mode, stored]) if (Object.hasOwn(WIDTH, m ?? '') && (first === null || WIDTH[m] < WIDTH[first])) first = m;
-  return first;
 }
 
 // A file written while a child of this item ran (its recorded windows, [start, end] in ms; an
@@ -431,12 +428,17 @@ async function start(rest) {
     // unreadable: the locked run reports it (a runner error, with its event)
   }
   if (prev && (prev.kind !== run.kind || prev.id !== run.id)) return usage(`start ${run.kind}: ${dir} holds the run ${prev.kind} ${prev.id}`);
-  // a rerun keeps the first start's mode: none given takes it, a wider one is refused
-  const first = prev ? firstMode(root, dir, prev) : null;
+  // A rerun keeps the first start's mode, from its record (checked with or without a state.json):
+  // none given takes it, a wider one is refused. An existing run with no readable record is taken
+  // as the narrowest mode (fail closed).
+  const recorded = recordedMode(root, dir);
+  const existing = prev !== null || existsSync(dir);
+  const first = recorded ?? (existing ? 'dontAsk' : null);
   if (first && modeFrom === 'default') {
     mode = first;
-    modeFrom = 'state.json';
+    modeFrom = recorded ? 'first start' : 'no mode record, narrowest';
   } else if (first && WIDTH[mode] > WIDTH[first]) {
+    if (!recorded) return usage(`start: no readable record of this run's first permission mode: it runs only as dontAsk; to start a new run instead, delete ${dir}`);
     return usage(`start: --permission-mode ${mode} is wider than this run's ${first} (its first start's); a rerun never widens it`);
   }
 
@@ -592,13 +594,16 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
     // A child window left open by a runner that was stopped (a signal, a kill): what that child
     // started may have outlived it, so the window runs until now, and an answers file written
     // since for that item is rejected too.
-    // origin's URL as the run starts: the guard fetches <base> from it before each child (a child
-    // may change the remote's config later)
-    let originUrl = null;
-    try {
-      originUrl = git(root, 'remote', 'get-url', 'origin');
-    } catch {
-      // no origin: a guarded change is never taken as upstream's
+    // origin/<base> as it is now, before any child of this start: the one base a guarded change
+    // may come from (K2). Never fetched by the runner: a child controls the git config a fetch
+    // would run with. An upstream change after this is a stop; the rerun records a fresh one.
+    let recordedBase = null;
+    if (/^[A-Za-z0-9._/-]+$/.test(baseInfo.name) && !baseInfo.name.startsWith('-')) {
+      try {
+        recordedBase = git(root, 'rev-parse', '--verify', '-q', `refs/remotes/origin/${baseInfo.name}^{commit}`) || null;
+      } catch {
+        // no origin/<base>: a guarded change is never taken as upstream's
+      }
     }
     const startedAt = Date.now();
     for (const i of state.items) for (const w of i.windows ?? []) w[1] ??= startedAt;
@@ -606,13 +611,15 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
     state.current = null;
     state.stopped = null;
     const store = answersStore(root, dir);
-    // the first start's mode (X5), in state.json and in the store
-    if (!Object.hasOwn(WIDTH, state.mode ?? '')) state.mode = mode;
-    const kept = modeFile(root, dir);
-    if (!existsSync(kept)) {
+    // the first start's mode (X5): its record in the git dir, made by the first start (or, fail
+    // closed, by a start that found none: start() then allowed only dontAsk); state.json copies it
+    let kept = recordedMode(root, dir);
+    if (!kept) {
+      kept = mode;
       makeDir(store);
-      writeFileSync(kept, `${state.mode}\n`);
+      writeFileSync(modeFile(root, dir), `${kept}\n`);
     }
+    state.mode = kept;
     const save = () => {
       syncAnswers(state, dir, store);
       writeState(dir, state);
@@ -633,7 +640,7 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
 
     const base = {
       root, dir, models: cfg.models, mode, env: {}, chunkSize: cfg.chunkSize, idleMs: cfg.idleMinutes * 60000,
-      skill: run.skill, args: run.args, save, answersDir: store, upstream: { url: originUrl, base: baseInfo.name },
+      skill: run.skill, args: run.args, save, answersDir: store, base: recordedBase,
     };
     const pollMs = Number(process.env.SHIP_RUNNER_POLL_MS) || 30000;
     let ran = false; // a queue item has run in this start

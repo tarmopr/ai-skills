@@ -1324,8 +1324,9 @@ function withOrigin(root) {
   git(root, 'push', '-q', 'origin', 'main');
   git(root, 'fetch', '-q', 'origin');
 }
-// files committed on origin's main only: the local main and origin/main stay where they were
-function upstream(root, files) {
+// files committed on origin's main only: the local main stays where it was, and so does origin/main
+// unless `fetched` (the user fetched before the start)
+function upstream(root, files, { fetched = false } = {}) {
   const old = git(root, 'rev-parse', 'refs/remotes/origin/main').trim();
   git(root, 'switch', '-q', '-c', 'up');
   for (const [rel, text] of files) put(root, rel, [text]);
@@ -1334,8 +1335,11 @@ function upstream(root, files) {
   git(root, 'push', '-q', 'origin', 'up:main');
   git(root, 'switch', '-q', 'main');
   git(root, 'branch', '-q', '-D', 'up');
-  git(root, 'update-ref', 'refs/remotes/origin/main', old);
+  if (!fetched) git(root, 'update-ref', 'refs/remotes/origin/main', old);
 }
+// the stop reason for a guarded file whose content is not the run's recorded origin/<base>
+const offBase = (file) => new RegExp(`^guarded file ${file.replaceAll('.', '\\.')} differs from the recorded base [0-9a-f]{12}: changed by the child or upstream; review, then rerun$`);
+const reasonOf = (dir) => readState(dir).items.map((i) => [i.status, i.reason])[0];
 const childGit = (...cmds) => ops(cmds.map((c) => ['-c', 'user.email=t@example.com', '-c', 'user.name=t', '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', ...c]));
 function guardedRepo() {
   const root = repo();
@@ -1348,7 +1352,7 @@ function guardedRepo() {
   return root;
 }
 
-test('a child that switches to a newer origin/<base> with changed guarded files: not a child change, no stop', () => {
+test('a child that switches to the origin/<base> recorded at the start, with changed guarded files: not a child change, no stop; the runner fetches nothing', () => {
   const root = guardedRepo();
   // .claude/CLAUDE.md links to a file in the checkout: what it resolves to changes upstream
   put(root, 'docs/agents.md', ['a1']);
@@ -1356,9 +1360,11 @@ test('a child that switches to a newer origin/<base> with changed guarded files:
   git(root, 'add', '-f', 'docs/agents.md', '.claude/CLAUDE.md');
   git(root, 'commit', '-q', '--no-verify', '-m', 'link');
   git(root, 'push', '-q', 'origin', 'main');
-  upstream(root, [['CLAUDE.md', 'v2'], ['.claude/settings.json', '{"permissions":{}}'], ['.claude/agents/new.md', 'a'], ['docs/agents.md', 'a2']]);
+  upstream(root, [['CLAUDE.md', 'v2'], ['.claude/settings.json', '{"permissions":{}}'], ['.claude/agents/new.md', 'a'], ['docs/agents.md', 'a2']], { fetched: true });
+  // a fetch by the runner would fail (and once made its exemption depend on it)
+  git(root, 'remote', 'set-url', 'origin', join(root, 'no-such-remote'));
   const r = cli(root, ['start', 'issue', 'A-1'], {
-    ...ships('A-1'), FAKE_CLAUDE_GIT: childGit(['fetch', '-q', 'origin'], ['switch', '-q', '-c', 'feat/A-1', 'origin/main']),
+    ...ships('A-1'), FAKE_CLAUDE_GIT: childGit(['switch', '-q', '-c', 'feat/A-1', 'origin/main']),
   });
   assert.equal(r.status, 0, r.stderr);
   const dir = runDir(root, 'issue', 'A-1');
@@ -1380,7 +1386,8 @@ test('a child that commits a guarded change, on top of a newer origin/<base> or 
     });
     assert.equal(r.status, 0, r.stderr);
     const dir = runDir(root, 'issue', 'A-1');
-    assert.deepEqual(readState(dir).items.map((i) => [i.status, i.reason]), [['blocked', 'child changed CLAUDE.md']], `${fetches}: ${events(dir)}`);
+    assert.equal(reasonOf(dir)[0], 'blocked', `${fetches}: ${events(dir)}`);
+    assert.match(reasonOf(dir)[1], offBase('CLAUDE.md'));
     assert.equal(git(root, 'status', '--porcelain', '--', 'CLAUDE.md'), '', 'the change is committed, the checkout clean');
   }
 });
@@ -1416,7 +1423,8 @@ test('a guarded link to a file outside the checkout, changed while the child mov
   });
   assert.equal(r.status, 0, r.stderr);
   const dir = runDir(root, 'issue', 'A-1');
-  assert.deepEqual(readState(dir).items.map((i) => [i.status, i.reason]), [['blocked', 'child changed CLAUDE.local.md']], events(dir));
+  assert.equal(reasonOf(dir)[0], 'blocked', events(dir));
+  assert.match(reasonOf(dir)[1], offBase('CLAUDE.local.md'));
 });
 
 // review round 2, batch E2
@@ -1449,7 +1457,7 @@ test('a rerun never widens the first start\'s permission mode: wider exit 2, non
   }
   assert.equal(start([], ['M-1', 'M-2']).status, 0);
   assert.equal(childMode(), 'acceptEdits');
-  assert.match(events(dir), /child permission mode: acceptEdits \(state\.json\)$/m);
+  assert.match(events(dir), /child permission mode: acceptEdits \(first start\)$/m);
   assert.equal(start(['--permission-mode', 'dontAsk'], ['M-1', 'M-2', 'M-3']).status, 0);
   assert.equal(childMode(), 'dontAsk');
   assert.equal(readState(dir).mode, 'acceptEdits');
@@ -1561,7 +1569,8 @@ test('a child that moves origin/<base> to its own commit changing CLAUDE.md: blo
   assert.equal(r.status, 0, r.stderr);
   const dir = runDir(root, 'issue', 'A-1');
   assert.equal(git(root, 'rev-parse', 'refs/remotes/origin/main'), git(root, 'rev-parse', 'HEAD'));
-  assert.deepEqual(readState(dir).items.map((i) => [i.status, i.reason]), [['blocked', 'child changed CLAUDE.md']], events(dir));
+  assert.equal(reasonOf(dir)[0], 'blocked', events(dir));
+  assert.match(reasonOf(dir)[1], offBase('CLAUDE.md'));
 });
 
 test('a child that hides a changed guarded file with skip-worktree, after moving to a newer origin/<base>: blocked, run stopped', () => {
@@ -1576,5 +1585,88 @@ test('a child that hides a changed guarded file with skip-worktree, after moving
   assert.equal(git(root, 'status', '--porcelain', '--', 'CLAUDE.md'), '', 'git status sees nothing');
   assert.equal(r.status, 0, r.stderr);
   const dir = runDir(root, 'issue', 'A-1');
-  assert.deepEqual(readState(dir).items.map((i) => [i.status, i.reason]), [['blocked', 'child changed CLAUDE.md']], events(dir));
+  assert.equal(reasonOf(dir)[0], 'blocked', events(dir));
+  assert.match(reasonOf(dir)[1], offBase('CLAUDE.md'));
+});
+
+// K2, second review: the base is origin/<base> as it was when the run started (never fetched by the
+// runner: the child controls the git config a fetch would use), and the exemption fails closed
+test('an upstream change to a guarded file after the run started, fetched by the child: the run stops, naming the recorded base', () => {
+  const root = guardedRepo();
+  upstream(root, [['CLAUDE.md', 'v2']]);
+  const r = cli(root, ['start', 'issue', 'A-1'], {
+    ...ships('A-1'), FAKE_CLAUDE_GIT: childGit(['fetch', '-q', 'origin'], ['switch', '-q', '-c', 'feat/A-1', 'origin/main']),
+  });
+  assert.equal(r.status, 0, r.stderr);
+  const dir = runDir(root, 'issue', 'A-1');
+  assert.equal(reasonOf(dir)[0], 'blocked', events(dir));
+  assert.match(reasonOf(dir)[1], offBase('CLAUDE.md'));
+  assert.ok(reasonOf(dir)[1].includes(git(root, 'rev-parse', 'main').trim().slice(0, 12)), 'the base recorded at the start: the old main');
+  assert.match(events(dir), /review, then rerun; run stopped$/m);
+});
+
+test('fail closed: base content left uncommitted, a guarded file the base does not have, a deletion the base does not make: each stops the run', () => {
+  const cases = [
+    // CLAUDE.md taken from the base into the index and the worktree, not committed
+    { up: [['CLAUDE.md', 'v2']], git: [['checkout', 'origin/main', '--', 'CLAUDE.md']], file: 'CLAUDE.md', reason: /^child changed CLAUDE\.md$/ },
+    // the base deleted CLAUDE.md: absent at the base and after the child, never vouched for
+    { up: null, git: [['switch', '-q', '-c', 'feat/A-1', 'origin/main']], file: 'CLAUDE.md', reason: /^child changed CLAUDE\.md$/ },
+    // the child deletes CLAUDE.md, which the base has
+    { up: [['README.md', 'x']], git: [['rm', '-q', 'CLAUDE.md'], ['commit', '-q', '--no-verify', '-m', 'rm']], file: 'CLAUDE.md', reason: offBase('CLAUDE.md') },
+  ];
+  for (const c of cases) {
+    const root = guardedRepo();
+    if (c.up) upstream(root, c.up, { fetched: true });
+    else {
+      git(root, 'switch', '-q', '-c', 'up');
+      git(root, 'rm', '-q', 'CLAUDE.md');
+      git(root, 'commit', '-q', '--no-verify', '-m', 'upstream rm');
+      git(root, 'push', '-q', 'origin', 'up:main');
+      git(root, 'switch', '-q', 'main');
+      git(root, 'branch', '-q', '-D', 'up');
+    }
+    const r = cli(root, ['start', 'issue', 'A-1'], { ...ships('A-1'), FAKE_CLAUDE_GIT: childGit(...c.git) });
+    assert.equal(r.status, 0, r.stderr);
+    const dir = runDir(root, 'issue', 'A-1');
+    assert.equal(reasonOf(dir)[0], 'blocked', events(dir));
+    assert.match(reasonOf(dir)[1], c.reason, JSON.stringify(c.git));
+  }
+});
+
+// X5, second review: the record in the git dir is checked whether or not state.json is there; an
+// existing run with no readable record is taken as the narrowest mode (fail closed)
+test('the first-mode record: checked without state.json; missing or unreadable for an existing run -> dontAsk only, exit 2 with how to start anew', () => {
+  const root = repo();
+  const log = join(root, 'm.json');
+  const dir = runDir(root, 'queue', 'P-1');
+  const record = join(answersAt(root, dir) + '.mode');
+  const start = (flags, keys) => {
+    atVerify(root, ...keys);
+    const byKey = Object.fromEntries(keys.map((k) => [k, ships(k)]));
+    return cli(root, ['start', ...flags, 'queue', 'P-1', keys.join(',')], { FAKE_CLAUDE_BY_KEY: JSON.stringify(byKey), FAKE_CLAUDE_LOG: log });
+  };
+  const childMode = () => {
+    const seen = JSON.parse(readFileSync(log, 'utf8'));
+    rmSync(log);
+    return seen.argv[seen.argv.indexOf('--permission-mode') + 1];
+  };
+  assert.equal(start(['--permission-mode', 'acceptEdits'], ['M-1']).status, 0);
+  assert.equal(readFileSync(record, 'utf8'), 'acceptEdits\n');
+  rmSync(join(dir, 'state.json'));
+  const a = start(['--permission-mode', 'auto'], ['M-1']);
+  assert.equal(a.status, 2, a.stderr);
+  assert.match(a.stderr, /wider than this run's acceptEdits/);
+
+  for (const broken of [null, 'yolo\n']) {
+    if (broken === null) rmSync(record);
+    else writeFileSync(record, broken);
+    const w = start(['--permission-mode', 'acceptEdits'], ['M-1']);
+    assert.equal(w.status, 2, w.stderr);
+    assert.match(w.stderr, /no readable record of this run's first permission mode: it runs only as dontAsk; to start a new run instead, delete .*queue-P-1/);
+  }
+  const n = start([], ['M-1', 'M-2']);
+  assert.equal(n.status, 0, n.stderr);
+  assert.equal(childMode(), 'dontAsk');
+  assert.equal(readFileSync(record, 'utf8'), 'dontAsk\n');
+  assert.equal(readState(dir).mode, 'dontAsk');
 });
