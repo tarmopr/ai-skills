@@ -64,8 +64,8 @@ would not have to push each round. Rounds are not progress reports; do not stop
 between them to ask whether to go on.
 
 **Before round 1, read the repo's `.claude/ship-plan.md`
-([format](../ship-plan/config-format.md)) in full and `.claude/ship-plan/blockers.md` by index
-([Reading the logs](../ship-plan/SKILL.md#reading-the-logs)).**
+([format](../ship-plan/config-format.md)) in full and `<logs>/ship-plan/blockers.md` by index
+([Reading the logs](../ship-plan/SKILL.md#reading-the-logs), which defines `<logs>`).**
 If `.claude/ship.md` exists and `.claude/ship-plan.md` does not, stop with one
 line: "This repo is set up for the removed `ship` skill: move `.claude/ship.md` to `.claude/ship-plan.md` and `.claude/ship/` to `.claude/ship-plan/`."
 The config is the only source of commands. The blockers file is the list of
@@ -321,10 +321,14 @@ used (such as `Sign in on Hosted URL: test users`), and every proposed config ch
 
 Whenever something blocks you (a command that will not run, a hook refusal, a
 tool that misbehaves, a gate that lies) and you get past it, **record it in the same session, before the report.**
-Run on its own, update `.claude/ship-plan/blockers.md` (create it from
-[log-formats.md](../ship-plan/log-formats.md) if it is missing). **Under `ship-plan`, edit no file,** for this entry or any item below:
+Run on its own, update `<logs>/ship-plan/blockers.md` (create it from
+[log-formats.md](../ship-plan/log-formats.md) if it is missing). Under `## Logs` `Location: local`
+([format](../ship-plan/config-format.md#-logs)) that is the local store, edited in place and never
+committed (before the first write to a store that holds no log, copy the tracked logs in and add
+`.superpowers/` to `info/exclude`, as `## Logs` says), and every item below that would write a tracked file (an override file, the config) is
+proposed in the report instead, with its exact text and target file; the report names the store's path. **Under `ship-plan`, edit no file,** for this entry or any item below:
 record each one, whether it would be written or proposed, as a `Lesson:` line in ship-plan's ledger that names its
-target file (`.claude/ship-plan/blockers.md` for a blocker). ship-plan's section 8 writes them on its lessons branch at the end of its run, so they never land in the product PR.
+target file (`ship-plan/blockers.md` for a blocker). ship-plan's section 8 writes them on its lessons branch at the end of its run, so they never land in the product PR.
 
 - **`blockers.md`, run on its own,** follows ship-plan's section 8 rules for logs
   ([phase-close.md](../ship-plan/phase-close.md)): list the headings first and

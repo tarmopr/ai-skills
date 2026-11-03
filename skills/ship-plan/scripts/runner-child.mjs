@@ -1,15 +1,73 @@
 // Child launcher and stream reader for the ship runner.
 // Starts `claude -p` with stream-json output, logs every stdout line, and reads the final result.
 import { spawn } from 'node:child_process';
-import { appendFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { appendFileSync, existsSync, lstatSync, mkdirSync, realpathSync } from 'node:fs';
+import { dirname, isAbsolute, join, relative, sep } from 'node:path';
 import { createInterface } from 'node:readline';
-import { emit, groupAlive, makeDir, setChildPid } from './runner-lib.mjs';
+import { emit, groupAlive, makeDir, runGit, setChildPid } from './runner-lib.mjs';
 
-export function childArgs({ model, effort, mode, resume }) {
+export function childArgs({ model, effort, mode, resume, addDir }) {
   const args = ['-p', '--output-format', 'stream-json', '--verbose', '--model', model, '--effort', effort, '--permission-mode', mode];
   if (resume) args.push('--resume', resume);
+  if (addDir) args.push('--add-dir', addDir);
   return args;
+}
+
+// The local log store (`## Logs` `Location: local`): <main checkout>/.superpowers/ship-logs, the main
+// checkout being the parent of the common git dir. Computed once, at the runner's start, before any
+// child runs: a child can rewrite a linked worktree's gitfile or commondir, so git is not asked
+// again. Returns { store, expected } (expected: the store's real path, as it is now) when the store
+// lies outside root (a linked worktree), where a child's edits there need --add-dir; { why } when
+// there is no main checkout (a bare clone; a submodule or a --separate-git-dir clone, whose common
+// dir is not its parent's .git folder); null inside root or outside git.
+export function logStore(root) {
+  let common;
+  try {
+    common = runGit(root, ['rev-parse', '--path-format=absolute', '--git-common-dir']).trim();
+  } catch {
+    return null;
+  }
+  try {
+    if (runGit(common, ['rev-parse', '--is-bare-repository']).trim() === 'true') return { why: `${common} is a bare clone: no main checkout` };
+    const main = dirname(common);
+    const dotGit = join(main, '.git');
+    if (!lstatSync(dotGit, { throwIfNoEntry: false })?.isDirectory() || realpathSync(dotGit) !== realpathSync(common)) {
+      return { why: `${common} is not the .git folder of a checkout (a submodule or --separate-git-dir clone)` };
+    }
+    const store = join(main, '.superpowers', 'ship-logs');
+    const rel = relative(realpathSync(root), store);
+    if (!(rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel))) return null;
+    return { store, expected: join(realpathSync(main), '.superpowers', 'ship-logs') };
+  } catch (e) {
+    return { why: `${common}: ${e.code || e.message}` };
+  }
+}
+
+// The store fixed at start ({ store, expected }) to pass as --add-dir: { dir } (its real path) or
+// { why } when it is refused. A child may have swapped .superpowers or ship-logs for a symlink (to
+// $HOME, say), so each folder is made 0700 if missing, then must be a real folder, checked before
+// the next is made through it, and the store must still resolve to `expected`.
+// The window between this check and the spawn is accepted: a daemon an earlier child left running
+// can already write whatever that child could.
+export function grantLogStore({ store, expected }) {
+  const main = dirname(dirname(store));
+  try {
+    for (const d of [join(main, '.superpowers'), store]) {
+      try {
+        mkdirSync(d, { mode: 0o700 });
+      } catch (e) {
+        if (e.code !== 'EEXIST') throw e;
+      }
+      const st = lstatSync(d);
+      if (st.isSymbolicLink()) return { why: `${d} is a symlink` };
+      if (!st.isDirectory()) return { why: `${d} is not a folder` };
+    }
+    const real = realpathSync(store);
+    if (real !== expected) return { why: `${store} resolves to ${real}, not ${expected}` };
+    return { dir: real };
+  } catch (e) {
+    return { why: `${store}: ${e.code || e.message}` };
+  }
 }
 
 const MARKER = /^RUNNER: (phase-done|waiting|blocked|done)\b ?(.*)$/gm;
@@ -124,7 +182,7 @@ export async function endChildren(opts) {
 
 // One child run. Returns the ChildResult plus whether it failed the way a dead resume fails.
 // idleMs: no stdout line for that long kills the child's process group (default: never).
-function runOnce({ dir, cwd, key, phase, prompt, model, effort, mode, resume, env, idleMs }) {
+function runOnce({ dir, cwd, key, phase, prompt, model, effort, mode, resume, env, idleMs, logs }) {
   if (halted) return new Promise(() => {}); // the runner is ending: it writes the end itself
   makeDir(dir);
   const file = logFile(dir, key, phase);
@@ -144,6 +202,10 @@ function runOnce({ dir, cwd, key, phase, prompt, model, effort, mode, resume, en
       }
     }
   };
+  // logs: the store logStore fixed at start, under `## Logs` `Location: local` only
+  const grant = logs?.store ? grantLogStore(logs) : {};
+  if (grant.why) soft('events', () => emit(dir, key, phase, 'progress', `log store not granted: ${grant.why}`));
+  const addDir = grant.dir ?? null;
   return new Promise((resolve) => {
     let sessionId = null;
     let result = null;
@@ -152,7 +214,7 @@ function runOnce({ dir, cwd, key, phase, prompt, model, effort, mode, resume, en
     let idle = null;
     let rateLimited = false;
 
-    const child = spawn(process.env.CLAUDE_BIN || 'claude', childArgs({ model, effort, mode, resume }), {
+    const child = spawn(process.env.CLAUDE_BIN || 'claude', childArgs({ model, effort, mode, resume, addDir }), {
       cwd,
       // the run dir and the item's key (state.json's `current` while it runs), set last: the child
       // reads its key here instead of deriving it

@@ -20,7 +20,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { acquireLock, alive, answersNamed, clean, emit, groupAlive, makeDir, plainFile, readLock, readState, releaseLock, runDir, runGit, setChildPid, writeState } from './runner-lib.mjs';
 import { findPlanLedger, ledgerOutcome, listed, pendingQuestions, PHASE_ROWS, PHASES, phaseFromLedgers, runIssue } from './runner-phases.mjs';
-import { endChildren, haltChildren } from './runner-child.mjs';
+import { endChildren, haltChildren, logStore } from './runner-child.mjs';
 import { nextItem } from './runner-queue.mjs';
 
 // `## Models` rows the runner's children use, with their defaults.
@@ -44,7 +44,8 @@ const MODEL_NAME = /^[A-Za-z0-9.[\]_-]+$/;
 
 /**
  * What the runner reads from `.claude/ship-plan.md`: `## Runner` `Implement chunk:` (default 5) and
- * `Child idle timeout:` (minutes, default 60), `## Repo` `Base branch:`, and `## Models` rows over
+ * `Child idle timeout:` (minutes, default 60), `## Repo` `Base branch:`, `## Logs` `Location:` (local or
+ * repo, default repo: logsLocal), and `## Models` rows over
  * MODEL_DEFAULTS (roles matched case-insensitively). Never the permission mode: a child can edit
  * the working tree and every local git ref, so the mode comes only from `start --permission-mode`.
  * Headings match case-insensitively; a field line may start with `- `. A value the runner cannot
@@ -100,7 +101,9 @@ export function parseConfig(text) {
     }
     models[role] = { model, effort: effort || MODEL_DEFAULTS[role].effort };
   }
-  return { chunkSize, idleMinutes, base: field('repo', 'Base branch'), models, warnings };
+  const location = field('logs', 'Location').toLowerCase();
+  if (location && location !== 'repo' && location !== 'local') warnings.push(`Location: "${location}" is not repo or local; using repo`);
+  return { chunkSize, idleMinutes, base: field('repo', 'Base branch'), models, logsLocal: location === 'local', warnings };
 }
 
 function readConfig(root) {
@@ -677,8 +680,11 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
     const used = PHASES.map((p) => `${p} ${cfg.models[PHASE_ROWS[p]].model}/${cfg.models[PHASE_ROWS[p]].effort}`);
     emit(dir, slug, '-', 'progress', `models: ${used.join(', ')}`);
 
+    // `## Logs` `Location: local`: the log store, fixed now, before any child can rewrite the gitfile
+    const logs = cfg.logsLocal ? logStore(root) : null;
+    if (logs?.why) emit(dir, slug, '-', 'progress', `log store not granted: ${logs.why}`);
     const base = {
-      root, dir, models: cfg.models, mode, env: {}, chunkSize: cfg.chunkSize, idleMs: cfg.idleMinutes * 60000,
+      root, dir, models: cfg.models, mode, env: {}, chunkSize: cfg.chunkSize, idleMs: cfg.idleMinutes * 60000, logs: logs?.store ? logs : null,
       skill: run.skill, args: run.args, save, answersDir: store,
     };
     const pollMs = Number(process.env.SHIP_RUNNER_POLL_MS) || 30000;

@@ -449,7 +449,7 @@ const plural = (n) => `${n} question${n === 1 ? '' : 's'}`;
 // Run the issue's phases until it is done, waiting, blocked or cut off.
 // ctx: { root, dir, models: {[row]: {model, effort}}, mode, env, skill = 'ship-issue',
 //        args = item.key, chunkSize = 5, tailMs = 5000, idleMs?, ledgers?: LedgerOpts, save?(item),
-//        beforeEnd?(item), answersDir? }.
+//        beforeEnd?(item), answersDir?, logs?: the log store logStore fixed at start }.
 // A child that fails on a usage limit cuts the item off (the run stops); any other child failure
 // blocks it with the error's first 300 characters. ctx.stop is set (and the event ends "; run
 // stopped") when no later child should start: a failure of the environment (no claude, an API or
@@ -506,7 +506,7 @@ export async function runIssue(ctx, item) {
 
     const opts = {
       dir, cwd: root, key, phase, prompt, model: pick.model, effort: pick.effort,
-      mode: ctx.mode ?? 'auto', resume, env: ctx.env ?? {}, idleMs: ctx.idleMs,
+      mode: ctx.mode ?? 'auto', resume, env: ctx.env ?? {}, idleMs: ctx.idleMs, logs: ctx.logs,
     };
     // hashed before the tail starts: a hash that throws leaves no timer behind
     const guarded = guardedHashes(root);

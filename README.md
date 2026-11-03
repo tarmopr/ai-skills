@@ -39,7 +39,9 @@ The shared skills name no repo. A repo adds its own instructions in override fil
 whenever a skill reads one of its own files, it reads the repo's file of the same name next. An override may
 add steps or make a rule stricter, never widen what a run may do. The config's `## Allowed` section is a closed
 list, edited only by a person, of the few permissions a repo can switch on, such as a merge that deploys to a
-staging environment. See [config-format.md](skills/ship-plan/config-format.md).
+staging environment. `## Logs` `Location: local` keeps the run logs uncommitted in `.superpowers/ship-logs/`
+of the main checkout, so a run opens no lessons PR (for a repo where every PR needs a person's approval).
+See [config-format.md](skills/ship-plan/config-format.md).
 
 ## Models, review size and the dispatch hook
 

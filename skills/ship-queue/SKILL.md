@@ -248,10 +248,10 @@ starts with a fresh context and its own model.
 2. Start it from the queue's checkout, with `run_in_background`:
 
    ```bash
-   SHIP_QUEUE_PARENT=<parent> claude -p --output-format json --model <model> --effort <effort> --permission-mode <mode> < .superpowers/ship-queue/<parent>/<KEY>-run<n>.prompt.md > .superpowers/ship-queue/<parent>/<KEY>-run<n>.json
+   SHIP_QUEUE_PARENT=<parent> claude -p --output-format json --model <model> --effort <effort> --permission-mode <mode> [--add-dir <store>] < .superpowers/ship-queue/<parent>/<KEY>-run<n>.prompt.md > .superpowers/ship-queue/<parent>/<KEY>-run<n>.json
    ```
 
-   Keep every flag, `--output-format json` above all: without it the file holds plain text and the `Cost:` line cannot be written. The prompt comes from the file on stdin (`<`). `<model>` and `<effort>` come from the config's `## Models` `Queue run` row (default `opus`, `high`), `<mode>` from `## Queue` `Child permission mode:` (default `auto`).
+   Keep every flag, `--output-format json` above all: without it the file holds plain text and the `Cost:` line cannot be written. The prompt comes from the file on stdin (`<`). `<model>` and `<effort>` come from the config's `## Models` `Queue run` row (default `opus`, `high`), `<mode>` from `## Queue` `Child permission mode:` (default `auto`). Pass `--add-dir <store>` only under `## Logs` `Location: local` ([format](../ship-plan/config-format.md#-logs)) when the queue's checkout is a linked worktree of a clone that has a store ([`## Logs`](../ship-plan/config-format.md#-logs)): `<store>` is the parent of `git rev-parse --path-format=absolute --git-common-dir`, plus `/.superpowers/ship-logs`, found once at the queue's start. Before each child, for each folder in order (`.superpowers`, then `ship-logs`): `test -L` / `test -d` it, `mkdir -m 700` if missing, stop on a symlink or a non-folder. On a stop, pass none and say so in the report. Without it a child cannot write the store under `acceptEdits` or `dontAsk`.
 3. **Wait for its completion notification.** No `sleep` and no polling: the harness wakes this session when the child exits. A child runs for hours.
 4. Read the result: `jq '{is_error, subtype, num_turns, total_cost_usd, duration_ms, result: ((.result // "") | .[0:400])}' <output file>`. Write `Cost: <KEY> run <n> — $<total_cost_usd>, <num_turns> turns, <duration_ms / 60000, rounded> min`. Then read the outcome from the ledgers (Q2 step 5); the JSON decides only `cut off`.
 

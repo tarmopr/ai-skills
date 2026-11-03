@@ -130,7 +130,7 @@ happens.
 
 **Before anything else, read the repo's `.claude/ship-plan.md`
 ([format](config-format.md)) in full, and the repo's two logs
-`.claude/ship-plan/interruptions.md` and `.claude/ship-plan/blockers.md` by
+`<logs>/ship-plan/interruptions.md` and `<logs>/ship-plan/blockers.md` by
 index ([Reading the logs](#reading-the-logs)).** The config holds every command and
 setting for this repo. The first log holds standing answers to questions
 earlier runs asked; the second holds the fixes for tooling that stopped earlier
@@ -277,6 +277,13 @@ The logs are read by index, not in full: see below.
 
 ### Reading the logs
 
+**Where they are:** `<logs>` is `.claude/` under the config's `## Logs` `Location: repo`
+(the default), or the local store under `Location: local`
+([`## Logs`](config-format.md#-logs)). While the store holds no log, read the tracked copies
+under `.claude/`: only section 0 (or ship-issue's I0, when it runs first; or `verify-and-fix` run on
+its own) copies them in.
+Every log path below and in the other skills is under `<logs>`.
+
 `blockers.md` and the `interruptions.md` files are kept under a size budget
 (section 8), and every turn re-reads whatever they put in context. So read them by index:
 
@@ -294,7 +301,7 @@ The logs are read by index, not in full: see below.
    not the entries.
 4. **A heading list that matches nothing** is an answer, not a reason to read the
    whole log. A new blocker or question that will recur goes into the log at close-out.
-5. **Record each entry you apply** as a ledger line `Used: <log path under .claude/> <heading>`,
+5. **Record each entry you apply** as a ledger line `Used: <log path> <heading>`, the path under `<logs>`,
    e.g. `Used: ship-plan/blockers.md <heading>` (`verify-and-fix` under `ship-plan`: in
    ship-plan's ledger). Section 8 bumps its `Seen` from these; an entry never used ages out.
 
@@ -369,7 +376,7 @@ changes:
 - **Ask nothing: never `AskUserQuestion`, and never wait for a reply** (section 0, step 10; section 3, step 5; section 7, step 7). The batch goes into `questions.md` and the ledger as unqueued (`Asked: … — pending`), and as one comment: the tracker's *Comment*, or with no issue the host's *PR comment* (no PR either: the ledger only). Number the questions, each with its options and the recommendation first, and end with the answer line **"Answer with `/ship-queue <parent> <KEY>: <your answers>`."** (`<parent>` is the queue ledger's `Parent:`). The queue resumes this run with them in the form `/ship-queue <parent> <KEY>: <answers>`. Carry on with everything the answers do not block, as unqueued; the run then ends at section 7 as it would.
 - **Review wait** (section 4R): when the PR's checks are green and only a person's approval, or a person's unresolved thread, is missing, hand off at once (step 5) instead of waiting the `Review wait:` window. The wait for an AI review (at most 20 minutes) and every CI wait stay. The queue polls once more after its last sub-issue.
 - **No handoffs of this run's own:** neither the session-end handoff (the ledger section) nor a next part's (section 7, step 3). The queue writes one for the whole queue, and the queue is the next part.
-- **Lessons** (section 8): the branch is `docs/ship-plan-lessons-<yyyy-mm-dd>-<KEY-n>`, so a queue's runs on one day do not collide on one branch name. Write `Lessons branch: <name>` when you create it, and `Docs branch: <name>` when docs-pr.md creates the docs branch; the queue reads them to know the branch is its own. The `Lessons PR:` line is written as unqueued. Everything else in section 8 is unchanged.
+- **Lessons** (section 8): the branch is `docs/ship-plan-lessons-<yyyy-mm-dd>-<KEY-n>`, so a queue's runs on one day do not collide on one branch name (none under `## Logs` `Location: local`). Write `Lessons branch: <name>` when you create it, and `Docs branch: <name>` when docs-pr.md creates the docs branch; the queue reads them to know the branch is its own. The `Lessons PR:` line is written as unqueued. Everything else in section 8 is unchanged.
 
 ## Runner mode (ship-runner)
 
@@ -389,7 +396,7 @@ applies, with these changes:
 - **`Asked:` lines** hold the question, then its options with the recommendation first, as verify-and-fix's Runner mode writes them: `Asked: <the question, its options, the recommendation first> — pending`. The runner's `status` prints them as they are, and the watching session asks from them.
 - **Which run** (section 0, steps 2 and 3): the open run whose `Issue:` is the `current` key, or whose `Plan:` is this run's plan, whatever the argument. Never ask which, and never start a second run for a plan that has an open ledger.
 - **The run's branch, in every phase, before anything else in it:** when the checkout is on `<base>` and clean and the ship-plan ledger has a `Branch:` line, `git switch <branch>` first (a rerun or the next queue item can leave the checkout on base). If the branch is gone because its PR merged, stay on `<base>`, as section 0, step 2 says.
-- **Only the named phase, reading only its phase file:** `implement` is sections 0, 1, 2 and 2b ([phase-implement.md](phase-implement.md)); `verify` is sections 3 and 4 ([phase-verify.md](phase-verify.md)); `merge` is sections 4R, 5, 6 and 6b ([phase-merge.md](phase-merge.md)); `close` is sections 7 and 8 ([phase-close.md](phase-close.md)). Every phase also reads what this skill's opening reads before anything else: `.claude/ship-plan.md`, `.claude/ship-plan/interruptions.md`, `.claude/ship-plan/blockers.md`, `hosts/<host>.md`, `trackers/<tracker>.md`, `notifiers/slack.md` when `## Slack` names a channel, and the override counterparts of each; a later `implement` child reads them only as the `implement` bullet below says. Section 3 also applies whenever a question comes up, as its index line says. A step that sends the run to a section in another phase file reads that section there, for that step, as the index says. When the phase's own text sends the run to section 7 early (verify not clean, awaiting review, awaiting merge, not merged), read phase-close.md then and close out as written.
+- **Only the named phase, reading only its phase file:** `implement` is sections 0, 1, 2 and 2b ([phase-implement.md](phase-implement.md)); `verify` is sections 3 and 4 ([phase-verify.md](phase-verify.md)); `merge` is sections 4R, 5, 6 and 6b ([phase-merge.md](phase-merge.md)); `close` is sections 7 and 8 ([phase-close.md](phase-close.md)). Every phase also reads what this skill's opening reads before anything else: `.claude/ship-plan.md`, `<logs>/ship-plan/interruptions.md`, `<logs>/ship-plan/blockers.md` ([Reading the logs](#reading-the-logs)), `hosts/<host>.md`, `trackers/<tracker>.md`, `notifiers/slack.md` when `## Slack` names a channel, and the override counterparts of each; a later `implement` child reads them only as the `implement` bullet below says. Section 3 also applies whenever a question comes up, as its index line says. A step that sends the run to a section in another phase file reads that section there, for that step, as the index says. When the phase's own text sends the run to section 7 early (verify not clean, awaiting review, awaiting merge, not merged), read phase-close.md then and close out as written.
 - **A phase ends where the next one begins:** rewrite the `Phase:` field of the ledger's first line to it, keeping its other fields (`Phase: 3` after section 2b, `Phase: 4R` once section 4 reaches section 4R, `Phase: 7` after section 6b), then end. The close phase ends as section 7 says (`Phase: done` when the outcome is Done).
 - **`implement` with a task range:** do only those tasks. After each task's review passes, write `Progress: task <n> done`, `<n>` as its `### Task <n>` heading numbers it; a task parked instead (its question goes in the batch and the run goes on without it) gets `Progress: task <n> parked`. The runner counts both lines as handled to pick the next range. The first child runs sections 0 and 1 first. A later child (the ledger is at `Phase: 2`) re-reads exactly: the plan's header and `## Global Constraints`, its own task range, the ship-plan ledger, and `git log <base>..HEAD --oneline` — nothing else before its first task. What section 2 puts in a dispatch (config sections, `## Models` rows, `## Prerequisites`) is read when that dispatch is built. **`implement` with no range** (every task has its `Progress:` line): section 2's steps after the last task, then section 2b. **`implement`, the whole plan** (the plan has no `### Task` headings): sections 0 and 1, all of the plan's work as section 2 does it, section 2's steps after the last task, then section 2b, in this one child.
 - **Progress lines:** at each milestone write `Progress: <text>` to the ledger: `task <n> done` (or `parked`), `review round <n>` (each `verify-and-fix` call in section 4, each section 4R round), `PR #<n> opened`, `CI <green|red>` (each time the PR's checks or the base-branch run settle), `merged <sha>`.

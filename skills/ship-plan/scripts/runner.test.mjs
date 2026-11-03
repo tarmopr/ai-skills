@@ -73,7 +73,10 @@ const deadPid = () => spawnSync(process.execPath, ['-e', '']).pid;
 
 test('parseConfig: ## Runner chunk, ## Models rows over defaults; never a permission mode', () => {
   // B4/B8/B12 (review round 1) added base, idleMinutes and warnings to the result
-  assert.deepEqual(parseConfig(''), { chunkSize: 5, idleMinutes: 60, base: '', models: MODEL_DEFAULTS, warnings: [] });
+  assert.deepEqual(parseConfig(''), { chunkSize: 5, idleMinutes: 60, base: '', models: MODEL_DEFAULTS, logsLocal: false, warnings: [] });
+  assert.equal(parseConfig('## logs\n- Location: `Local`\n').logsLocal, true);
+  assert.equal(parseConfig('## Logs\nLocation: repo\n').logsLocal, false);
+  assert.deepEqual(parseConfig('## Logs\nLocation: elsewhere\n').warnings, ['Location: "elsewhere" is not repo or local; using repo']);
   assert.deepEqual(MODEL_DEFAULTS['Phase: close'], { model: 'sonnet', effort: 'medium' });
   const cfg = parseConfig([
     '## runner ', 'Mode: runner', 'Implement chunk: 3', '',
@@ -1314,6 +1317,60 @@ test('a linked worktree: answers stored in its own git dir and used; .superpower
   assert.match(JSON.parse(readFileSync(log, 'utf8')).stdin, /copied exactly:\npostgres\n$/);
   assert.match(readFileSync(join(main, '.git', 'info', 'exclude'), 'utf8'), /^\.superpowers\/$/m);
   assert.equal(git(wt, 'status', '--porcelain', '--untracked-files=all'), '');
+});
+
+// ## Logs Location: local: a child in a linked worktree may write the main checkout's log store;
+// under repo it gets no --add-dir
+test('## Logs Location: a runner child in a linked worktree gets the log store as --add-dir only under local', () => {
+  for (const loc of ['local', 'repo']) {
+    const main = repo();
+    put(main, '.claude/ship-plan.md', ['## Logs', `Location: ${loc}`]);
+    commit(main);
+    git(main, 'switch', '-q', '-c', 'other');
+    const wt = join(realpathSync(mkdtempSync(join(tmpdir(), 'runner-wt-'))), 'wt');
+    git(main, 'worktree', 'add', '-q', wt, 'main');
+    atVerify(wt, 'L-1');
+    const log = join(wt, 'l.json');
+    assert.equal(cli(wt, ['start', 'issue', 'L-1'], { ...ships('L-1'), FAKE_CLAUDE_LOG: log }).status, 0);
+    const argv = JSON.parse(readFileSync(log, 'utf8')).argv;
+    const store = join(main, '.superpowers', 'ship-logs');
+    if (loc === 'local') assert.deepEqual(argv.slice(argv.indexOf('--add-dir'), argv.indexOf('--add-dir') + 2), ['--add-dir', store], loc);
+    else assert.ok(!argv.includes('--add-dir'), loc);
+  }
+});
+
+// final review: the store is fixed at the runner's start; a child that repoints the worktree's
+// gitfile to another clone never moves a later child's --add-dir there
+test('## Logs Location: local: a rewritten worktree gitfile does not move the store a later child gets', () => {
+  const main = repo();
+  put(main, '.claude/ship-plan.md', ['## Logs', 'Location: local']);
+  commit(main);
+  git(main, 'switch', '-q', '-c', 'other');
+  const wt = join(realpathSync(mkdtempSync(join(tmpdir(), 'runner-wt-'))), 'wt');
+  git(main, 'worktree', 'add', '-q', wt, 'main');
+  const evil = join(realpathSync(mkdtempSync(join(tmpdir(), 'runner-evil-'))), 'evil');
+  git(main, 'clone', '-q', main, evil);
+  git(evil, 'switch', '-q', '-c', 'other2');
+  const ewt = join(dirname(evil), 'ewt');
+  git(evil, 'worktree', 'add', '-q', ewt, 'main');
+  writeFileSync(join(evil, '.git', 'info', 'exclude'), '.superpowers/\n');
+  atVerify(wt, 'A-1', 'A-2');
+  const [log1, log2] = [join(wt, 'a1.json'), join(wt, 'a2.json')];
+  const env = { FAKE_CLAUDE_BY_KEY: JSON.stringify({
+    'A-1': { ...ships('A-1'), FAKE_CLAUDE_LOG: log1, FAKE_CLAUDE_LEDGER_APPEND: ops([
+      { file: planLedger('A-1'), firstLine: planFirst('A-1', 'done') },
+      { file: '.git', firstLine: `gitdir: ${join(evil, '.git', 'worktrees', 'ewt')}` },
+    ]) },
+    'A-2': { ...ships('A-2'), FAKE_CLAUDE_LOG: log2 },
+  }) };
+  cli(wt, ['start', 'queue', 'P-1', 'A-1,A-2'], env);
+  const store = join(main, '.superpowers', 'ship-logs');
+  const argv1 = JSON.parse(readFileSync(log1, 'utf8')).argv;
+  assert.deepEqual(argv1.slice(argv1.indexOf('--add-dir'), argv1.indexOf('--add-dir') + 2), ['--add-dir', store]);
+  assert.ok(existsSync(log2), 'the second child ran');
+  const argv2 = JSON.parse(readFileSync(log2, 'utf8')).argv;
+  if (argv2.includes('--add-dir')) assert.equal(argv2[argv2.indexOf('--add-dir') + 1], store);
+  assert.equal(existsSync(join(evil, '.superpowers', 'ship-logs')), false);
 });
 
 // K1: a verify run started again after it ended blocked (or cut off, or not started) reads its

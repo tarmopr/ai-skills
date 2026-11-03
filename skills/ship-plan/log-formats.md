@@ -3,7 +3,8 @@
 `ship-plan` and `verify-and-fix` create these in the repo, under `.claude/ship-plan/`, the first
 time a run has something to write and the file is missing. They are committed
 through `ship-plan`'s lessons PR, under its section 8's rules
-([phase-close.md](phase-close.md)).
+([phase-close.md](phase-close.md)). Under `## Logs` `Location: local` they live in
+the local store's `ship-plan/` instead, never committed ([config-format.md](config-format.md#-logs)).
 
 ## interruptions.md seed
 
