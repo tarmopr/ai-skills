@@ -3,7 +3,7 @@
 // The ledgers win over a child's RUNNER: marker.
 import { createHash } from 'node:crypto';
 import { lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync, statSync } from 'node:fs';
-import { dirname, isAbsolute, join, parse, posix, relative, resolve, sep } from 'node:path';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { answersNamed, emit, readAnswers, runGit } from './runner-lib.mjs';
 import { isEnvError, isLimitError, resumeOrFresh, runChild } from './runner-child.mjs';
 
@@ -321,7 +321,7 @@ export function tailProgress(root, key, onLine, intervalMs = 5000, opts = {}, on
 
 // What the next child loads from the checkout (permission rules, hooks, MCP servers, agents,
 // commands, skills, memory files): a child that changes one could widen what every later child may
-// do. The run's own files under .claude/ (ship-plan.md, ship-plan/, ship-issue/) are written by
+// do, so a change during a child is reported (runIssue: a warning, never a stop). The run's own files under .claude/ (ship-plan.md, ship-plan/, ship-issue/) are written by
 // children by design and never guarded.
 export const GUARDED_FILES = [
   '.claude/settings.json', '.claude/settings.local.json', '.mcp.json',
@@ -443,221 +443,20 @@ export function guardedChanges(before, after) {
   return keys.filter((k) => (before[k] ?? 'absent') !== (after[k] ?? 'absent'));
 }
 
-// Where a checkout path really lives, as git sees it: each symlink on the way (checkout-relative,
-// its folder resolved, so never beyond another link) and the path it ends at. { outside: true }
-// when a link on the way or the end is outside the checkout: content git cannot vouch for.
-function resolveChain(realRoot, rel) {
-  const inside = (abs) => {
-    const r = relative(realRoot, abs);
-    return r && !r.startsWith('..') && !isAbsolute(r) ? r.split(sep).join('/') : null;
-  };
-  const paths = [];
-  let parts = rel.split('/');
-  let cur = realRoot;
-  for (let hops = 0; parts.length;) {
-    const name = parts.shift();
-    if (!name || name === '.') continue;
-    if (name === '..') {
-      cur = dirname(cur);
-      continue;
-    }
-    const next = join(cur, name);
-    let link = false;
-    try {
-      link = lstatSync(next).isSymbolicLink();
-    } catch {
-      // absent: the path is taken as it is
-    }
-    if (!link) {
-      cur = next;
-      continue;
-    }
-    const at = inside(next);
-    if (!at || ++hops > 40) return { outside: true };
-    paths.push(at);
-    const target = readlinkSync(next);
-    if (isAbsolute(target)) cur = parse(target).root;
-    parts = [...target.split(/[\\/]/), ...parts];
-  }
-  const end = inside(cur);
-  if (!end) return { outside: true };
-  paths.push(end);
-  return { paths };
-}
-
-// git status entries for these checkout paths: changed, staged, untracked or ignored ('/'-separated;
-// a folder git reports whole ends in '/'). null when git cannot tell.
-function statusEntries(root, paths) {
-  if (!paths.length) return [];
-  let out;
-  try {
-    out = runGit(root, ['status', '--porcelain', '-z', '--ignored=matching', '--untracked-files=all', '--', ...paths.map((p) => `:(literal)${p}`)]);
-  } catch {
-    return null;
-  }
-  const entries = [];
-  const parts = out.split('\0');
-  for (let i = 0; i < parts.length; i++) {
-    if (!parts[i]) continue;
-    entries.push(parts[i].slice(3));
-    if (/^(?:[RC].|.[RC])/.test(parts[i])) entries.push(parts[++i] ?? ''); // a rename: its old path too
-  }
-  return entries;
-}
-const touches = (entry, p) => entry === p || entry.startsWith(`${p}/`) || (entry.endsWith('/') && p.startsWith(entry));
-const chainsOf = (root, rels) => {
-  const realRoot = realpathSync(root);
-  return new Map(rels.map((p) => [p, resolveChain(realRoot, p)]));
-};
-const gitPaths = (chains) => [...new Set([...chains.values()].flatMap((c) => c.paths ?? []))];
-
-// { mode, type, oid } of a path in commit sha, or null when the commit has nothing there (or the
-// path is beyond a link of that commit).
-function treeEntry(root, commit, rel) {
-  const out = runGit(root, ['ls-tree', '-z', commit, '--', rel]);
-  for (const line of out.split('\0')) {
-    const m = /^(\d+) (\w+) ([0-9a-f]+)\t(.*)$/s.exec(line);
-    if (m && m[4] === rel) return { mode: m[1], type: m[2], oid: m[3] };
-  }
-  return null;
-}
-const blobAt = (root, oid) => runGit(root, ['cat-file', 'blob', oid], { encoding: 'buffer' });
-
-// What a symlink at rel with this target resolves to in commit sha, as linkHash says it: a file's
-// sha256, `dir` or `dangling`; null when it leaves the checkout (git cannot vouch for that).
-function resolvedAt(root, commit, rel, target, hops = 0) {
-  if (isAbsolute(target) || hops > 40) return null;
-  const p = posix.normalize(posix.join(posix.dirname(rel), target.replaceAll('\\', '/')));
-  if (p === '..' || p.startsWith('../')) return null;
-  if (p === '.' || p === '') return 'dir';
-  const e = treeEntry(root, commit, p);
-  if (!e) return 'dangling';
-  if (e.type === 'tree') return 'dir';
-  if (e.type !== 'blob') return null;
-  if (e.mode === '120000') return resolvedAt(root, commit, p, blobAt(root, e.oid).toString('utf8'), hops + 1);
-  return sha(blobAt(root, e.oid));
-}
-
-// Whether commit sha has nothing at all at rel: no entry there, and no folder on the way that is a
-// link or a file (rel is not beyond a link of that commit).
-function absentAt(root, commit, rel) {
-  const parts = rel.split('/');
-  for (let n = 1; n <= parts.length; n++) {
-    const e = treeEntry(root, commit, parts.slice(0, n).join('/'));
-    if (!e) return true;
-    if (n === parts.length || e.type !== 'tree') return false;
-  }
-  return true;
-}
-
-// The value guardedHashes would give rel in a checkout of commit sha, or null when that cannot be
-// told (a link out of the checkout, a submodule).
-function hashAt(root, commit, rel) {
-  const e = treeEntry(root, commit, rel);
-  if (!e || e.type === 'tree') return 'absent';
-  if (e.type !== 'blob') return null;
-  if (e.mode !== '120000') return sha(blobAt(root, e.oid));
-  const target = blobAt(root, e.oid).toString('utf8');
-  const to = resolvedAt(root, commit, rel, target);
-  return to === null ? null : `link:${target}:${to}`;
-}
-
-// What the guard takes before a child: the guarded hashes, the git status of the guarded paths
-// (null when git cannot tell), and the commits the run recorded when it started, before any child:
-// `base`, origin/<base>'s (null without one), and `tips`, [{ tip, fork }] for this item's run
-// branch (local and origin), fork its merge-base with base.
-export function guardSnapshot(root, base, tips = []) {
-  const hashes = guardedHashes(root);
-  const dirty = statusEntries(root, gitPaths(chainsOf(root, Object.keys(hashes))));
-  return { hashes, dirty, base: base ?? null, tips: [...tips] };
-}
-
-const listed = (ps) => `${ps.slice(0, 5).join(', ')}${ps.length > 5 ? ` and ${ps.length - 5} more` : ''}`;
-
-// What a checkout of commit sha would hold at rel, as guardedHashes says it: 'absent' only when the
-// commit really has nothing there (absentAt); null when that cannot be told or vouched for (a
-// folder, a path beyond a link, a link out of the checkout, a submodule, git failing).
-function valueAt(root, commit, rel) {
-  try {
-    if (absentAt(root, commit, rel)) return 'absent';
-    const v = hashAt(root, commit, rel);
-    return v === 'absent' ? null : v;
-  } catch {
-    return null;
-  }
-}
-
-// Why the run stops after a child (K2, K4), or null. The guarded paths whose hash differs from the
-// snapshot count, unless ONE commit recorded at the start accounts for all of them together (a
-// child switches to origin/<base>, or to its item's run branch, by design): each path's content
-// (the bytes, or a link's target and what it resolves to) equal to that commit's, or the path gone
-// and that commit really having nothing there (F1). A run branch tip counts only when, for every
-// one of those paths, it holds what its merge-base with the base holds: the branch never changed
-// them, so its copy is an older upstream one, never a change an earlier child committed there.
-// Fail closed: never with git status saying a path differs from HEAD before or after the child
-// (status only refuses, never vouches: the child controls refs, the index and the config), nor
-// with a link out of the checkout. The reason: `guarded file <p> differs from the recorded base
-// <sha> [and the run branch tip(s) <sha>, …]: …` for the paths the closest recorded commit does not
-// account for, else `child changed <p>`.
-export function guardedChildChange(root, snap) {
-  const after = guardedHashes(root);
-  const changed = guardedChanges(snap.hashes, after);
-  if (!changed.length) return null;
-  const tips = snap.base ? snap.tips ?? [] : [];
-  if (!snap.base) return `child changed ${listed(changed)}`;
-  const at = new Map(); // commit -> path -> valueAt
-  const value = (c, p) => {
-    if (!at.has(c)) at.set(c, new Map());
-    const m = at.get(c);
-    if (!m.has(p)) m.set(p, valueAt(root, c, p));
-    return m.get(p);
-  };
-  const untouched = ({ tip, fork }) => changed.every((p) => value(tip, p) !== null && value(tip, p) === value(fork, p));
-  const candidates = [snap.base, ...tips.filter(untouched).map((t) => t.tip)];
-  const accounted = (c) => changed.filter((p) => value(c, p) !== null && value(c, p) === (after[p] ?? 'absent'));
-  // the commit that accounts for the most paths (the base first): all of them, or the reason
-  let best = [];
-  for (const c of candidates) {
-    const got = accounted(c);
-    if (got.length > best.length) best = got;
-  }
-  const chains = chainsOf(root, changed);
-  const now = statusEntries(root, gitPaths(chains));
-  const offBase = [];
-  const mine = [];
-  for (const p of changed) {
-    if (!best.includes(p)) {
-      // gone after the child where the base has a folder or a link on the way: the child's doing
-      ((after[p] ?? 'absent') === 'absent' && value(snap.base, p) === null ? mine : offBase).push(p);
-      continue;
-    }
-    const c = chains.get(p);
-    if (c.outside || !snap.dirty || !now || c.paths.some((g) => snap.dirty.some((e) => touches(e, g)) || now.some((e) => touches(e, g)))) mine.push(p);
-  }
-  const why = [];
-  if (offBase.length) {
-    const one = offBase.length === 1;
-    const from = [
-      snap.base ? `the recorded base ${snap.base.slice(0, 12)}` : null,
-      tips.length ? `the run branch tip${tips.length === 1 ? '' : 's'} ${tips.map((t) => t.tip.slice(0, 12)).join(', ')}` : null,
-    ].filter(Boolean).join(' and ');
-    why.push(`guarded file${one ? '' : 's'} ${listed(offBase)} ${one ? 'differs' : 'differ'} from ${from}: changed by the child or upstream; review, then rerun`);
-  }
-  if (mine.length) why.push(`child changed ${listed(mine)}`);
-  return why.length ? why.join('; ') : null;
-}
+// The first 5 paths, and how many more.
+export const listed = (ps) => `${ps.slice(0, 5).join(', ')}${ps.length > 5 ? ` and ${ps.length - 5} more` : ''}`;
 
 const plural = (n) => `${n} question${n === 1 ? '' : 's'}`;
 
 // Run the issue's phases until it is done, waiting, blocked or cut off.
 // ctx: { root, dir, models: {[row]: {model, effort}}, mode, env, skill = 'ship-issue',
-//        args = item.key, chunkSize = 5, tailMs = 5000, idleMs?, ledgers?: LedgerOpts, save?(item),
-//        base?: origin/<base>'s commit recorded when the run started, tips?: [{ tip, fork }] of this
-//        item's run branch recorded then (guardedChildChange) }.
+//        args = item.key, chunkSize = 5, tailMs = 5000, idleMs?, ledgers?: LedgerOpts, save?(item) }.
 // A child that fails on a usage limit cuts the item off (the run stops); any other child failure
 // blocks it with the error's first 300 characters. ctx.stop is set (and the event ends "; run
 // stopped") when no later child should start: a failure of the environment (no claude, an API or
-// auth error, a bad model: isEnvError), or a child that changed a guarded file (guardedChildChange).
+// auth error, a bad model: isEnvError). The guarded files (guardedHashes) are hashed before and after
+// each child; those that changed during it, by the child or a branch switch, are named in a
+// progress event and added to item.guardedChanged: a warning, never a stop (the user's ruling).
 // Answers files are read from ctx.answersDir (default ctx.dir). state.current is set by the caller.
 export async function runIssue(ctx, item) {
   const { root, dir } = ctx;
@@ -711,7 +510,7 @@ export async function runIssue(ctx, item) {
       mode: ctx.mode ?? 'auto', resume, env: ctx.env ?? {}, idleMs: ctx.idleMs,
     };
     // hashed before the tail starts: a hash that throws leaves no timer behind
-    const guarded = guardSnapshot(root, ctx.base, ctx.tips);
+    const guarded = guardedHashes(root);
     const stop = tailProgress(root, key, (line) => emit(dir, key, phase, 'progress', line), ctx.tailMs ?? 5000, ctx.ledgers,
       (e) => emit(dir, key, phase, 'progress', `ledger read failed: ${e.code || e.message}`));
     let r;
@@ -730,10 +529,11 @@ export async function runIssue(ctx, item) {
     item.sessions.push(session(r));
     ctx.save?.(item);
 
-    const guardStop = guardedChildChange(root, guarded);
-    if (guardStop) {
-      ctx.stop = guardStop;
-      return end('blocked', ctx.stop, phase, 'blocked', `${ctx.stop}; run stopped`);
+    const changed = guardedChanges(guarded, guardedHashes(root));
+    if (changed.length) {
+      item.guardedChanged = [...new Set([...(item.guardedChanged ?? []), ...changed])].sort();
+      ctx.save?.(item);
+      emit(dir, key, phase, 'progress', `guarded files changed during the child (by the child or a branch switch): ${listed(changed)}; the run goes on`);
     }
     if (!r.ok) {
       if (isLimitError(r.error)) return end('cut off', r.error, phase, 'cutoff', r.error);

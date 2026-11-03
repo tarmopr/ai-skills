@@ -274,7 +274,12 @@ character no model name has (it checks only letters, digits, `.`, `_`, `-`,
 `[` and `]`, not that the model exists), an effort it does not know, a field
 that is not a number) is ignored and named in
 a `config:` progress event at start; the base branch and the models in use are
-events too.
+events too. Around every child the runner hashes the files a child loads
+(`.claude/settings*.json`, `.mcp.json`, `.claude/hooks/`, `agents/`,
+`commands/`, `skills/`, `CLAUDE.md`, `CLAUDE.local.md`, hook scripts): a change
+during a child is a warning, an event the watching session pushes to the phone
+and a line in the summary, never a stop ([runner-session.md](runner-session.md),
+Watch).
 
 | Field | Meaning | Default |
 |---|---|---|

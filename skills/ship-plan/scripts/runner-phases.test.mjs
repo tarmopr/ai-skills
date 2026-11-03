@@ -590,3 +590,25 @@ test('runIssue: an answers file that is a path, or another item\'s, is never rea
     assert.equal(existsSync(log), false, String(name));
   }
 });
+
+// USER RULING (review round 4): the guard warns, never stops. After each child the guarded files
+// that changed during it (by the child or a branch switch) are named in a progress event and kept
+// on the item for the summary; the item ends as its ledgers say, and the run goes on.
+test('runIssue: a child that changes guarded files -> a progress event names them, the item is done, nothing stops', async () => {
+  const root = repo({ issue: [issueFirst(6)], plan: [planFirst('3')] });
+  writeFileSync(join(root, 'CLAUDE.md'), 'v1\n');
+  const ops = ledgerOps([{ file: PLAN_LEDGER, firstLine: planFirst('done') }, { file: 'CLAUDE.md', firstLine: 'v2' }, { file: '.mcp.json', append: ['{}'] }]);
+  const ctx = ctxFor(root, { FAKE_CLAUDE: 'ok:RUNNER: done', FAKE_CLAUDE_LEDGER_APPEND: ops });
+  const it = await runIssue(ctx, item());
+  assert.deepEqual([it.status, it.reason], ['done', '']);
+  assert.equal(ctx.stop, undefined);
+  assert.deepEqual(it.guardedChanged, ['.mcp.json', 'CLAUDE.md']);
+  assert.match(events(root), / BILL-7 verify progress guarded files changed during the child \(by the child or a branch switch\): \.mcp\.json, CLAUDE\.md; the run goes on$/m);
+  assert.doesNotMatch(events(root), / blocked /);
+  // a child that changes none: no such event
+  const quiet = repo({ issue: [issueFirst(6)], plan: [planFirst('3')] });
+  const q = await runIssue(ctxFor(quiet, { FAKE_CLAUDE: 'ok:RUNNER: done', FAKE_CLAUDE_LEDGER_APPEND: ledgerOps([{ file: PLAN_LEDGER, firstLine: planFirst('done') }]) }), item());
+  assert.equal(q.status, 'done');
+  assert.equal(q.guardedChanged, undefined);
+  assert.doesNotMatch(events(quiet), /guarded/);
+});

@@ -19,7 +19,7 @@ import { appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync, realpat
 import { basename, dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { acquireLock, alive, answersNamed, clean, emit, groupAlive, makeDir, plainFile, readLock, readState, releaseLock, runDir, runGit, setChildPid, writeState } from './runner-lib.mjs';
-import { findPlanLedger, ledgerBranch, ledgerOutcome, pendingQuestions, PHASE_ROWS, PHASES, phaseFromLedgers, runIssue } from './runner-phases.mjs';
+import { findPlanLedger, ledgerOutcome, listed, pendingQuestions, PHASE_ROWS, PHASES, phaseFromLedgers, runIssue } from './runner-phases.mjs';
 import { endChildren, haltChildren } from './runner-child.mjs';
 import { nextItem } from './runner-queue.mjs';
 
@@ -311,7 +311,9 @@ const minutesOf = (item) => item.sessions.reduce((sum, s) => sum + (s.minutes ??
 function summaryText(state) {
   const counts = ORDER.map((st) => [st, state.items.filter((i) => i.status === st).length]).filter(([, n]) => n);
   const cost = state.items.reduce((sum, i) => sum + costOf(i), 0);
-  return `${counts.map(([st, n]) => `${n} ${st}`).join(', ')}; cost $${cost.toFixed(2)}`;
+  // the guard's warnings of this start, each item's changed files (runIssue's item.guardedChanged)
+  const guarded = state.items.filter((i) => i.guardedChanged?.length).map((i) => `${i.key} (${listed(i.guardedChanged)})`);
+  return `${counts.map(([st, n]) => `${n} ${st}`).join(', ')}; cost $${cost.toFixed(2)}${guarded.length ? `; guarded files changed: ${guarded.join(', ')}` : ''}`;
 }
 
 function usage(msg) {
@@ -627,42 +629,13 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
         changes.push(...waits);
       }
     }
-    // origin/<base> as it is now, before any child of this start, and the tips of each item's run
-    // branch (its ledgers' Branch:, local and on origin), each with its merge-base with that base:
-    // the commits a guarded change may come from (K2, K4; a child switches to either by design).
-    // A tip vouches only for its own item, and only for a path its branch left as it forked (the
-    // guard checks that). Never fetched by the runner: a child controls the git config a fetch
-    // would run with. An upstream change after this is a stop; the rerun records afresh.
-    const commitOf = (...args) => {
-      try {
-        return git(root, ...args) || null;
-      } catch {
-        return null; // no such ref, or no common commit: nothing recorded for it
-      }
-    };
-    const refName = (b) => /^[A-Za-z0-9._/#-]+$/.test(b) && !b.startsWith('-') && !b.includes('..');
-    const recordedBase = refName(baseInfo.name) ? commitOf('rev-parse', '--verify', '-q', `refs/remotes/origin/${baseInfo.name}^{commit}`) : null;
-    const tipsOf = {}; // item key -> [{ tip, fork }]
-    for (const i of state.items) {
-      let b = null;
-      try {
-        b = ledgerBranch(root, i.key, ledgerOpts(root, state, i));
-      } catch {
-        // a ledger that cannot be read: no branch recorded (the item's own run reports it)
-      }
-      if (!recordedBase || !b || !refName(b)) continue;
-      const tips = (tipsOf[i.key] = []);
-      for (const ref of [`refs/heads/${b}`, `refs/remotes/origin/${b}`]) {
-        const tip = commitOf('rev-parse', '--verify', '-q', `${ref}^{commit}`);
-        const fork = tip && commitOf('merge-base', tip, recordedBase);
-        if (tip && fork && tip !== recordedBase && !tips.some((t) => t.tip === tip)) tips.push({ tip, fork });
-      }
-    }
     // A child window left open by a runner that was stopped (a signal, a kill): what that child
     // started may have outlived it, so the window runs until now, and an answers file written
     // since for that item is rejected too.
     const startedAt = Date.now();
     for (const i of state.items) for (const w of i.windows ?? []) w[1] ??= startedAt;
+    // the summary names the guarded files changed during this start's children only
+    for (const i of state.items) delete i.guardedChanged;
     state.root = root;
     state.current = null;
     state.stopped = null;
@@ -697,7 +670,7 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
 
     const base = {
       root, dir, models: cfg.models, mode, env: {}, chunkSize: cfg.chunkSize, idleMs: cfg.idleMinutes * 60000,
-      skill: run.skill, args: run.args, save, answersDir: store, base: recordedBase,
+      skill: run.skill, args: run.args, save, answersDir: store,
     };
     const pollMs = Number(process.env.SHIP_RUNNER_POLL_MS) || 30000;
     let ran = false; // a queue item has run in this start
@@ -747,7 +720,7 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
       save();
       // closed once the item's outcome is known, before its event (runIssue's end): an `answer`
       // right after a `waiting` event finds no open window
-      const ctx = { ...base, tips: tipsOf[item.key] ?? [], ledgers, beforeEnd: () => { window[1] ??= Date.now(); } };
+      const ctx = { ...base, ledgers, beforeEnd: () => { window[1] ??= Date.now(); } };
       current = item;
       try {
         await runIssue(ctx, item);
@@ -757,8 +730,7 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
         state.current = null;
         save();
       }
-      // a failure every later child would hit too (no claude, auth, a bad model), or a child that
-      // changed what the next child loads: nothing more starts
+      // a failure every later child would hit too (no claude, auth, a bad model): nothing more starts
       if (ctx.stop) {
         const why = `runner stopped: ${ctx.stop}`.slice(0, 300);
         for (const i of state.items) if (i.status === 'queued') Object.assign(i, { status: 'not started', reason: why });
