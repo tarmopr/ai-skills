@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { alive } from './runner-lib.mjs';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1283,4 +1283,137 @@ test('start verify again after a blocked verify: a fresh ledger snapshot, a new 
   const s = readState(dir);
   assert.deepEqual(s.items.map((i) => [i.status, i.sessions.length, i.from]), [['done', 2, 2]]);
   assert.deepEqual(children(dir), ['feat-k-verify-1.jsonl', 'feat-k-verify-2.jsonl']);
+});
+
+// R2-1/X4 (review round 2): git code a child planted (core.fsmonitor, core.hooksPath, a hook) never
+// runs from the runner's own git calls (status at start and between items, switch between items)
+test('a planted fsmonitor or hook in the git config: never run by the runner\'s git', () => {
+  const root = repo();
+  atVerify(root, 'A-1', 'A-2');
+  const marker = join(root, 'ran.txt');
+  const script = (name) => {
+    writeFileSync(join(root, name), `#!/bin/sh\necho "${name}:[$SHIP_RUNNER_ALLOW_BYPASS]" >> "${marker}"\nexit 1\n`, { mode: 0o755 });
+    return join(root, name);
+  };
+  writeFileSync(join(root, '.gitignore'), '*.json\n*.txt\nhk/\n*.sh\n');
+  commit(root);
+  // planted last: the test's own git below this line would run them
+  mkdirSync(join(root, 'hk'));
+  script('hk/post-checkout');
+  script('hk/reference-transaction');
+  execFileSync('git', ['config', 'core.fsmonitor', script('fsmonitor.sh')], { cwd: root });
+  execFileSync('git', ['config', 'core.hooksPath', join(root, 'hk')], { cwd: root });
+  // each child leaves the checkout on its own branch: the runner switches back before A-2
+  const leaves = (k) => ({ ...ships(k), FAKE_CLAUDE_GIT: ops([['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', 'switch', '-q', '-c', `feat/${k}`]]) });
+  const r = cli(root, ['start', 'queue', 'P-1', 'A-1,A-2', '--permission-mode', 'bypassPermissions'],
+    { SHIP_RUNNER_ALLOW_BYPASS: '1', FAKE_CLAUDE_BY_KEY: JSON.stringify({ 'A-1': leaves('A-1'), 'A-2': leaves('A-2') }) });
+  assert.equal(r.status, 0, r.stderr);
+  const s = readState(runDir(root, 'queue', 'P-1'));
+  assert.deepEqual(s.items.map((i) => i.status), ['done', 'done'], events(runDir(root, 'queue', 'P-1')));
+  assert.equal(existsSync(marker) ? readFileSync(marker, 'utf8') : '', '');
+});
+
+// K2 (review round 2): children switch to a newer origin/<base> by design (ship-issue I2, the
+// lessons branch, …); a guarded file that changed upstream is not a child's change. A child's own
+// change still stops the run: uncommitted, or in a commit of its own.
+function withOrigin(root) {
+  const bare = realpathSync(mkdtempSync(join(tmpdir(), 'runner-origin-')));
+  git(bare, 'init', '-q', '--bare', '-b', 'main');
+  git(root, 'remote', 'add', 'origin', bare);
+  git(root, 'push', '-q', 'origin', 'main');
+  git(root, 'fetch', '-q', 'origin');
+}
+// files committed on origin's main only: the local main and origin/main stay where they were
+function upstream(root, files) {
+  const old = git(root, 'rev-parse', 'refs/remotes/origin/main').trim();
+  git(root, 'switch', '-q', '-c', 'up');
+  for (const [rel, text] of files) put(root, rel, [text]);
+  git(root, 'add', '-f', ...files.map(([rel]) => rel));
+  git(root, 'commit', '-q', '--no-verify', '-m', 'upstream');
+  git(root, 'push', '-q', 'origin', 'up:main');
+  git(root, 'switch', '-q', 'main');
+  git(root, 'branch', '-q', '-D', 'up');
+  git(root, 'update-ref', 'refs/remotes/origin/main', old);
+}
+const childGit = (...cmds) => ops(cmds.map((c) => ['-c', 'user.email=t@example.com', '-c', 'user.name=t', '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', ...c]));
+function guardedRepo() {
+  const root = repo();
+  put(root, 'CLAUDE.md', ['v1']);
+  put(root, '.claude/settings.json', ['{}']);
+  git(root, 'add', '-f', 'CLAUDE.md', '.claude/settings.json');
+  git(root, 'commit', '-q', '--no-verify', '-m', 'guarded');
+  withOrigin(root);
+  atVerify(root, 'A-1');
+  return root;
+}
+
+test('a child that switches to a newer origin/<base> with changed guarded files: not a child change, no stop', () => {
+  const root = guardedRepo();
+  // .claude/CLAUDE.md links to a file in the checkout: what it resolves to changes upstream
+  put(root, 'docs/agents.md', ['a1']);
+  symlinkSync('../docs/agents.md', join(root, '.claude', 'CLAUDE.md'));
+  git(root, 'add', '-f', 'docs/agents.md', '.claude/CLAUDE.md');
+  git(root, 'commit', '-q', '--no-verify', '-m', 'link');
+  git(root, 'push', '-q', 'origin', 'main');
+  upstream(root, [['CLAUDE.md', 'v2'], ['.claude/settings.json', '{"permissions":{}}'], ['.claude/agents/new.md', 'a'], ['docs/agents.md', 'a2']]);
+  const r = cli(root, ['start', 'issue', 'A-1'], {
+    ...ships('A-1'), FAKE_CLAUDE_GIT: childGit(['fetch', '-q', 'origin'], ['switch', '-q', '-c', 'feat/A-1', 'origin/main']),
+  });
+  assert.equal(r.status, 0, r.stderr);
+  const dir = runDir(root, 'issue', 'A-1');
+  assert.deepEqual(readState(dir).items.map((i) => [i.status, i.reason]), [['done', '']], events(dir));
+  assert.equal(readFileSync(join(root, 'CLAUDE.md'), 'utf8'), 'v2\n');
+  assert.doesNotMatch(events(dir), /child changed/);
+});
+
+test('a child that commits a guarded change, on top of a newer origin/<base> or not: blocked, run stopped', () => {
+  for (const fetches of [false, true]) {
+    const root = guardedRepo();
+    upstream(root, [['README.md', 'upstream']]);
+    const moves = fetches ? [['fetch', '-q', 'origin'], ['switch', '-q', '-c', 'feat/A-1', 'origin/main']] : [['switch', '-q', '-c', 'feat/A-1']];
+    // the edit is carried over by the switch (CLAUDE.md is the same on origin/main), then committed
+    const r = cli(root, ['start', 'issue', 'A-1'], {
+      FAKE_CLAUDE: 'ok:RUNNER: done',
+      FAKE_CLAUDE_LEDGER_APPEND: ops([{ file: planLedger('A-1'), firstLine: planFirst('A-1', 'done') }, { file: 'CLAUDE.md', firstLine: 'v2' }]),
+      FAKE_CLAUDE_GIT: childGit(...moves, ['commit', '-q', '--no-verify', '-am', 'widen']),
+    });
+    assert.equal(r.status, 0, r.stderr);
+    const dir = runDir(root, 'issue', 'A-1');
+    assert.deepEqual(readState(dir).items.map((i) => [i.status, i.reason]), [['blocked', 'child changed CLAUDE.md']], `${fetches}: ${events(dir)}`);
+    assert.equal(git(root, 'status', '--porcelain', '--', 'CLAUDE.md'), '', 'the change is committed, the checkout clean');
+  }
+});
+
+test('a guarded file uncommitted before a verify child, which restores it and moves to a newer origin/<base>: a child change, stop', () => {
+  const root = guardedRepo();
+  upstream(root, [['README.md', 'upstream']]);
+  git(root, 'switch', '-q', '-c', 'feat/v');
+  put(root, '.claude/settings.json', ['{"permissions":{"deny":["Bash(rm *)"]}}']);
+  const vf = '.superpowers/verify-and-fix/feat-v/ledger.md';
+  const r = cli(root, ['start', 'verify', 'feat/v'], {
+    FAKE_CLAUDE: 'ok:RUNNER: done', FAKE_CLAUDE_LEDGER_APPEND: ops([{ file: vf, append: ['Done: abc — clean'] }]),
+    FAKE_CLAUDE_GIT: childGit(['checkout', '--', '.claude/settings.json'], ['fetch', '-q', 'origin'], ['switch', '-q', '-c', 'feat/v2', 'origin/main']),
+  });
+  assert.equal(r.status, 0, r.stderr);
+  const dir = runDir(root, 'verify', 'feat/v');
+  assert.deepEqual(readState(dir).items.map((i) => [i.status, i.reason]), [['blocked', 'child changed .claude/settings.json']], events(dir));
+});
+
+test('a guarded link to a file outside the checkout, changed while the child moved to a newer origin/<base>: a child change, stop', () => {
+  const root = guardedRepo();
+  const out = join(realpathSync(mkdtempSync(join(tmpdir(), 'runner-outside-'))), 'local.md');
+  writeFileSync(out, 'mine\n');
+  symlinkSync(out, join(root, 'CLAUDE.local.md'));
+  git(root, 'add', '-f', 'CLAUDE.local.md');
+  git(root, 'commit', '-q', '--no-verify', '-m', 'link');
+  git(root, 'push', '-q', 'origin', 'main');
+  upstream(root, [['README.md', 'upstream']]);
+  const r = cli(root, ['start', 'issue', 'A-1'], {
+    FAKE_CLAUDE: 'ok:RUNNER: done',
+    FAKE_CLAUDE_LEDGER_APPEND: ops([{ file: planLedger('A-1'), firstLine: planFirst('A-1', 'done') }, { file: out, firstLine: 'widened' }]),
+    FAKE_CLAUDE_GIT: childGit(['fetch', '-q', 'origin'], ['switch', '-q', '-c', 'feat/A-1', 'origin/main']),
+  });
+  assert.equal(r.status, 0, r.stderr);
+  const dir = runDir(root, 'issue', 'A-1');
+  assert.deepEqual(readState(dir).items.map((i) => [i.status, i.reason]), [['blocked', 'child changed CLAUDE.local.md']], events(dir));
 });

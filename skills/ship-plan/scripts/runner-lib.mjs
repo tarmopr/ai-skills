@@ -1,8 +1,21 @@
 // State, lock and event log for the ship runner.
 // Node only, no dependencies, so it runs the same on macOS, Linux and Windows.
+import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { appendFileSync, closeSync, constants, fstatSync, linkSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+
+// Every git call of the runner. A child can set `core.fsmonitor` or `core.hooksPath` in the git
+// config, or write a hook: the runner's own git (status, switch) would run that code. Both are
+// switched off here, and SHIP_RUNNER_ALLOW_BYPASS is never in git's env, so what git runs anyway
+// (a filter, an alias) never gets it. Returns stdout; a failure throws as execFileSync does
+// (git's words in e.stderr).
+export const SAFE_GIT = ['-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=/dev/null'];
+export function runGit(cwd, args) {
+  const env = { ...process.env };
+  delete env.SHIP_RUNNER_ALLOW_BYPASS;
+  return execFileSync('git', [...SAFE_GIT, ...args], { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+}
 
 // <root>/.superpowers/ship-runner/<kind>-<id>/ ; every '/' and '\' in id becomes '-'. An id with
 // `..` is refused (throws): the run dir is always one folder under ship-runner/.

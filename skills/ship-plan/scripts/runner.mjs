@@ -12,12 +12,11 @@
 //                                              <git dir>/ship-runner/<run>/ (never told to children)
 //   node runner.mjs status <run-dir>
 // Exit: 0 done, 1 runner error, 2 usage error, 3 the run dir's lock is held; 128+n on signal n.
-import { execFileSync } from 'node:child_process';
 import { constants } from 'node:os';
 import { appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { acquireLock, alive, clean, emit, groupAlive, plainFile, readLock, readState, releaseLock, runDir, setChildPid, writeState } from './runner-lib.mjs';
+import { acquireLock, alive, clean, emit, groupAlive, plainFile, readLock, readState, releaseLock, runDir, runGit, setChildPid, writeState } from './runner-lib.mjs';
 import { findPlanLedger, ledgerOutcome, pendingQuestions, PHASE_ROWS, PHASES, phaseFromLedgers, runIssue } from './runner-phases.mjs';
 import { endChildren, haltChildren } from './runner-child.mjs';
 import { nextItem } from './runner-queue.mjs';
@@ -109,10 +108,11 @@ function readConfig(root) {
   }
 }
 
-// git's output; on failure an Error whose message is git's own stderr.
+// git's output (runGit: no fsmonitor, no hooks, no bypass variable); on failure an Error whose
+// message is git's own stderr.
 function git(root, ...args) {
   try {
-    return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+    return runGit(root, args).trim();
   } catch (e) {
     throw new Error(String(e.stderr ?? '').trim().replace(/\s*\n\s*/g, ' ') || e.message);
   }
@@ -141,7 +141,7 @@ function headBranch(root) {
 function changedPaths(root) {
   let out;
   try {
-    out = execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    out = runGit(root, ['status', '--porcelain']);
   } catch (e) {
     return { error: `git status failed: ${String(e.stderr ?? '').trim().replace(/\s*\n\s*/g, ' ') || e.message}` };
   }
@@ -569,7 +569,7 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
 
     const base = {
       root, dir, models: cfg.models, mode, env: {}, chunkSize: cfg.chunkSize, idleMs: cfg.idleMinutes * 60000,
-      skill: run.skill, args: run.args, save, answersDir: store,
+      skill: run.skill, args: run.args, save, answersDir: store, baseBranch: baseInfo.name,
     };
     const pollMs = Number(process.env.SHIP_RUNNER_POLL_MS) || 30000;
     let ran = false; // a queue item has run in this start

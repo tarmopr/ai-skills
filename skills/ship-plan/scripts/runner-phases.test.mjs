@@ -2,11 +2,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { findPlanLedger, implementChunks, ledgerOutcome, pendingQuestions, phaseFromLedgers, phasePrompt, PHASES, PHASE_ROWS, runIssue, tailProgress } from './runner-phases.mjs';
+import { findPlanLedger, guardedChanges, guardedHashes, implementChunks, ledgerOutcome, pendingQuestions, phaseFromLedgers, phasePrompt, PHASES, PHASE_ROWS, runIssue, tailProgress } from './runner-phases.mjs';
 
 process.env.CLAUDE_BIN = join(dirname(fileURLToPath(import.meta.url)), 'fake-claude.mjs');
 
@@ -530,4 +530,35 @@ test('runIssue: a guarded file that cannot be read before the child -> it throws
   writeFileSync(join(root, ISSUE), `${issueFirst(2)}\nProgress: late line\n`);
   await new Promise((r) => setTimeout(r, 150));
   assert.doesNotMatch(events(root), /late line/);
+});
+
+// R2-2/X7 (review round 2): a symlinked guarded file or dir is guarded by what it resolves to,
+// inside the checkout or outside it, not only by the link's target string
+test('guardedHashes: a symlinked guarded file, a symlinked dir under a guarded dir, a swapped guarded dir link; cycles end', () => {
+  const root = mkdtempSync(join(tmpdir(), 'runner-guard-'));
+  const outside = mkdtempSync(join(tmpdir(), 'runner-guard-out-'));
+  const put = (file, text) => {
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, text);
+  };
+  put(join(root, 'AGENTS.md'), 'be careful\n');
+  symlinkSync('AGENTS.md', join(root, 'CLAUDE.md'));
+  put(join(outside, 'shared', 'a', 'SKILL.md'), 'v1\n');
+  mkdirSync(join(root, '.claude', 'skills'), { recursive: true });
+  symlinkSync(join(outside, 'shared'), join(root, '.claude', 'skills', 'shared'));
+  put(join(outside, 'agentsA', 'x.md'), 'x\n');
+  put(join(outside, 'agentsB', 'x.md'), 'x, widened\n');
+  symlinkSync(join(outside, 'agentsA'), join(root, '.claude', 'agents'));
+  symlinkSync('..', join(root, '.claude', 'skills', 'loop')); // .claude/skills/loop -> .claude
+  const before = guardedHashes(root);
+  assert.equal(guardedChanges(before, guardedHashes(root)).length, 0);
+  put(join(root, 'AGENTS.md'), 'anything goes\n');
+  put(join(outside, 'shared', 'a', 'SKILL.md'), 'v2\n');
+  rmSync(join(root, '.claude', 'agents'));
+  symlinkSync(join(outside, 'agentsB'), join(root, '.claude', 'agents'));
+  const changed = guardedChanges(before, guardedHashes(root));
+  assert.ok(changed.includes('CLAUDE.md'), changed.join(', '));
+  assert.ok(changed.includes('.claude/skills/shared/a/SKILL.md'), changed.join(', '));
+  assert.ok(changed.includes('.claude/agents'), changed.join(', '));
+  assert.ok(changed.includes('.claude/agents/x.md'), changed.join(', '));
 });

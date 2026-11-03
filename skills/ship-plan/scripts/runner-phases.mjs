@@ -1,11 +1,10 @@
 // Phases of one issue for the ship runner: which phase runs next, read from the ledgers,
 // and the loop that runs one child per phase (per chunk of plan tasks for implement).
 // The ledgers win over a child's RUNNER: marker.
-import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { lstatSync, readdirSync, readFileSync, readlinkSync, statSync } from 'node:fs';
-import { isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { emit, readAnswers } from './runner-lib.mjs';
+import { lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync, statSync } from 'node:fs';
+import { dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
+import { emit, readAnswers, runGit } from './runner-lib.mjs';
 import { isEnvError, isLimitError, resumeOrFresh, runChild } from './runner-child.mjs';
 
 export const PHASES = ['spec', 'plan', 'implement', 'verify', 'merge', 'close'];
@@ -241,7 +240,7 @@ function planText(root, ledgers) {
   let said = '';
   for (const ref of b && !b.startsWith('-') ? [b, `origin/${b}`] : []) {
     try {
-      return { text: execFileSync('git', ['show', `${ref}:${rel}`], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }) };
+      return { text: runGit(root, ['show', `${ref}:${rel}`]) };
     } catch (e) {
       // not on this ref: try the next; git's words on the run's own branch go in the reason
       said ||= String(e.stderr ?? '').trim().replace(/\s*\n\s*/g, ' ') || e.message;
@@ -326,16 +325,35 @@ export const GUARDED_FILES = [
 export const GUARDED_DIRS = ['.claude/hooks', '.claude/agents', '.claude/commands', '.claude/skills'];
 const NOT_GUARDED = /^\.claude\/(?:ship-plan\.md$|ship-plan\/|ship-issue\/)/;
 
-// Every file under rel (a checkout-relative dir), '/'-separated; symlinked dirs are not followed.
-function filesUnder(root, rel) {
+// Every file under rel (a checkout-relative dir), '/'-separated. A symlink is listed itself (its
+// target is part of its hash), and a symlinked dir is walked too, inside the checkout or not.
+// `seen` holds the real path of every dir walked: a dir reached twice (a cycle) is walked once.
+function filesUnder(root, rel, seen) {
+  let real;
   let entries;
   try {
+    real = realpathSync(join(root, rel));
+    if (seen.has(real)) return [];
+    seen.add(real);
     entries = readdirSync(join(root, rel), { withFileTypes: true });
   } catch (e) {
-    if (e.code === 'ENOENT' || e.code === 'ENOTDIR') return [];
+    if (e.code === 'ENOENT' || e.code === 'ENOTDIR' || e.code === 'ELOOP') return [];
     throw e;
   }
-  return entries.flatMap((d) => (d.isDirectory() ? filesUnder(root, `${rel}/${d.name}`) : [`${rel}/${d.name}`]));
+  return entries.flatMap((d) => {
+    const p = `${rel}/${d.name}`;
+    if (d.isDirectory()) return filesUnder(root, p, seen);
+    if (d.isSymbolicLink() && isDir(join(root, p))) return [p, ...filesUnder(root, p, seen)];
+    return [p];
+  });
+}
+
+function isDir(file) {
+  try {
+    return statSync(file).isDirectory();
+  } catch {
+    return false; // dangling, or a loop: hashed as such
+  }
 }
 
 // Files inside the checkout that a settings `hooks` command names ("$CLAUDE_PROJECT_DIR"/x.sh,
@@ -373,17 +391,38 @@ function hookScripts(root) {
   return [...found];
 }
 
-// { [checkout-relative path]: sha256 of its bytes, 'link:<target>' for a symlink, or 'absent' },
-// over GUARDED_FILES, every file under GUARDED_DIRS and the hook scripts the settings name.
+const sha = (bytes) => createHash('sha256').update(bytes).digest('hex');
+
+// A symlink: its target and what it resolves to (the file's sha256, `dir`, or `dangling`).
+function linkHash(file) {
+  let to;
+  try {
+    to = statSync(file).isDirectory() ? 'dir' : sha(readFileSync(file));
+  } catch (e) {
+    if (e.code !== 'ENOENT' && e.code !== 'ENOTDIR' && e.code !== 'ELOOP') throw e;
+    to = 'dangling';
+  }
+  return `link:${readlinkSync(file)}:${to}`;
+}
+
+// { [checkout-relative path]: sha256 of its bytes, linkHash for a symlink, or 'absent' }, over
+// GUARDED_FILES, GUARDED_DIRS that are symlinks, every file under GUARDED_DIRS and the hook scripts
+// the settings name.
 export function guardedHashes(root) {
-  const paths = new Set([...GUARDED_FILES, ...GUARDED_DIRS.flatMap((d) => filesUnder(root, d)), ...hookScripts(root)]);
+  const seen = new Set();
+  const linkedDirs = GUARDED_DIRS.filter((d) => {
+    try {
+      return lstatSync(join(root, d)).isSymbolicLink();
+    } catch {
+      return false;
+    }
+  });
+  const paths = new Set([...GUARDED_FILES, ...linkedDirs, ...GUARDED_DIRS.flatMap((d) => filesUnder(root, d, seen)), ...hookScripts(root)]);
   const hashes = {};
   for (const p of [...paths].filter((x) => !NOT_GUARDED.test(x)).sort()) {
     const file = join(root, p);
     try {
-      hashes[p] = lstatSync(file).isSymbolicLink()
-        ? `link:${readlinkSync(file)}`
-        : createHash('sha256').update(readFileSync(file)).digest('hex');
+      hashes[p] = lstatSync(file).isSymbolicLink() ? linkHash(file) : sha(readFileSync(file));
     } catch (e) {
       if (e.code !== 'ENOENT' && e.code !== 'ENOTDIR' && e.code !== 'EISDIR') throw e;
       hashes[p] = 'absent';
@@ -399,15 +438,126 @@ export function guardedChanges(before, after) {
   return keys.filter((k) => (before[k] ?? 'absent') !== (after[k] ?? 'absent'));
 }
 
+// Where a checkout path really lives, as git sees it: each symlink on the way (checkout-relative,
+// its folder resolved, so never beyond another link) and the path it ends at. { outside: true }
+// when a link on the way or the end is outside the checkout: content git cannot vouch for.
+function resolveChain(realRoot, rel) {
+  const inside = (abs) => {
+    const r = relative(realRoot, abs);
+    return r && !r.startsWith('..') && !isAbsolute(r) ? r.split(sep).join('/') : null;
+  };
+  const paths = [];
+  let parts = rel.split('/');
+  let cur = realRoot;
+  for (let hops = 0; parts.length;) {
+    const name = parts.shift();
+    if (!name || name === '.') continue;
+    if (name === '..') {
+      cur = dirname(cur);
+      continue;
+    }
+    const next = join(cur, name);
+    let link = false;
+    try {
+      link = lstatSync(next).isSymbolicLink();
+    } catch {
+      // absent: the path is taken as it is
+    }
+    if (!link) {
+      cur = next;
+      continue;
+    }
+    const at = inside(next);
+    if (!at || ++hops > 40) return { outside: true };
+    paths.push(at);
+    const target = readlinkSync(next);
+    if (isAbsolute(target)) cur = parse(target).root;
+    parts = [...target.split(/[\\/]/), ...parts];
+  }
+  const end = inside(cur);
+  if (!end) return { outside: true };
+  paths.push(end);
+  return { paths };
+}
+
+// git status entries for these checkout paths: changed, staged, untracked or ignored ('/'-separated;
+// a folder git reports whole ends in '/'). null when git cannot tell.
+function statusEntries(root, paths) {
+  if (!paths.length) return [];
+  let out;
+  try {
+    out = runGit(root, ['status', '--porcelain', '-z', '--ignored=matching', '--untracked-files=all', '--', ...paths.map((p) => `:(literal)${p}`)]);
+  } catch {
+    return null;
+  }
+  const entries = [];
+  const parts = out.split('\0');
+  for (let i = 0; i < parts.length; i++) {
+    if (!parts[i]) continue;
+    entries.push(parts[i].slice(3));
+    if (/^(?:[RC].|.[RC])/.test(parts[i])) entries.push(parts[++i] ?? ''); // a rename: its old path too
+  }
+  return entries;
+}
+const touches = (entry, p) => entry === p || entry.startsWith(`${p}/`) || (entry.endsWith('/') && p.startsWith(entry));
+const chainsOf = (root, rels) => {
+  const realRoot = realpathSync(root);
+  return new Map(rels.map((p) => [p, resolveChain(realRoot, p)]));
+};
+const gitPaths = (chains) => [...new Set([...chains.values()].flatMap((c) => c.paths ?? []))];
+
+function gitHead(root) {
+  try {
+    return runGit(root, ['rev-parse', '--verify', '-q', 'HEAD']).trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+// What the guard takes before a child: the guarded hashes, HEAD, and the git status of the guarded
+// paths (null when git cannot tell).
+export function guardSnapshot(root) {
+  const hashes = guardedHashes(root);
+  const head = gitHead(root);
+  return { hashes, head, dirty: head ? statusEntries(root, gitPaths(chainsOf(root, Object.keys(hashes)))) : null };
+}
+
+// The guarded paths a child changed (K2): those whose hash differs from the snapshot, less the
+// ones that only came with a newer origin/<base> (a child switches to it by design). Such a path
+// is clean in git before and after the child (no uncommitted, untracked or ignored change, every
+// link on its way and its end inside the checkout), and no commit on HEAD that is on neither the
+// child's start HEAD nor origin/<base> touches it. HEAD unmoved, or git unable to tell: every
+// changed path counts.
+export function guardedChildChanges(root, snap, base) {
+  const changed = guardedChanges(snap.hashes, guardedHashes(root));
+  const head = changed.length ? gitHead(root) : null;
+  if (!changed.length || !base || !snap.head || !snap.dirty || !head || head === snap.head) return changed;
+  const chains = chainsOf(root, changed);
+  const now = statusEntries(root, gitPaths(chains));
+  if (!now) return changed;
+  const committed = (p) => {
+    try {
+      return runGit(root, ['rev-list', '-1', 'HEAD', '--not', snap.head, `refs/remotes/origin/${base}`, '--', `:(literal)${p}`]).trim() !== '';
+    } catch {
+      return true; // no origin/<base>: nothing came from it
+    }
+  };
+  return changed.filter((p) => {
+    const c = chains.get(p);
+    return c.outside || c.paths.some((g) => snap.dirty.some((e) => touches(e, g)) || now.some((e) => touches(e, g)) || committed(g));
+  });
+}
+
 const plural = (n) => `${n} question${n === 1 ? '' : 's'}`;
 
 // Run the issue's phases until it is done, waiting, blocked or cut off.
 // ctx: { root, dir, models: {[row]: {model, effort}}, mode, env, skill = 'ship-issue',
-//        args = item.key, chunkSize = 5, tailMs = 5000, idleMs?, ledgers?: LedgerOpts, save?(item) }.
+//        args = item.key, chunkSize = 5, tailMs = 5000, idleMs?, ledgers?: LedgerOpts, save?(item),
+//        baseBranch? (origin/<it> is where guarded changes may come from: guardedChildChanges) }.
 // A child that fails on a usage limit cuts the item off (the run stops); any other child failure
 // blocks it with the error's first 300 characters. ctx.stop is set (and the event ends "; run
 // stopped") when no later child should start: a failure of the environment (no claude, an API or
-// auth error, a bad model: isEnvError), or a child that changed a guarded file (guardedHashes).
+// auth error, a bad model: isEnvError), or a child that changed a guarded file (guardedChildChanges).
 // Answers files are read from ctx.answersDir (default ctx.dir). state.current is set by the caller.
 export async function runIssue(ctx, item) {
   const { root, dir } = ctx;
@@ -458,7 +608,7 @@ export async function runIssue(ctx, item) {
       mode: ctx.mode ?? 'auto', resume, env: ctx.env ?? {}, idleMs: ctx.idleMs,
     };
     // hashed before the tail starts: a hash that throws leaves no timer behind
-    const guarded = guardedHashes(root);
+    const guarded = guardSnapshot(root);
     const stop = tailProgress(root, key, (line) => emit(dir, key, phase, 'progress', line), ctx.tailMs ?? 5000, ctx.ledgers,
       (e) => emit(dir, key, phase, 'progress', `ledger read failed: ${e.code || e.message}`));
     let r;
@@ -477,7 +627,7 @@ export async function runIssue(ctx, item) {
     item.sessions.push(session(r));
     ctx.save?.(item);
 
-    const changed = guardedChanges(guarded, guardedHashes(root));
+    const changed = guardedChildChanges(root, guarded, ctx.baseBranch);
     if (changed.length) {
       const more = changed.length > 5 ? ` and ${changed.length - 5} more` : '';
       ctx.stop = `child changed ${changed.slice(0, 5).join(', ')}${more}`;

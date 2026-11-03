@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { acquireLock, emit, readLock, readState, releaseLock, runDir, setChildPid, writeState } from './runner-lib.mjs';
+import { execFileSync } from 'node:child_process';
+import { acquireLock, emit, readLock, readState, releaseLock, runDir, runGit, setChildPid, writeState } from './runner-lib.mjs';
 
 const fresh = () => mkdtempSync(join(tmpdir(), 'runner-lib-'));
 
@@ -149,4 +150,22 @@ test('readLock: missing -> null; unparseable -> null (acquireLock judges it by a
   const dir2 = fresh();
   mkdirSync(join(dir2, 'lock')); // a folder: EISDIR
   assert.throws(() => readLock(dir2), /EISDIR/);
+});
+
+// R2-1 (review round 2): a child can plant git code (fsmonitor, hooks); the runner's git never
+// runs it, and never hands it SHIP_RUNNER_ALLOW_BYPASS
+test('runGit: fsmonitor and hooks off, SHIP_RUNNER_ALLOW_BYPASS never in git\'s env', () => {
+  const root = mkdtempSync(join(tmpdir(), 'runner-git-'));
+  execFileSync('git', ['init', '-q'], { cwd: root });
+  execFileSync('git', ['config', 'core.hooksPath', join(root, 'hooks')], { cwd: root });
+  const was = process.env.SHIP_RUNNER_ALLOW_BYPASS;
+  process.env.SHIP_RUNNER_ALLOW_BYPASS = '1';
+  try {
+    assert.equal(runGit(root, ['-c', 'alias.env=!echo "[$SHIP_RUNNER_ALLOW_BYPASS]"', 'env']), '[]\n');
+    assert.equal(runGit(root, ['config', 'core.hooksPath']).trim(), '/dev/null');
+    assert.equal(runGit(root, ['config', 'core.fsmonitor']).trim(), 'false');
+  } finally {
+    if (was === undefined) delete process.env.SHIP_RUNNER_ALLOW_BYPASS;
+    else process.env.SHIP_RUNNER_ALLOW_BYPASS = was;
+  }
 });
