@@ -875,3 +875,62 @@ test('an environmental child failure (spawn error, API or auth error) stops the 
   dir = runDir(root3, 'queue', 'P-1');
   assert.deepEqual(readState(dir).items.map((i) => [i.status, i.reason]), [['blocked', 'no RUNNER: line'], ['blocked', 'CI secret missing'], ['done', '']]);
 });
+
+// C10 (review round 1, security follow-up): a child runs as the same user, so the file's own times
+// are all the runner has: utimes can backdate mtime, never ctime
+test('answers a child wrote and backdated (mtime before its window, ctime inside): rejected', () => {
+  const root = repo();
+  atVerify(root, 'U-1');
+  const dir = runDir(root, 'queue', 'P-1');
+  const storeRel = join('.git', 'ship-runner', basename(dir), 'answers-U-1.md');
+  const env = { 'U-1': {
+    FAKE_CLAUDE: 'ok:RUNNER: waiting 1 question',
+    FAKE_CLAUDE_LEDGER_APPEND: ops([{ file: planLedger('U-1'), append: [Q] }, { file: storeRel, append: ['postgres'] }]),
+    FAKE_CLAUDE_UTIMES: ops([[storeRel, 1000000000]]),
+  } };
+  assert.equal(cli(root, ['start', 'queue', 'P-1', 'U-1'], { FAKE_CLAUDE_BY_KEY: JSON.stringify(env) }).status, 0);
+  assert.deepEqual(readState(dir).items.map((i) => [i.status, i.answersFile]), [['waiting', null]]);
+  assert.match(events(dir), / U-1 verify progress answers rejected: answers-U-1\.md was written while a child of U-1 ran/m);
+  assert.deepEqual(children(dir), ['U-1-verify-1.jsonl']);
+});
+
+test('answers a background grandchild writes after its parent child exited: never accepted', async () => {
+  const root = repo();
+  atVerify(root, 'G-1');
+  const dir = runDir(root, 'queue', 'P-1');
+  const storeRel = join('.git', 'ship-runner', basename(dir), 'answers-G-1.md');
+  const env = { 'G-1': {
+    FAKE_CLAUDE: 'ok:RUNNER: waiting 1 question',
+    FAKE_CLAUDE_LEDGER_APPEND: ops([{ file: planLedger('G-1'), append: [Q] }]),
+    FAKE_CLAUDE_LATE_WRITE: ops({ file: storeRel, ms: 1500, text: 'postgres\n' }),
+  } };
+  assert.equal(cli(root, ['start', 'queue', 'P-1', 'G-1'], { FAKE_CLAUDE_BY_KEY: JSON.stringify(env) }).status, 0);
+  await new Promise((r) => setTimeout(r, 2000)); // past the grandchild's write, had it lived
+  assert.equal(cli(root, ['start', 'queue', 'P-1', 'G-1']).status, 0);
+  assert.deepEqual(readState(dir).items.map((i) => [i.status, i.answersFile]), [['waiting', null]]);
+  assert.deepEqual(children(dir), ['G-1-verify-1.jsonl']);
+});
+
+// C11: everything the next child loads from the checkout, beyond settings and .mcp.json
+test('a child that changes a hook, agent, command, skill, CLAUDE.md or a hook script the settings name: blocked, run stopped; its ledgers under .claude/ are not guarded', () => {
+  const guarded = ['.claude/hooks/pre.sh', '.claude/agents/a.md', '.claude/commands/c.md', '.claude/skills/s/SKILL.md', 'CLAUDE.md', 'CLAUDE.local.md', '.claude/CLAUDE.md', '.claude/CLAUDE.local.md', 'tools/check.sh'];
+  for (const file of guarded) {
+    const root = repo();
+    put(root, '.claude/settings.json', [JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'bash "$CLAUDE_PROJECT_DIR"/tools/check.sh --fast' }] }] } })]);
+    put(root, 'tools/check.sh', ['exit 0']);
+    commit(root);
+    atVerify(root, 'A-1', 'A-2');
+    const env = { 'A-1': { ...ships('A-1'), FAKE_CLAUDE_LEDGER_APPEND: ops([{ file: planLedger('A-1'), firstLine: planFirst('A-1', 'done') }, { file, append: ['changed'] }]) }, 'A-2': ships('A-2') };
+    const r = cli(root, ['start', 'queue', 'P-1', 'A-1,A-2'], { FAKE_CLAUDE_BY_KEY: JSON.stringify(env) });
+    assert.equal(r.status, 0, r.stderr);
+    const dir = runDir(root, 'queue', 'P-1');
+    assert.deepEqual(readState(dir).items.map((i) => [i.status, i.reason]), [['blocked', `child changed ${file}`], ['not started', `runner stopped: child changed ${file}`]], file);
+  }
+  const root = repo();
+  atVerify(root, 'A-1', 'A-2');
+  const mine = ['.claude/ship-plan.md', '.claude/ship-plan/interruptions.md', '.claude/ship-issue/log.md'].map((file) => ({ file, append: ['x'] }));
+  const env = { 'A-1': { ...ships('A-1'), FAKE_CLAUDE_LEDGER_APPEND: ops([{ file: planLedger('A-1'), firstLine: planFirst('A-1', 'done') }, ...mine]) }, 'A-2': ships('A-2') };
+  assert.equal(cli(root, ['start', 'queue', 'P-1', 'A-1,A-2'], { FAKE_CLAUDE_BY_KEY: JSON.stringify(env) }).status, 0);
+  // the new files leave the checkout busy for A-2; what matters here: no "child changed"
+  assert.doesNotMatch(events(runDir(root, 'queue', 'P-1')), /child changed/);
+});

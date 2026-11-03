@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { acquireLock, alive } from './runner-lib.mjs';
-import { childArgs, isEnvError, isLimitError, parseMarker, resumeOrFresh, runChild } from './runner-child.mjs';
+import { childArgs, isEnvError, isLimitError, parseMarker, redact, resumeOrFresh, runChild } from './runner-child.mjs';
 
 process.env.CLAUDE_BIN = join(dirname(fileURLToPath(import.meta.url)), 'fake-claude.mjs');
 
@@ -230,4 +230,29 @@ test('isEnvError: no claude, API or auth errors, a bad model; not a crash, a lim
     'is_error: Credit balance is too low']) assert.equal(isEnvError(e), true, e);
   for (const e of ['exit 1; no result line', 'killed by SIGKILL; no result line', 'child idle 60 min', 'no RUNNER: line',
     'exit 1; no result line; stderr: API Error: 401']) assert.equal(isEnvError(e), false, e);
+});
+
+// C10 (review round 1, security follow-up): a child's window ends only once its whole process group
+// is gone, so nothing it started can write after the window closes
+test('runChild: when the child exits, its process group is ended before runChild resolves, SIGTERM ignored or not', async () => {
+  for (const ignore of ['0', '1']) {
+    const dir = fresh();
+    const pidfile = join(dir, 'g.pid');
+    const r = await runChild(base(dir, { FAKE_CLAUDE: 'grandchild', FAKE_CLAUDE_HOLD_MS: '20000', FAKE_CLAUDE_PIDFILE: pidfile, FAKE_CLAUDE_IGNORE_TERM: ignore }));
+    assert.equal(r.ok, true, r.error);
+    const gpid = Number(readFileSync(pidfile, 'utf8'));
+    assert.equal(alive(gpid), false, `grandchild alive after runChild (ignore SIGTERM: ${ignore})`);
+  }
+});
+
+// C12: more token shapes; the whole token run goes
+test('redact: GitHub, OpenAI/Anthropic, Slack, AWS keys and bearer tokens, whole', () => {
+  const cases = [
+    'ghp_abcdefghijklmnopqrstuvwxyz0123', 'gho_ABCDEFGHIJKLMNOPQRSTUV', 'github_pat_11ABCDEFG0_abcdefghijklmnopqrstuvwxyz',
+    'sk-ant-api03-abc_def-ghi_jklmnopqrstuvwxyz', 'sk-proj_abcdefghijklmnopqrstu', 'xoxb-123-456-abc', 'xoxp-1-2', 'xoxo-9-z', 'xoxs-1-a', 'xoxr-7-q',
+    'AKIAABCDEFGHIJKLMNOP',
+  ];
+  for (const t of cases) assert.equal(redact(`a ${t} b`), 'a [redacted] b', t);
+  assert.equal(redact('Authorization: Bearer eyJhbG.ciOi-J_IU~z+/9=, next'), 'Authorization: [redacted], next');
+  assert.equal(redact('sk-short and AKIA123 stay'), 'sk-short and AKIA123 stay');
 });

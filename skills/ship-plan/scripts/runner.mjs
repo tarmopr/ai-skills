@@ -14,7 +14,7 @@
 // Exit: 0 done, 1 runner error, 2 usage error, 3 the run dir's lock is held; 128+n on signal n.
 import { execFileSync } from 'node:child_process';
 import { constants } from 'node:os';
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { acquireLock, alive, clean, emit, readLock, readState, releaseLock, runDir, writeState } from './runner-lib.mjs';
@@ -181,20 +181,24 @@ const answersName = (key) => `answers-${key}.md`;
 
 // A file written while a child of this item ran (its recorded windows, [start, end] in ms; an
 // open one runs to now) was not written by the user: the child that asked answered itself.
+// A child runs as the same user, so the file's times are all there is to go by: both mtime and
+// ctime must fall outside every window (utimes can backdate mtime, never ctime). A mitigation,
+// not a full defence (see runner-session.md).
 const inChildWindow = (item, ms) => (item.windows ?? []).some(([from, to]) => ms >= from && ms <= (to ?? Infinity));
+const writtenInWindow = (item, st) => inChildWindow(item, st.mtimeMs) || inChildWindow(item, st.ctimeMs);
 
 // Whether the item's answers file is in the store and usable. One written inside a child window
 // of the item is moved aside as answers-<KEY>@rejected-<n>.md, with an event, and never used.
 function answersReady(store, dir, item) {
   const file = join(store, answersName(item.key));
-  let mtime;
+  let st;
   try {
-    mtime = statSync(file).mtimeMs;
+    st = statSync(file);
   } catch (e) {
     if (e.code === 'ENOENT') return false;
     throw e;
   }
-  if (!inChildWindow(item, mtime)) return true;
+  if (!writtenInWindow(item, st)) return true;
   const kept = unusedName(store, `answers-${item.key}@rejected-`);
   renameSync(file, join(store, kept));
   emit(dir, item.key, item.phase ?? '-', 'progress', `answers rejected: ${answersName(item.key)} was written while a child of ${item.key} ran (kept as ${kept}); answer again`);
@@ -225,16 +229,6 @@ function consumeAnswers(store, key) {
   const name = unusedName(store, `answers-${key}@`);
   renameSync(join(store, answersName(key)), join(store, name));
   return name;
-}
-
-// The newest write of any of the item's child transcripts (<KEY>-<phase>-<n>.jsonl), or null.
-function lastTranscriptWrite(dir, key) {
-  let newest = null;
-  for (const f of readdirSync(dir)) {
-    if (!f.startsWith(`${key}-`) || !f.endsWith('.jsonl')) continue;
-    newest = Math.max(newest ?? 0, statSync(join(dir, f)).mtimeMs);
-  }
-  return newest;
 }
 
 // `.superpowers/` (ledgers, run dirs and child transcripts) in the repo's info/exclude, so a
@@ -406,8 +400,6 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
     ended = true;
     if (state) {
       state.current = null;
-      const now = Date.now();
-      for (const i of state.items) for (const w of i.windows ?? []) w[1] ??= now;
       safe(() => emit(dir, slug, '-', 'summary', summaryText(state)));
       state.stopped = new Date().toISOString();
       safe(() => writeState(dir, state));
@@ -467,10 +459,11 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
         changes.push(...waits);
       }
     }
-    // a child window left open by a runner killed outright: it ended with the child's last line
-    for (const i of state.items) {
-      for (const w of i.windows ?? []) if (w[1] === null) w[1] = lastTranscriptWrite(dir, i.key) ?? w[0];
-    }
+    // A child window left open by a runner that was stopped (a signal, a kill): what that child
+    // started may have outlived it, so the window runs until now, and an answers file written
+    // since for that item is rejected too.
+    const startedAt = Date.now();
+    for (const i of state.items) for (const w of i.windows ?? []) w[1] ??= startedAt;
     state.root = root;
     state.current = null;
     state.stopped = null;
@@ -644,7 +637,7 @@ function status([dirArg]) {
   const received = (i) => {
     if (!store) return false;
     try {
-      return !inChildWindow(i, statSync(join(store, answersName(i.key))).mtimeMs);
+      return !writtenInWindow(i, statSync(join(store, answersName(i.key))));
     } catch {
       return false;
     }

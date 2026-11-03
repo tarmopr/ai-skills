@@ -36,9 +36,10 @@ export function isEnvError(error) {
   return ENV.test(String(error ?? '').split('; stderr: ')[0]);
 }
 
-// Secrets a child's stderr may print, as [redacted]: GitHub and OpenAI-style tokens, Slack
-// tokens, bearer headers.
-const TOKENS = /gh[pousr]_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9-]{20,}|xox[abp]-[A-Za-z0-9-]+|Bearer \S+/g;
+// Secrets a child's error text or stderr may print, each whole token as [redacted]: GitHub
+// tokens and fine-grained PATs, OpenAI/Anthropic-style keys, Slack tokens, AWS access key ids,
+// bearer headers (the word Bearer included).
+const TOKENS = /gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|xox[abposr]-[A-Za-z0-9-]+|AKIA[0-9A-Z]{16}|Bearer [A-Za-z0-9._~+/=-]+/g;
 export const redact = (text) => String(text).replace(TOKENS, '[redacted]');
 // How much of a failed child's stderr reaches the item's reason and the events.
 const STDERR_TAIL = 300;
@@ -80,6 +81,36 @@ export function killChildren(signal = 'SIGTERM') {
 const DRAIN_MS = 1000;
 // After an idle kill with SIGTERM, how long before SIGKILL.
 const KILL_GRACE_MS = 5000;
+// After the child exits: how long what it left in its process group gets after SIGTERM before
+// SIGKILL, and how long the runner then waits for the group to be gone.
+const END_GRACE_MS = 1000;
+const END_WAIT_MS = 3000;
+
+// Whether any process of the group led by pid is left (a zombie leader is reaped by now).
+function groupAlive(pid) {
+  try {
+    process.kill(-pid, 0);
+    return true;
+  } catch (e) {
+    return e.code === 'EPERM';
+  }
+}
+
+// End what the child left in its process group (a background job, a grandchild) and wait until
+// the group is gone: the item's window may close only then, so nothing the child started can
+// write after it. A process that left the group (setsid) is out of reach: no same-user defence
+// is complete. Windows: nothing to do (no process groups).
+async function endGroup(child) {
+  if (process.platform === 'win32' || !child.pid || !groupAlive(child.pid)) return;
+  const until = async (ms) => {
+    for (const t0 = Date.now(); groupAlive(child.pid) && Date.now() - t0 < ms;) await new Promise((r) => setTimeout(r, 25));
+  };
+  killGroup(child, 'SIGTERM');
+  await until(END_GRACE_MS);
+  if (!groupAlive(child.pid)) return;
+  killGroup(child, 'SIGKILL');
+  await until(END_WAIT_MS);
+}
 
 // One child run. Returns the ChildResult plus whether it failed the way a dead resume fails.
 // idleMs: no stdout line for that long kills the child's process group (default: never).
@@ -155,6 +186,7 @@ function runOnce({ dir, cwd, key, phase, prompt, model, effort, mode, resume, en
       finished = true;
       clearTimeout(idleTimer);
       clearTimeout(killTimer);
+      if (!spawnError) await endGroup(child);
       active.delete(child);
       if (!spawnError) {
         // a grandchild may hold stdout open after the child is gone: read what is there, then stop

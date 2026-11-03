@@ -8,7 +8,9 @@
 //   apierror          a result line with is_error: true and an API authentication error
 //   hang              an init line, then nothing, never exits by itself
 //   grandchild        starts a grandchild that holds stdout open for FAKE_CLAUDE_HOLD_MS (default 3000),
-//                     then ok output (marker from FAKE_CLAUDE_MARKER) and exit
+//                     then ok output (marker from FAKE_CLAUDE_MARKER) and exit; the grandchild's pid
+//                     goes to FAKE_CLAUDE_PIDFILE when set, and it ignores SIGTERM when
+//                     FAKE_CLAUDE_IGNORE_TERM=1
 //   noresume          with --resume: the CLI's "No conversation found" result line, exit 1;
 //                     otherwise like ok (marker from FAKE_CLAUDE_MARKER)
 // FAKE_CLAUDE_LOG: when set, argv, stdin, SHIP_RUNNER and SHIP_RUNNER_ALLOW_BYPASS are written there as JSON.
@@ -18,12 +20,17 @@
 //   lines at the end.
 // FAKE_CLAUDE_RM: a path removed (recursively) after the ledger ops.
 // FAKE_CLAUDE_STDERR: text written to stderr before the output.
+// FAKE_CLAUDE_UTIMES: JSON [[file, epoch seconds], …]: each file's atime and mtime set, after the
+//   ledger ops (a child backdating a file it wrote).
+// FAKE_CLAUDE_LATE_WRITE: JSON {file, ms, text}: a background grandchild (same process group,
+//   stdio ignored) writes text to file ms after the child starts, whether or not the child has
+//   exited by then.
 // FAKE_CLAUDE_GIT: JSON [[<git arg>, …], …], each run as `git <args>` in cwd after the ledger ops.
 // FAKE_CLAUDE_BY_KEY: JSON {<key>: {<env var>: <value>}}; the key is the prompt's
 //   `with the arguments "<key>"`; its values override the env vars above for that child.
 // The log's `head` is cwd's .git/HEAD (the branch the child started on), or null.
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 const chunks = [];
@@ -43,6 +50,12 @@ for (const op of JSON.parse(process.env.FAKE_CLAUDE_LEDGER_APPEND || '[]')) {
   lines.push(...(op.append || []));
   mkdirSync(dirname(op.file), { recursive: true });
   writeFileSync(op.file, lines.join('\n') + '\n');
+}
+for (const [file, t] of JSON.parse(process.env.FAKE_CLAUDE_UTIMES || '[]')) utimesSync(file, t, t);
+if (process.env.FAKE_CLAUDE_LATE_WRITE) {
+  const { file, ms, text } = JSON.parse(process.env.FAKE_CLAUDE_LATE_WRITE);
+  const code = `setTimeout(() => { require('fs').mkdirSync(require('path').dirname(${JSON.stringify(file)}), { recursive: true }); require('fs').writeFileSync(${JSON.stringify(file)}, ${JSON.stringify(text)}); }, ${Number(ms)})`;
+  spawn(process.execPath, ['-e', code], { stdio: 'ignore' }).unref();
 }
 if (process.env.FAKE_CLAUDE_STDERR) process.stderr.write(process.env.FAKE_CLAUDE_STDERR);
 if (process.env.FAKE_CLAUDE_RM) rmSync(process.env.FAKE_CLAUDE_RM, { recursive: true, force: true });
@@ -80,7 +93,10 @@ else if (mode === 'crashafter') {
   setInterval(() => {}, 1 << 30);
 } else if (mode === 'grandchild') {
   const ms = Number(process.env.FAKE_CLAUDE_HOLD_MS) || 3000;
-  spawn(process.execPath, ['-e', `setTimeout(() => {}, ${ms})`], { stdio: ['ignore', 'inherit', 'ignore'] }).unref();
+  const ignore = process.env.FAKE_CLAUDE_IGNORE_TERM === '1' ? "process.on('SIGTERM', () => {}); " : '';
+  const g = spawn(process.execPath, ['-e', `${ignore}setTimeout(() => {}, ${ms})`], { stdio: ['ignore', 'inherit', 'ignore'] });
+  g.unref();
+  if (process.env.FAKE_CLAUDE_PIDFILE) writeFileSync(process.env.FAKE_CLAUDE_PIDFILE, String(g.pid));
   ok(process.env.FAKE_CLAUDE_MARKER || 'RUNNER: done');
 }
 else if (mode === 'noresume') {

@@ -3,7 +3,7 @@
 // The ledgers win over a child's RUNNER: marker.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readdirSync, readFileSync } from 'node:fs';
+import { lstatSync, readdirSync, readFileSync, readlinkSync, statSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { emit } from './runner-lib.mjs';
 import { isEnvError, isLimitError, resumeOrFresh, runChild } from './runner-child.mjs';
@@ -313,20 +313,88 @@ export function tailProgress(root, key, onLine, intervalMs = 5000, opts = {}, on
   };
 }
 
-// What the next child loads from the checkout (permission rules, hooks, MCP servers): a child that
-// changes one of these could widen what every later child may do.
-export const GUARDED = ['.claude/settings.json', '.claude/settings.local.json', '.mcp.json'];
+// What the next child loads from the checkout (permission rules, hooks, MCP servers, agents,
+// commands, skills, memory files): a child that changes one could widen what every later child may
+// do. The run's own files under .claude/ (ship-plan.md, ship-plan/, ship-issue/) are written by
+// children by design and never guarded.
+export const GUARDED_FILES = [
+  '.claude/settings.json', '.claude/settings.local.json', '.mcp.json',
+  'CLAUDE.md', 'CLAUDE.local.md', '.claude/CLAUDE.md', '.claude/CLAUDE.local.md',
+];
+export const GUARDED_DIRS = ['.claude/hooks', '.claude/agents', '.claude/commands', '.claude/skills'];
+const NOT_GUARDED = /^\.claude\/(?:ship-plan\.md$|ship-plan\/|ship-issue\/)/;
 
-// { [file]: sha256 of its bytes, or 'absent' }.
-function guardedHashes(root) {
-  return Object.fromEntries(GUARDED.map((f) => {
-    try {
-      return [f, createHash('sha256').update(readFileSync(join(root, f))).digest('hex')];
-    } catch (e) {
-      if (e.code === 'ENOENT' || e.code === 'ENOTDIR') return [f, 'absent'];
-      throw e;
+// Every file under rel (a checkout-relative dir), '/'-separated; symlinked dirs are not followed.
+function filesUnder(root, rel) {
+  let entries;
+  try {
+    entries = readdirSync(join(root, rel), { withFileTypes: true });
+  } catch (e) {
+    if (e.code === 'ENOENT' || e.code === 'ENOTDIR') return [];
+    throw e;
+  }
+  return entries.flatMap((d) => (d.isDirectory() ? filesUnder(root, `${rel}/${d.name}`) : [`${rel}/${d.name}`]));
+}
+
+// Files inside the checkout that a settings `hooks` command names ("$CLAUDE_PROJECT_DIR"/x.sh,
+// ./x.sh, x/y.py), checkout-relative and '/'-separated.
+function hookScripts(root) {
+  const commands = [];
+  const collect = (v) => {
+    if (Array.isArray(v)) v.forEach(collect);
+    else if (v && typeof v === 'object') {
+      if (typeof v.command === 'string') commands.push(v.command);
+      Object.values(v).forEach(collect);
     }
-  }));
+  };
+  for (const f of ['.claude/settings.json', '.claude/settings.local.json']) {
+    try {
+      collect(JSON.parse(readFileSync(join(root, f), 'utf8')).hooks);
+    } catch {
+      // missing or not JSON: its own hash still guards it
+    }
+  }
+  const found = new Set();
+  for (const c of commands) {
+    for (const word of c.split(/\s+/)) {
+      const t = word.replace(/["']/g, '').replace(/\$\{?CLAUDE_PROJECT_DIR\}?/g, root);
+      if (!t) continue;
+      const rel = relative(root, resolve(root, t));
+      if (!rel || rel.startsWith('..') || isAbsolute(rel)) continue;
+      try {
+        if (statSync(join(root, rel)).isFile()) found.add(rel.split(sep).join('/'));
+      } catch {
+        // not a file: a program name or an argument
+      }
+    }
+  }
+  return [...found];
+}
+
+// { [checkout-relative path]: sha256 of its bytes, 'link:<target>' for a symlink, or 'absent' },
+// over GUARDED_FILES, every file under GUARDED_DIRS and the hook scripts the settings name.
+export function guardedHashes(root) {
+  const paths = new Set([...GUARDED_FILES, ...GUARDED_DIRS.flatMap((d) => filesUnder(root, d)), ...hookScripts(root)]);
+  const hashes = {};
+  for (const p of [...paths].filter((x) => !NOT_GUARDED.test(x)).sort()) {
+    const file = join(root, p);
+    try {
+      hashes[p] = lstatSync(file).isSymbolicLink()
+        ? `link:${readlinkSync(file)}`
+        : createHash('sha256').update(readFileSync(file)).digest('hex');
+    } catch (e) {
+      if (e.code !== 'ENOENT' && e.code !== 'ENOTDIR' && e.code !== 'EISDIR') throw e;
+      hashes[p] = 'absent';
+    }
+  }
+  return hashes;
+}
+
+// The guarded paths whose hash differs between two guardedHashes results (a path in only one
+// counts as absent in the other).
+export function guardedChanges(before, after) {
+  const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])].sort();
+  return keys.filter((k) => (before[k] ?? 'absent') !== (after[k] ?? 'absent'));
 }
 
 const plural = (n) => `${n} question${n === 1 ? '' : 's'}`;
@@ -337,7 +405,7 @@ const plural = (n) => `${n} question${n === 1 ? '' : 's'}`;
 // A child that fails on a usage limit cuts the item off (the run stops); any other child failure
 // blocks it with the error's first 300 characters. ctx.stop is set (and the event ends "; run
 // stopped") when no later child should start: a failure of the environment (no claude, an API or
-// auth error, a bad model: isEnvError), or a child that changed one of GUARDED.
+// auth error, a bad model: isEnvError), or a child that changed a guarded file (guardedHashes).
 // Answers files are read from ctx.answersDir (default ctx.dir). state.current is set by the caller.
 export async function runIssue(ctx, item) {
   const { root, dir } = ctx;
@@ -406,10 +474,10 @@ export async function runIssue(ctx, item) {
     item.sessions.push(session(r));
     ctx.save?.(item);
 
-    const after0 = guardedHashes(root);
-    const changed = GUARDED.filter((f) => after0[f] !== guarded[f]);
+    const changed = guardedChanges(guarded, guardedHashes(root));
     if (changed.length) {
-      ctx.stop = `child changed ${changed.join(', ')}`;
+      const more = changed.length > 5 ? ` and ${changed.length - 5} more` : '';
+      ctx.stop = `child changed ${changed.slice(0, 5).join(', ')}${more}`;
       return end('blocked', ctx.stop, phase, 'blocked', `${ctx.stop}; run stopped`);
     }
     if (!r.ok) {
