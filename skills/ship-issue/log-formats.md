@@ -14,7 +14,7 @@ Research techniques for the repo go in the config's `## Evidence`.
 # Interruptions and standing answers (ship-issue)
 
 Every question a ship-issue run asked the user, and every ruling the user
-overturned. **Read this before I0.** A question with a standing answer here, or
+overturned. **List the headings before I0 and before every question you ask** (`grep -n "^###"`; read the entries that match). A question with a standing answer here, or
 in `.claude/ship-plan/interruptions.md`, is not asked again: apply the answer
 and record `Ruling: standing answer <entry title>`.
 

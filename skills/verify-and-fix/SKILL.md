@@ -64,11 +64,12 @@ would not have to push each round. Rounds are not progress reports; do not stop
 between them to ask whether to go on.
 
 **Before round 1, read the repo's `.claude/ship-plan.md`
-([format](../ship-plan/config-format.md)) and `.claude/ship-plan/blockers.md` in full.**
+([format](../ship-plan/config-format.md)) in full and `.claude/ship-plan/blockers.md` by index
+([Reading the logs](../ship-plan/SKILL.md#reading-the-logs)).**
 If `.claude/ship.md` exists and `.claude/ship-plan.md` does not, stop with one
 line: "This repo is set up for the removed `ship` skill: move `.claude/ship.md` to `.claude/ship-plan.md` and `.claude/ship/` to `.claude/ship-plan/`."
 The config is the only source of commands. The blockers file is the list of
-things that stopped earlier runs, and the fix for each. Reading it costs a
+things that stopped earlier runs, and the fix for each. Reading the matching entries costs a
 minute; rediscovering an entry costs an hour.
 
 ## The loop

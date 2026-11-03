@@ -10,7 +10,7 @@ through `ship-plan`'s lessons PR.
 # Interruptions and standing answers
 
 Every question a ship run asked the user, and every ruling the user
-overturned. **Read this before pre-flight.** A question with a standing answer
+overturned. **List the headings before pre-flight and before every question you ask** (`grep -n "^###"`; read the entries that match). A question with a standing answer
 here is not asked again: apply the answer and record
 `Ruling: standing answer <entry title>`.
 
@@ -52,7 +52,8 @@ An overturned ruling uses the same format, with **Ruled:** in place of
 ```markdown
 # Known blockers
 
-Read in full before the first round. Each entry: the symptom with the exact
+Read the headings before the first round (`grep -n '^##'`), then the entries that match
+the tool or gate at hand. Each entry: the symptom with the exact
 error, the cause, the fix as an exact command, and the date. Correct a wrong
 entry rather than adding a second.
 
