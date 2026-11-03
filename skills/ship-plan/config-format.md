@@ -269,8 +269,10 @@ other field by the runner (`skills/ship-plan/scripts/runner.mjs`), which runs
 each ship phase as a `claude -p` child. Opt-in: the default is the
 single-session path. The runner also reads `## Repo` `Base branch:` (else
 origin/HEAD's branch, else `main`) and the `## Models` rows its children use.
-A value it cannot use (a `Phase:` row it has no phase for, a model name or
-effort it does not know, a field that is not a number) is ignored and named in
+A value it cannot use (a `Phase:` row it has no phase for, a model with a
+character no model name has (it checks only letters, digits, `.`, `_`, `-`,
+`[` and `]`, not that the model exists), an effort it does not know, a field
+that is not a number) is ignored and named in
 a `config:` progress event at start; the base branch and the models in use are
 events too.
 
