@@ -287,7 +287,7 @@ Watch).
 
 | Field | Meaning | Default |
 |---|---|---|
-| `Mode:` | `session` runs the phases in the watching session; `runner` runs them as runner children. The argument `--runner` also selects the runner | `session` |
+| `Mode:` | `session` runs the phases in the watching session; `runner` runs them as runner children. The flags `--runner` and `--session` choose for one run (each skill's "Runner or session") | `session` |
 | `Implement chunk:` | Plan tasks one implement child takes before the next child continues | `5` |
 | `Child idle timeout:` | Minutes a child may write nothing to its output stream before the runner kills it and its process group; the item ends `blocked` `child idle <n> min` | `60` |
 

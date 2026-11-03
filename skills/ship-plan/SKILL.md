@@ -201,9 +201,10 @@ gives, when it gives one.
 The pre-approval clears when the user sends a message. So every question you
 ask ends with: **"Answer with `/ship-plan <your answers>`,"** which starts the
 skill again, renews the pre-approval, and resumes from the ledger. With
-`## Runner` `Mode: runner` and this run in session mode (it got `--session`),
-the line is **"Answer with `/ship-plan <your answers> --session`,"** so the
-answers resume this run, not a new runner. A command
+`## Runner` `Mode: runner` and this run in session mode, `--session` given or
+not (a run with no plan file, "Runner or session"), the line is **"Answer with
+`/ship-plan <your answers> --session`,"** so the answers resume this run, not a
+new runner. A command
 still refused after that goes into the batch (section 5, step 5).
 
 ## The run
@@ -291,7 +292,8 @@ ledger in `.superpowers/verify-and-fix/<branch>/`; link to it rather than copyin
 running out, a batch the user will answer later): bring the ledger up to date,
 then write a handoff: the `handoff` skill when it is available, otherwise a
 `HANDOFF.md` next to the ledger. Its resume line is `/ship-plan`, with no
-argument: the ledger says where the run stands.
+argument: the ledger says where the run stands. With `## Runner` `Mode: runner`
+and this run in session mode, it is `/ship-plan --session`.
 
 **The sections live in phase files,** named in the index below. Read a file
 when its first section starts, and on a resume the file of the ledger's
@@ -375,7 +377,7 @@ applies, with these changes:
 
 ## Runner or session
 
-With `## Runner` `Mode: runner`, or a `--runner` flag (below), unless `printenv SHIP_RUNNER` prints a folder (a runner child) or a `--session` flag was given, the ship runner runs the phases and this session only watches and relays: read [runner-session.md](runner-session.md) and follow it with `start plan <path>`. `<path>` is the plan file: the argument when it is a path; with an issue key or no argument, the `Plan:` of the open ledger the run resumes (section 0, step 2). An issue key with no open ledger names no plan file (its description is the plan, section 0, step 3), and `start plan` needs one: that run stays in session mode, as above, and says so in one line. Otherwise ignore this section; the skill runs as above.
+With `## Runner` `Mode: runner`, or a `--runner` flag (below), unless `printenv SHIP_RUNNER` prints a folder (a runner child) or a `--session` flag was given, the ship runner runs the phases and this session only watches and relays: read [runner-session.md](runner-session.md) and follow it with `start plan <path>`. `<path>` is the plan file: the argument when it is a path; with an issue key or no argument, the `Plan:` of the open ledger the run resumes (section 0, step 2). An issue key with no open ledger names no plan file (its description is the plan, section 0, step 3), and `start plan` needs one: that run stays in session mode, as above, and says so in one line. So does a resume (answers or no argument) whose open ledger's `Plan:` names no plan file. Otherwise ignore this section; the skill runs as above.
 
 - **`--session`:** another ship skill invoked this one from its own run (ship-issue's I6 and its I0 resume row pass it), or the user answered with a session-mode run's answer line: run in session mode, as above, whatever `Mode:` says. It changes nothing else, and a runner child's Runner mode is still decided by `SHIP_RUNNER`.
 - **`--runner` and `--session` are flags only as whole words at the start or the end of the argument** (`docs/plan.md --runner`, `--session 1A, 2B`, `1A, 2B --session`): read the argument without them. Anywhere else, or inside a word, they are part of the text (answers): they stay in it and select nothing. With neither flag the argument is read exactly as if this section did not exist. Neither is ever the plan path, the issue key or answers.

@@ -166,7 +166,9 @@ or later: route through I0, which hands back to ship-plan.
 running out, a batch the user will answer later): bring the ledger up to date,
 then write a handoff: the `handoff` skill when it is available, otherwise a
 `HANDOFF.md` next to the ledger. It names the checkout, and its resume line is
-`/ship-issue`, with no argument. Once ship-plan runs, its own rule applies.
+`/ship-issue`, with no argument (`/ship-issue --session` when this run is in
+session mode under `## Runner` `Mode: runner`). Once ship-plan runs, its own
+rule applies.
 
 **The sections live in phase files,** named in the index below. Read a file
 when its first section starts, and on a resume the file of the section the

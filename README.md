@@ -58,8 +58,8 @@ Set `## Runner` `Mode: runner` in `.claude/ship-plan.md`, or pass `--runner`, an
 (`skills/ship-plan/scripts/runner.mjs`) runs each phase (spec, plan, implement in chunks, verify, merge, close) as a
 short headless `claude -p` child. The session you started only relays progress and questions, so it works with
 Remote Control on a phone. A question parks only that sub-issue and the queue goes on. When a child changes a file
-later children load (settings, hooks, agents, `CLAUDE.md`, …), the runner warns you on the phone and in its summary;
-it does not stop the run. The default is
+later children load (settings, hooks, agents, `CLAUDE.md`, …), you get a warning on the phone (the watching session
+pushes it) and in the runner's summary; it does not stop the run. The default is
 `Mode: session`, the single-session path.
 
 ## Maintaining (author workflow)
