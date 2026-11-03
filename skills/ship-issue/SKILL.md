@@ -72,8 +72,9 @@ starts this skill so they can walk away.** Every question is asked once, in one
 batch (I3). After that the run decides for itself or parks the question for
 ship-plan's close-out.
 
-**Before anything else, read in full:** the repo's `.claude/ship-plan.md`
-(ship-plan's [config-format.md](../ship-plan/config-format.md)),
+**Before anything else, read in full** the repo's `.claude/ship-plan.md`
+(ship-plan's [config-format.md](../ship-plan/config-format.md)), and **by index**
+(ship-plan's [Reading the logs](../ship-plan/SKILL.md#reading-the-logs)) the logs
 `.claude/ship-issue/interruptions.md`, `.claude/ship-plan/interruptions.md`
 and `.claude/ship-plan/blockers.md`. A missing file is not an error; a missing
 log is created from [log-formats.md](log-formats.md) at close-out. A question

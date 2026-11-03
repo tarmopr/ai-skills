@@ -129,8 +129,9 @@ should need fewer questions than the last, and the repo's two logs are how that
 happens.
 
 **Before anything else, read the repo's `.claude/ship-plan.md`
-([format](config-format.md)), `.claude/ship-plan/interruptions.md` and
-`.claude/ship-plan/blockers.md` in full.** The config holds every command and
+([format](config-format.md)) in full, and the repo's two logs
+`.claude/ship-plan/interruptions.md` and `.claude/ship-plan/blockers.md` by
+index ([Reading the logs](#reading-the-logs)).** The config holds every command and
 setting for this repo. The first log holds standing answers to questions
 earlier runs asked; the second holds the fixes for tooling that stopped earlier
 runs. A question that has a standing answer is not asked again. An entry that
@@ -272,8 +273,27 @@ last 60 lines of a gate or CI log. Anything wider (a source file, `grep` or
 `git grep` over the code, a full CI log, any file over 300 lines) goes to an
 `Explore` agent at the `## Models` `Research` row (default `sonnet`,
 `medium`), whose prompt asks for at most 30 lines with file:line quotes.
-`blockers.md` and `interruptions.md` are read in full once per session; after
-a compaction, `grep -n` them for the tool or gate at hand.
+The logs are read by index, not in full: see below.
+
+### Reading the logs
+
+`blockers.md` and the `interruptions.md` files grow with every run, and every
+turn re-reads whatever they put in context. So read them by index:
+
+1. **List the headings:** `grep -n '^##' <log>`. Each `###` heading is one entry's
+   symptom (blockers) or question (interruptions). A log under 8 KB is read in full.
+2. **Read the entries that match,** each from its heading to the next `###`
+   (`sed -n '<from>,<to>p'`): every entry whose heading names the tool, gate, host,
+   tracker, error or question at hand, and every entry the config or an override file
+   names (`## Gates` notes, [repo override files](config-format.md#repo-override-files)).
+   When unsure whether a heading matches, read the entry: a heading costs one line,
+   a missed entry costs a rediscovery.
+3. **Read again when the work changes:** before each question you are about to ask
+   (a matching standing answer settles it), before each gate or tool you have not
+   used yet this run, and after a compaction. The headings are the index to keep,
+   not the entries.
+4. **A heading list that matches nothing** is an answer, not a reason to read the
+   whole log. A new blocker or question still goes into the log at close-out.
 
 ### The ledger
 
