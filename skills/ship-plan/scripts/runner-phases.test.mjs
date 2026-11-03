@@ -1,11 +1,12 @@
 // Tests for the phases of one issue. Run: node --test 'skills/ship-plan/scripts/*.test.mjs'
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { findPlanLedger, implementChunks, pendingQuestions, phaseFromLedgers, phasePrompt, PHASES, PHASE_ROWS, runIssue, tailProgress } from './runner-phases.mjs';
+import { findPlanLedger, implementChunks, ledgerOutcome, pendingQuestions, phaseFromLedgers, phasePrompt, PHASES, PHASE_ROWS, runIssue, tailProgress } from './runner-phases.mjs';
 
 process.env.CLAUDE_BIN = join(dirname(fileURLToPath(import.meta.url)), 'fake-claude.mjs');
 
@@ -144,13 +145,15 @@ test('runIssue: no marker but ledger advanced -> continues (Review Focus 2)', as
   assert.match(events(root), / BILL-7 finished done /);
 });
 
-test('runIssue: no marker and ledger unchanged -> cut off, no RUNNER: line', async () => {
+// B7 (review round 1): a child that ends without a RUNNER: line and without progress is blocked
+// with that reason, not cut off (cut off is a usage limit only).
+test('runIssue: no marker and ledger unchanged -> blocked, no RUNNER: line', async () => {
   const root = repo({ issue: [issueFirst(2)] });
   const it = await runIssue(ctxFor(root, { FAKE_CLAUDE: 'ok:' }), item());
-  assert.equal(it.status, 'cut off');
+  assert.equal(it.status, 'blocked');
   assert.equal(it.reason, 'no RUNNER: line');
   assert.equal(it.sessions.length, 1);
-  assert.match(events(root), / BILL-7 spec cutoff no RUNNER: line$/m);
+  assert.match(events(root), / BILL-7 spec blocked no RUNNER: line$/m);
 });
 
 test('runIssue: implement chunks follow heading numbers, gaps are not undone tasks', async () => {
@@ -386,4 +389,130 @@ test('tailProgress: stop() never throws on an unreadable ledger', () => {
   const stop = tailProgress(root, 'x', () => {}, 60000, { ledger: () => path });
   path = root; // a directory: reading it fails with EISDIR
   assert.doesNotThrow(() => stop());
+});
+
+// answers on disk for KEY, and an item that carries them with an earlier session of phase spec
+function answered(root) {
+  const dir = join(root, 'run');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, `answers-${KEY}.md`), 'postgres\n');
+  return item({ answersFile: `answers-${KEY}.md`, sessions: [{ phase: 'spec', sessionId: 's-9', costUsd: 1, turns: 2, minutes: 3 }] });
+}
+const waitingSpec = () => repo({ issue: [issueFirst(3), 'Asked: q — pending', 'Waiting: batch of 1, sent 2026-11-03; heads: none'] });
+
+test('runIssue: a child cut off by a usage limit keeps the answers for the rerun', async () => {
+  const root = waitingSpec();
+  const it = await runIssue(ctxFor(root, { FAKE_CLAUDE: 'error' }), answered(root));
+  assert.equal(it.status, 'cut off');
+  assert.equal(it.answersFile, `answers-${KEY}.md`);
+  assert.equal(it.sessions.length, 2);
+});
+
+test('runIssue: a dead resume with answers -> the fresh child gets them, answersFile cleared, both children recorded', async () => {
+  const root = waitingSpec();
+  const log = join(root, 'fake.json');
+  const ops = ledgerOps([{ when: 'copied exactly', file: ISSUE, firstLine: issueFirst(4), replace: [['Asked: q — pending', 'Asked: q — postgres']] }]);
+  const it = await runIssue(ctxFor(root, { FAKE_CLAUDE: 'noresume', FAKE_CLAUDE_MARKER: 'RUNNER: phase-done', FAKE_CLAUDE_LOG: log, FAKE_CLAUDE_LEDGER_APPEND: ops }), answered(root));
+  const seen = JSON.parse(readFileSync(log, 'utf8'));
+  assert.ok(!seen.argv.includes('--resume'));
+  assert.match(seen.stdin, /copied exactly:\npostgres\n$/);
+  assert.equal(it.answersFile, null);
+  assert.deepEqual(it.sessions.slice(1, 3), [
+    { phase: 'spec', sessionId: 's-9', costUsd: 0, turns: 0, minutes: null },
+    { phase: 'spec', sessionId: 's-1', costUsd: 0.42, turns: 3, minutes: 3 },
+  ]);
+});
+
+test('runIssue: a child error that is not a usage limit -> blocked with the real reason, at most 300 chars', async () => {
+  const root = repo({ issue: [issueFirst(2)] });
+  const it = await runIssue(ctxFor(root, { FAKE_CLAUDE: 'apierror' }), item());
+  assert.equal(it.status, 'blocked');
+  assert.match(it.reason, /authentication_error/);
+  assert.match(events(root), / BILL-7 spec blocked .*authentication_error/);
+  const crash = await runIssue(ctxFor(repo({ issue: [issueFirst(2)] }), { FAKE_CLAUDE: 'crash' }), item());
+  assert.deepEqual([crash.status, crash.reason], ['blocked', 'exit 1; no result line']);
+  const long = await runIssue(ctxFor(repo({ issue: [issueFirst(2)] }), { FAKE_CLAUDE: 'crash', FAKE_CLAUDE_STDERR: 'x'.repeat(900) }), item());
+  assert.equal(long.status, 'blocked');
+  assert.equal(long.reason.length, 300);
+});
+
+test('runIssue: a child silent for the idle timeout -> blocked, child idle', async () => {
+  const root = repo({ issue: [issueFirst(2)] });
+  const it = await runIssue(ctxFor(root, { FAKE_CLAUDE: 'hang' }, { idleMs: 300 }), item());
+  assert.deepEqual([it.status, it.reason], ['blocked', 'child idle 0.005 min']);
+});
+
+// a git repo on main whose plan is committed only on feat/bill-7
+function planOnBranch({ branchLine = true } = {}) {
+  const root = repo({ tasks: 3 });
+  const git = (...a) => execFileSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=t', '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', ...a], { cwd: root, stdio: 'pipe' });
+  git('init', '-q', '-b', 'main');
+  git('commit', '-q', '--allow-empty', '-m', 'base');
+  git('switch', '-q', '-c', 'feat/bill-7');
+  git('add', 'docs/plan.md');
+  git('commit', '-q', '-m', 'plan');
+  git('switch', '-q', 'main');
+  assert.equal(existsSync(join(root, 'docs/plan.md')), false);
+  const first = branchLine ? issueFirst(6) : issueFirst(6).replace(' | Branch: feat/bill-7', '');
+  for (const [rel, lines] of [[ISSUE, [first]], [PLAN_LEDGER, [planFirst('2'), 'Progress: task 1 done']]]) {
+    mkdirSync(dirname(join(root, rel)), { recursive: true });
+    writeFileSync(join(root, rel), lines.join('\n') + '\n');
+  }
+  return root;
+}
+
+test('runIssue: implement on the base branch reads the plan from the run\'s branch, never "all tasks done"', async () => {
+  const root = planOnBranch();
+  const log = join(root, 'fake.json');
+  await runIssue(ctxFor(root, { FAKE_CLAUDE: 'ok:RUNNER: phase-done', FAKE_CLAUDE_LOG: log }, { chunkSize: 1 }), item());
+  assert.match(JSON.parse(readFileSync(log, 'utf8')).stdin, /plan tasks 2–2\.$/);
+});
+
+test('runIssue: implement with the plan nowhere to read -> blocked, no child', async () => {
+  const root = planOnBranch({ branchLine: false });
+  const it = await runIssue(ctxFor(root, { FAKE_CLAUDE: 'ok:RUNNER: phase-done' }), item());
+  assert.equal(it.status, 'blocked');
+  assert.equal(it.reason, 'plan docs/plan.md not found in the checkout, and the ledgers name no branch');
+  assert.equal(it.sessions.length, 0);
+  const root2 = planOnBranch();
+  execFileSync('git', ['branch', '-D', 'feat/bill-7'], { cwd: root2, stdio: 'pipe' });
+  const it2 = await runIssue(ctxFor(root2, { FAKE_CLAUDE: 'ok:RUNNER: phase-done' }), item());
+  assert.deepEqual([it2.status, it2.reason], ['blocked', 'plan docs/plan.md not found in the checkout or on feat/bill-7']);
+});
+
+test('ledgerOutcome: the Outcome: line under the first line; with two, the one nearer the top (the newer)', () => {
+  const at = (lines) => ledgerOutcome(repo({ issue: [issueFirst(6)], plan: lines }), KEY);
+  assert.equal(at([planFirst('done')]), null);
+  assert.equal(at([planFirst('done'), 'Outcome: Done', 'Progress: merged abc']), 'Done');
+  assert.equal(at([planFirst('done'), 'Progress: merged abc', 'Outcome: Awaiting review']), 'Awaiting review');
+  // a close-out resumed under the old text: the newer line went under the first line, above the old one
+  assert.equal(at([planFirst('done'), 'Outcome: Done', 'Outcome: Base branch red', 'Progress: CI red']), 'Done');
+  assert.equal(at([planFirst('done'), 'Outcome: Done', 'Progress: CI red', 'Outcome: Base branch red']), 'Done');
+});
+
+test('tailProgress: the first read failure is reported once', async () => {
+  const root = repo();
+  let path = null;
+  const errs = [];
+  const stop = tailProgress(root, 'x', () => {}, 20, { ledger: () => path }, (e) => errs.push(e.code));
+  path = root; // a directory: reading it fails with EISDIR
+  await new Promise((r) => setTimeout(r, 90));
+  stop();
+  assert.deepEqual(errs, ['EISDIR']);
+});
+
+test('runIssue: finished and asking with no sessions recorded: the phase comes from the ledger', async () => {
+  const root = repo();
+  const VF = '.superpowers/verify-and-fix/feat-x/ledger.md';
+  mkdirSync(dirname(join(root, VF)), { recursive: true });
+  writeFileSync(join(root, VF), 'Asked: rename? — pending\nDone: abc — not clean: 1 question\n');
+  const it = await runIssue(ctxFor(root, { FAKE_CLAUDE: 'crash' }, { ledgers: { ledger: VF } }), item({ key: 'feat-x' }));
+  assert.deepEqual([it.status, it.phase], ['waiting', 'verify']);
+});
+
+test('findPlanLedger: an unreadable ship-plan folder is an error, not "no ledger"', () => {
+  const root = repo();
+  mkdirSync(join(root, '.superpowers'), { recursive: true });
+  writeFileSync(join(root, '.superpowers', 'ship-plan'), 'not a folder');
+  assert.throws(() => findPlanLedger(root, 'docs/plan.md'), /ENOTDIR/);
 });

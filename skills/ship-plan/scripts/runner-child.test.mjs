@@ -5,8 +5,8 @@ import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { acquireLock } from './runner-lib.mjs';
-import { childArgs, parseMarker, resumeOrFresh, runChild } from './runner-child.mjs';
+import { acquireLock, alive } from './runner-lib.mjs';
+import { childArgs, isLimitError, parseMarker, resumeOrFresh, runChild } from './runner-child.mjs';
 
 process.env.CLAUDE_BIN = join(dirname(fileURLToPath(import.meta.url)), 'fake-claude.mjs');
 
@@ -137,4 +137,76 @@ test('child pid set while running, cleared after', async () => {
   assert.ok(Number.isInteger(during) && during > 0);
   await running;
   assert.equal(JSON.parse(readFileSync(join(dir, 'lock'), 'utf8')).child, null);
+});
+
+test('resumeOrFresh: a resume that ran (session id seen) then crashed is a crash, not a dead session: no fresh child', async () => {
+  const dir = fresh();
+  const r = await resumeOrFresh(base(dir, { FAKE_CLAUDE: 'crashafter' }, { resume: 's-old', freshPrompt: 'FRESH' }));
+  assert.equal(r.ok, false);
+  assert.equal(r.sessionId, 's-1');
+  assert.match(r.error, /exit 1/);
+  assert.match(r.error, /no result line/);
+  assert.equal(existsSync(join(dir, 'events.log')), false);
+  assert.equal(existsSync(join(dir, 'BILL-1-spec-2.jsonl')), false);
+});
+
+test('resumeOrFresh: the dead resume is returned with the fresh child, for its cost', async () => {
+  const dir = fresh();
+  const r = await resumeOrFresh(base(dir, { FAKE_CLAUDE: 'noresume' }, { resume: 's-old', freshPrompt: 'FRESH' }));
+  assert.equal(r.ok, true);
+  assert.equal(r.failedResume.ok, false);
+  assert.equal(r.failedResume.sessionId, 's-old');
+  assert.equal(r.failedResume.costUsd, 0);
+  assert.equal(r.failedResume.turns, 0);
+});
+
+test('isLimitError: usage and rate limits only; crashes and API errors are not', () => {
+  assert.equal(isLimitError('is_error: usage limit reached'), true);
+  assert.equal(isLimitError('is_error: Claude AI usage limit reached|1762160400'), true);
+  assert.equal(isLimitError('is_error: 5-hour limit reached ∙ resets 3pm'), true);
+  assert.equal(isLimitError('exit 1; rate limit rejected'), true);
+  assert.equal(isLimitError('exit 1; no result line'), false);
+  assert.equal(isLimitError('is_error: API Error: 401 authentication_error'), false);
+  assert.equal(isLimitError('spawn failed: ENOENT'), false);
+  assert.equal(isLimitError(null), false);
+});
+
+test('runChild: an API error result is reported as it is', async () => {
+  const dir = fresh();
+  const r = await runChild(base(dir, { FAKE_CLAUDE: 'apierror' }));
+  assert.equal(r.ok, false);
+  assert.match(r.error, /authentication_error/);
+  assert.equal(isLimitError(r.error), false);
+});
+
+test('runChild: no stream line for idleMs -> the child is killed, error child idle', async () => {
+  const dir = fresh();
+  acquireLock(dir, process.pid);
+  const t0 = Date.now();
+  const running = runChild(base(dir, { FAKE_CLAUDE: 'hang' }, { idleMs: 300 }));
+  await new Promise((r) => setTimeout(r, 100));
+  const pid = JSON.parse(readFileSync(join(dir, 'lock'), 'utf8')).child;
+  const r = await running;
+  assert.equal(r.ok, false);
+  assert.match(r.error, /^child idle 0\.005 min/);
+  assert.ok(Date.now() - t0 < 5000);
+  assert.equal(alive(pid), false);
+});
+
+test('runChild: resolves when the child exits, even while a grandchild holds stdout', async () => {
+  const dir = fresh();
+  const t0 = Date.now();
+  const r = await runChild(base(dir, { FAKE_CLAUDE: 'grandchild', FAKE_CLAUDE_HOLD_MS: '8000' }));
+  assert.equal(r.ok, true, r.error);
+  assert.deepEqual(r.marker, { status: 'done', text: '' });
+  assert.ok(Date.now() - t0 < 5000, `took ${Date.now() - t0} ms`);
+});
+
+test('runChild: a transcript write that fails never crashes the runner; one event says so', async () => {
+  const dir = fresh();
+  const r = await runChild(base(dir, { FAKE_CLAUDE: 'ok:RUNNER: done', FAKE_CLAUDE_RM: dir }, { cwd: fresh() }));
+  assert.equal(r.ok, true);
+  const ev = readFileSync(join(dir, 'events.log'), 'utf8').split('\n').filter(Boolean);
+  assert.equal(ev.length, 1);
+  assert.match(ev[0], / BILL-1 spec progress child transcript not written: /);
 });

@@ -1,10 +1,11 @@
 // Phases of one issue for the ship runner: which phase runs next, read from the ledgers,
 // and the loop that runs one child per phase (per chunk of plan tasks for implement).
 // The ledgers win over a child's RUNNER: marker.
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { isAbsolute, join, resolve } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { readdirSync, readFileSync } from 'node:fs';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { emit } from './runner-lib.mjs';
-import { resumeOrFresh, runChild } from './runner-child.mjs';
+import { isLimitError, resumeOrFresh, runChild } from './runner-child.mjs';
 
 export const PHASES = ['spec', 'plan', 'implement', 'verify', 'merge', 'close'];
 
@@ -125,9 +126,16 @@ function readLedgers(root, key, opts = {}) {
     if (m) doneTasks.add(Number(m[1]));
   }
   const planDoc = planFields.Plan || issueFields.Plan || opts.planDoc;
-  const outcome = (planBody ?? []).map((l) => /^Outcome: (.+)$/.exec(l)?.[1]).filter(Boolean).at(-1) ?? null;
+  // ship-plan writes its one Outcome: line under the first line and replaces it when the close-out
+  // runs again: the first one is the newest (a second one, left by an older close-out, sits below it)
+  const outcome = (planBody ?? []).map((l) => /^Outcome: (.+)$/.exec(l)?.[1]).find(Boolean) ?? null;
+  // the phase that writes a finished ledger's last lines: verify-and-fix's (no Phase: line), the
+  // only phase run, else ship-plan's close-out
+  const finishedBy = direct && !hasPhaseLine ? opts.only ?? 'verify' : opts.only ?? 'close';
   return {
     outcome,
+    finishedBy,
+    branch: planFields.Branch || issueFields.Branch || null,
     phase: unknown ? 'unknown' : phase,
     unknown,
     waiting: Boolean(batch) || pending > 0,
@@ -150,8 +158,9 @@ export function findPlanLedger(root, planPath) {
   let names;
   try {
     names = readdirSync(base).sort();
-  } catch {
-    return null;
+  } catch (e) {
+    if (e.code === 'ENOENT') return null;
+    throw e;
   }
   const want = resolve(root, planPath);
   let done = null;
@@ -167,7 +176,7 @@ export function findPlanLedger(root, planPath) {
   return done;
 }
 
-// The ship-plan ledger's last `Outcome:` (written at close-out), or null.
+// The ship-plan ledger's `Outcome:` (written at close-out, under the first line), or null.
 export function ledgerOutcome(root, key, opts = {}) {
   return readLedgers(root, key, opts).outcome;
 }
@@ -202,13 +211,13 @@ export function phasePrompt({ skill, args, phase, chunk, answers }) {
 
 // The plan's `### Task <n>` headings in groups of `size`, as task-number ranges.
 export function implementChunks(planPath, size = 5) {
-  return taskGroups(planPath, size).map((group) => ({ from: group[0], to: group.at(-1) }));
+  return taskGroups(readFileSync(planPath, 'utf8'), size).map((group) => ({ from: group[0], to: group.at(-1) }));
 }
 
 // The plan's task numbers (heading number, or ordinal when a heading has none) in groups of size.
-function taskGroups(planPath, size) {
+function taskGroups(planText, size) {
   const numbers = [];
-  for (const m of readFileSync(planPath, 'utf8').matchAll(/^### Task (\d+)?/gm)) {
+  for (const m of planText.matchAll(/^### Task (\d+)?/gm)) {
     numbers.push(m[1] === undefined ? numbers.length + 1 : Number(m[1]));
   }
   const groups = [];
@@ -216,12 +225,36 @@ function taskGroups(planPath, size) {
   return groups;
 }
 
+// The plan's text: from the checkout, else (a plan committed only on the run's branch, while the
+// checkout is on the base branch) from the ledgers' Branch: or its origin copy. { missing } when
+// neither has it: a plan that cannot be read is never "every task done".
+function planText(root, ledgers) {
+  if (!ledgers.planDoc) return { missing: 'the ledgers name no plan' };
+  try {
+    return { text: readFileSync(ledgers.planDoc, 'utf8') };
+  } catch (e) {
+    if (e.code !== 'ENOENT') throw e;
+  }
+  const rel = relative(root, ledgers.planDoc).split(sep).join('/');
+  const b = ledgers.branch;
+  for (const ref of b && !b.startsWith('-') ? [b, `origin/${b}`] : []) {
+    try {
+      return { text: execFileSync('git', ['show', `${ref}:${rel}`], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }) };
+    } catch {
+      // not on this ref: try the next
+    }
+  }
+  return { missing: `plan ${rel} not found in the checkout${b ? ` or on ${b}` : ', and the ledgers name no branch'}` };
+}
+
 // The first chunk with a task the ship-plan ledger has no `Progress: task <n> done|parked` line
-// for; { whole: true } when the plan has no `### Task` headings (one child does all of it); or null
-// (no plan file, or every chunk done: the child finishes the phase's other work).
-function nextChunk(ledgers, size) {
-  if (!ledgers.planDoc || !existsSync(ledgers.planDoc)) return null;
-  const groups = taskGroups(ledgers.planDoc, size);
+// for; { whole: true } when the plan has no `### Task` headings (one child does all of it); null
+// when every chunk is done (the child finishes the phase's other work); { missing } when the plan
+// cannot be read.
+function nextChunk(root, ledgers, size) {
+  const plan = planText(root, ledgers);
+  if (plan.missing) return plan;
+  const groups = taskGroups(plan.text, size);
   if (!groups.length) return { whole: true };
   // the chunk's own task numbers, so a gap (tasks 1, 2, 5) never looks undone
   const group = groups.find((g) => g.some((n) => !ledgers.doneTasks.has(n)));
@@ -230,7 +263,18 @@ function nextChunk(ledgers, size) {
 
 // Poll both ledgers every intervalMs; call onLine for new `Progress:` lines and for
 // first-line `Phase:` changes. Returns stop(), which reads once more before stopping.
-export function tailProgress(root, key, onLine, intervalMs = 5000, opts = {}) {
+// A read that fails is retried on the next tick; onError gets the first failure, once.
+export function tailProgress(root, key, onLine, intervalMs = 5000, opts = {}, onError = () => {}) {
+  let failed = false;
+  const fail = (e) => {
+    if (failed) return;
+    failed = true;
+    try {
+      onError(e);
+    } catch {
+      // reporting must never stop the run
+    }
+  };
   const seen = new Map(); // file -> { first, count }
   const files = () => {
     const { issueFile, planFile } = ledgerFiles(root, key, opts);
@@ -251,8 +295,9 @@ export function tailProgress(root, key, onLine, intervalMs = 5000, opts = {}) {
   const timer = setInterval(() => {
     try {
       read(true);
-    } catch {
+    } catch (e) {
       // a ledger mid-rewrite or unreadable: try again next tick; never crash the runner
+      fail(e);
     }
   }, intervalMs);
   timer.unref?.();
@@ -260,8 +305,9 @@ export function tailProgress(root, key, onLine, intervalMs = 5000, opts = {}) {
     clearInterval(timer);
     try {
       read(true);
-    } catch {
+    } catch (e) {
       // as above: a last read that fails loses only progress lines, never the run
+      fail(e);
     }
   };
 }
@@ -270,7 +316,9 @@ const plural = (n) => `${n} question${n === 1 ? '' : 's'}`;
 
 // Run the issue's phases until it is done, waiting, blocked or cut off.
 // ctx: { root, dir, models: {[row]: {model, effort}}, mode, env, skill = 'ship-issue',
-//        args = item.key, chunkSize = 5, tailMs = 5000, ledgers?: LedgerOpts, save?(item) }.
+//        args = item.key, chunkSize = 5, tailMs = 5000, idleMs?, ledgers?: LedgerOpts, save?(item) }.
+// A child that fails on a usage limit cuts the item off (the run stops); any other child failure
+// blocks it with the error's first 300 characters.
 // state.current is set by the caller.
 export async function runIssue(ctx, item) {
   const { root, dir } = ctx;
@@ -299,7 +347,7 @@ export async function runIssue(ctx, item) {
     if (before.unknown) return end('blocked', before.unknown, before.phase, 'blocked', before.unknown);
     // Finished but asking (verify-and-fix's closing Done:, a close-out batch): the answers go to
     // the phase that asked, the last one run.
-    const phase = finished ? item.sessions.at(-1)?.phase ?? ctx.ledgers?.only ?? 'close' : before.phase;
+    const phase = finished ? item.sessions.at(-1)?.phase ?? before.finishedBy : before.phase;
     if (finished) item.phase = phase;
     if (before.waiting && !answers) return end('waiting', plural(before.questions), phase, 'waiting', plural(before.questions));
 
@@ -307,7 +355,8 @@ export async function runIssue(ctx, item) {
     const pick = ctx.models?.[row];
     if (!pick) return end('blocked', `no ## Models row "${row}"`, phase, 'blocked', `no ## Models row "${row}"`);
 
-    const chunk = phase === 'implement' ? nextChunk(before, ctx.chunkSize ?? 5) : null;
+    const chunk = phase === 'implement' ? nextChunk(root, before, ctx.chunkSize ?? 5) : null;
+    if (chunk?.missing) return end('blocked', chunk.missing, phase, 'blocked', chunk.missing);
     const prompt = phasePrompt({ skill, args, phase, chunk, answers });
     const resume = answers ? item.sessions.filter((s) => s.phase === phase).at(-1)?.sessionId ?? null : null;
     item.phase = phase;
@@ -317,23 +366,31 @@ export async function runIssue(ctx, item) {
 
     const opts = {
       dir, cwd: root, key, phase, prompt, model: pick.model, effort: pick.effort,
-      mode: ctx.mode ?? 'auto', resume, env: ctx.env ?? {},
+      mode: ctx.mode ?? 'auto', resume, env: ctx.env ?? {}, idleMs: ctx.idleMs,
     };
-    const stop = tailProgress(root, key, (line) => emit(dir, key, phase, 'progress', line), ctx.tailMs ?? 5000, ctx.ledgers);
+    const stop = tailProgress(root, key, (line) => emit(dir, key, phase, 'progress', line), ctx.tailMs ?? 5000, ctx.ledgers,
+      (e) => emit(dir, key, phase, 'progress', `ledger read failed: ${e.code || e.message}`));
     let r;
     try {
       r = resume ? await resumeOrFresh({ ...opts, freshPrompt: prompt }) : await runChild(opts);
     } finally {
       stop();
     }
-    if (answers) {
+    // answers are used once a child has run with them; a failed child leaves them for the rerun
+    if (answers && r.ok) {
       answers = null;
       item.answersFile = null;
     }
-    item.sessions.push({ phase, sessionId: r.sessionId, costUsd: r.costUsd, turns: r.turns, minutes: r.minutes });
+    const session = (c) => ({ phase, sessionId: c.sessionId, costUsd: c.costUsd, turns: c.turns, minutes: c.minutes });
+    if (r.failedResume) item.sessions.push(session(r.failedResume));
+    item.sessions.push(session(r));
     ctx.save?.(item);
 
-    if (!r.ok) return end('cut off', r.error, phase, 'cutoff', r.error);
+    if (!r.ok) {
+      if (isLimitError(r.error)) return end('cut off', r.error, phase, 'cutoff', r.error);
+      const why = String(r.error).slice(0, 300);
+      return end('blocked', why, phase, 'blocked', why);
+    }
     // The ledgers win over the marker.
     const after = readLedgers(root, key, ctx.ledgers);
     // A direct ledger (verify-and-fix) ends with a Done: line even when the run is blocked:
@@ -349,8 +406,8 @@ export async function runIssue(ctx, item) {
     }
     if (after.blockedCount > before.blockedCount) return end('blocked', after.blocked, phase, 'blocked', after.blocked);
     if (after.signature === before.signature) {
-      // No ledger change: without a RUNNER: line the child did not finish (crash, cut stream).
-      if (!r.marker) return end('cut off', 'no RUNNER: line', phase, 'cutoff', 'no RUNNER: line');
+      // No ledger change: without a RUNNER: line the child did not finish its phase.
+      if (!r.marker) return end('blocked', 'no RUNNER: line', phase, 'blocked', 'no RUNNER: line');
       // nothing to do: the issue was finished already (ship-issue I0's first row)
       if (r.marker.status === 'done') {
         const why = r.marker.text || 'already done';

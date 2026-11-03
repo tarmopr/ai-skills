@@ -50,8 +50,8 @@ tail -n +<N> -F <run dir>/events.log | awk -v n=<N-1> '{ n++; print n " " $0; ff
 - **Each event:** one short line to the user. `progress` lines may be batched.
 - **`waiting`, `blocked`, `cutoff` and `summary`:** also send a `PushNotification`, with the key and the text. No other kind sends one.
 - **When the monitor times out** you get one notice and nothing more. Re-arm at once with the `N` above. Do this until `summary`.
-- **`cutoff`** (a usage limit or a crash) stops the whole run. Tell the user; rerunning the same `start` command resumes from the files, once the limit resets.
-- **`blocked`:** tell the user the quoted reason. The runner goes on with the other items, unless the text ends `queue stopped` (the checkout is busy, or the base branch is red): then the rest are not started and `summary` follows.
+- **`cutoff`** (a usage or rate limit) stops the whole run. Tell the user; rerunning the same `start` command resumes from the files, once the limit resets.
+- **`blocked`:** tell the user the quoted reason. Besides a `Blocked:` line of the ledger, it can be a child that failed some other way (a crash, an API or auth error, a bad model, no `RUNNER:` line, `child idle <n> min`): the reason is the error's first 300 characters. A rerun of the same `start` command tries a blocked item again. The runner goes on with the other items, unless the text ends `queue stopped` (the checkout is busy, or the base branch is red): then the rest are not started and `summary` follows.
 - **A `blocked` that is a question** (a ship-plan child stopped before its ledger existed: no `## Slack`, no tracker, no issue key): there is no answer path through `answer`. Ask the user, have them add the value where the reason says (`## Slack` in `.claude/ship-plan.local.md` or the config, `Tracker:` in the config's `## Repo`, an issue key in the plan's `Source:` line; a change to a committed file is committed first, as Start's checkout rule needs), then rerun the same `start` command.
 
 ## Questions

@@ -21,6 +21,13 @@ export function parseMarker(resultText) {
   return last;
 }
 
+// A child error that a usage or rate limit caused (the run is cut off and resumes once the limit
+// resets), as opposed to a crash, an API or auth error or a bad model (the item is blocked).
+const LIMIT = /usage limit|rate limit|limit reached|limit resets|out of (?:extra )?usage/i;
+export function isLimitError(error) {
+  return LIMIT.test(String(error ?? '').split('; stderr: ')[0]);
+}
+
 // <dir>/<key>-<phase>-<n>.jsonl with the first unused n, starting at 1.
 function logFile(dir, key, phase) {
   for (let n = 1; ; n++) {
@@ -29,60 +36,136 @@ function logFile(dir, key, phase) {
   }
 }
 
-// The CLI's answer to `--resume <unknown id>`: one is_error result line, no turns run.
+// The CLI's answer to `--resume <unknown id>`: an is_error result naming "No conversation found".
 function isResumeFailure(result) {
-  if (!result.is_error) return false;
-  if (result.subtype === 'error_during_execution' && result.num_turns === 0) return true;
-  return Array.isArray(result.errors) && result.errors.some((e) => /No conversation found/.test(String(e)));
+  if (!result?.is_error) return false;
+  const texts = [result.result, ...(Array.isArray(result.errors) ? result.errors : [])].map(String);
+  return texts.some((t) => /No conversation found/.test(t));
 }
 
+// Children still running, so a runner that is stopped by a signal can end them (killChildren).
+const active = new Set();
+
+// The child and everything it started: the child leads its own process group (spawned detached).
+function killGroup(child, signal) {
+  try {
+    if (process.platform === 'win32') child.kill(signal);
+    else process.kill(-child.pid, signal);
+  } catch {
+    // already gone
+  }
+}
+
+export function killChildren(signal = 'SIGTERM') {
+  for (const child of active) killGroup(child, signal);
+}
+
+// After the child exits, how long its stdout may stay open (a grandchild can hold it) before the
+// runner stops reading it.
+const DRAIN_MS = 1000;
+// After an idle kill with SIGTERM, how long before SIGKILL.
+const KILL_GRACE_MS = 5000;
+
 // One child run. Returns the ChildResult plus whether it failed the way a dead resume fails.
-function runOnce({ dir, cwd, key, phase, prompt, model, effort, mode, resume, env }) {
+// idleMs: no stdout line for that long kills the child's process group (default: never).
+function runOnce({ dir, cwd, key, phase, prompt, model, effort, mode, resume, env, idleMs }) {
   mkdirSync(dir, { recursive: true });
   const file = logFile(dir, key, phase);
   appendFileSync(file, ''); // claim the number before the child starts
+  // a failure to write the transcript or the lock never stops the run: said once, in an event
+  const said = new Set();
+  const soft = (what, fn) => {
+    try {
+      fn();
+    } catch (e) {
+      if (said.has(what)) return;
+      said.add(what);
+      try {
+        emit(dir, key, phase, 'progress', `${what}: ${e.code || e.message}`);
+      } catch {
+        // the event log is unwritable too: nothing more to do
+      }
+    }
+  };
   return new Promise((resolve) => {
     let sessionId = null;
     let result = null;
     let stderr = '';
     let spawnError = null;
+    let idle = null;
+    let rateLimited = false;
 
     const child = spawn(process.env.CLAUDE_BIN || 'claude', childArgs({ model, effort, mode, resume }), {
       cwd,
       env: { ...process.env, ...env, SHIP_RUNNER: dir },
       stdio: ['pipe', 'pipe', 'pipe'],
+      detached: process.platform !== 'win32', // its own process group, so an idle kill ends its children too
     });
-    if (child.pid) setChildPid(dir, child.pid);
+    active.add(child);
+    if (child.pid) soft('lock not updated', () => setChildPid(dir, child.pid));
 
-    child.on('error', (e) => { spawnError = e; });
+    let idleTimer = null;
+    let killTimer = null;
+    const touch = () => {
+      if (!idleMs) return;
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        idle = `child idle ${Number((idleMs / 60000).toFixed(3))} min`;
+        killGroup(child, 'SIGTERM');
+        killTimer = setTimeout(() => killGroup(child, 'SIGKILL'), KILL_GRACE_MS);
+        killTimer.unref?.();
+      }, idleMs);
+    };
+    touch();
+
     child.stdin.on('error', () => {}); // child exited before reading the prompt; the exit code tells the story
     child.stdin.end(prompt);
     child.stderr.on('data', (d) => { stderr = (stderr + d).slice(-2000); });
 
     const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
     lines.on('line', (line) => {
-      appendFileSync(file, line + '\n');
+      touch();
+      soft('child transcript not written', () => appendFileSync(file, line + '\n'));
       let msg;
       try { msg = JSON.parse(line); } catch { return; } // not JSON: logged, otherwise ignored
       if (msg && typeof msg.session_id === 'string') sessionId = msg.session_id;
       if (msg && msg.type === 'result') result = msg;
+      if (msg && msg.type === 'rate_limit_event' && msg.rate_limit_info?.status === 'rejected') rateLimited = true;
     });
     const linesDone = new Promise((r) => lines.on('close', r));
-    const exited = new Promise((r) => child.on('close', (code, signal) => r({ code, signal })));
 
-    Promise.all([exited, linesDone]).then(([{ code, signal }]) => {
-      setChildPid(dir, null);
+    let finished = false;
+    const finish = async (code, signal) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(idleTimer);
+      clearTimeout(killTimer);
+      active.delete(child);
+      if (!spawnError) {
+        // a grandchild may hold stdout open after the child is gone: read what is there, then stop
+        let drained;
+        await Promise.race([linesDone, new Promise((r) => { drained = setTimeout(r, DRAIN_MS); })]);
+        clearTimeout(drained);
+        child.stdout.destroy();
+        child.stderr.destroy();
+        lines.close();
+      }
+      soft('lock not updated', () => setChildPid(dir, null));
       const errors = [];
-      if (spawnError) errors.push(`spawn failed: ${spawnError.code || spawnError.message}`);
+      if (idle) errors.push(idle); // the kill explains the missing result line and the exit code
+      else if (spawnError) errors.push(`spawn failed: ${spawnError.code || spawnError.message}`);
       else if (code !== 0) errors.push(signal ? `killed by ${signal}` : `exit ${code}`);
-      if (!result) errors.push('no result line');
-      else if (result.is_error) {
+      if (!result) {
+        if (!idle) errors.push('no result line');
+      } else if (result.is_error) {
         const listed = Array.isArray(result.errors) ? result.errors.join('; ') : '';
         errors.push(`is_error: ${[String(result.result ?? '').trim(), listed].filter(Boolean).join('; ') || result.subtype || 'unknown'}`);
       }
+      if (errors.length && rateLimited) errors.push('rate limit rejected');
       if (errors.length && stderr.trim()) errors.push(`stderr: ${stderr.trim()}`);
       resolve({
-        resumeFailed: !result || isResumeFailure(result),
+        // dead: the CLI said so, or the child never started a session (no session id, no result)
+        resumeFailed: isResumeFailure(result) || (!result && !sessionId && !idle),
         child: {
           ok: errors.length === 0,
           sessionId,
@@ -93,7 +176,12 @@ function runOnce({ dir, cwd, key, phase, prompt, model, effort, mode, resume, en
           error: errors.length ? errors.join('; ') : null,
         },
       });
+    };
+    child.on('error', (e) => {
+      spawnError = e;
+      if (!child.pid) finish(null, null); // never started: no 'exit' follows
     });
+    child.on('exit', (code, signal) => finish(code, signal));
   });
 }
 
@@ -101,13 +189,15 @@ export async function runChild(opts) {
   return (await runOnce(opts)).child;
 }
 
-// Try the resume; when the session cannot be resumed (no result line, or the CLI's
-// "No conversation found" result), start a fresh child with opts.freshPrompt.
+// Try the resume; when the session cannot be resumed (the CLI's "No conversation found" result, or
+// a child that never started a session), start a fresh child with opts.freshPrompt. A resume that
+// started and then failed is returned as it is: its session is not dead. The fresh child's result
+// carries the dead resume as `failedResume`, so its cost is recorded too.
 export async function resumeOrFresh(opts) {
   if (!opts.resume) return runChild(opts);
   const first = await runOnce(opts);
   if (first.child.ok || !first.resumeFailed) return first.child;
   if (!opts.freshPrompt) throw new Error('resumeOrFresh: resume failed and opts.freshPrompt is missing');
   emit(opts.dir, opts.key, opts.phase, 'progress', 'resume failed, fresh child');
-  return runChild({ ...opts, resume: null, prompt: opts.freshPrompt });
+  return { ...(await runChild({ ...opts, resume: null, prompt: opts.freshPrompt })), failedResume: first.child };
 }

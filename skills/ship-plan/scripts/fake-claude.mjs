@@ -4,6 +4,11 @@
 //   ok:<marker line>  init, hook, assistant, rate_limit_event and result lines; result ends with the marker
 //   error             a result line with is_error: true
 //   crash             exit 1, no output
+//   crashafter        init and assistant lines (a session id), then exit 1 with no result line
+//   apierror          a result line with is_error: true and an API authentication error
+//   hang              an init line, then nothing, never exits by itself
+//   grandchild        starts a grandchild that holds stdout open for FAKE_CLAUDE_HOLD_MS (default 3000),
+//                     then ok output (marker from FAKE_CLAUDE_MARKER) and exit
 //   noresume          with --resume: the CLI's "No conversation found" result line, exit 1;
 //                     otherwise like ok (marker from FAKE_CLAUDE_MARKER)
 // FAKE_CLAUDE_LOG: when set, argv, stdin, SHIP_RUNNER and SHIP_RUNNER_ALLOW_BYPASS are written there as JSON.
@@ -11,12 +16,14 @@
 //   the output: file is relative to cwd; an op runs only when the prompt contains `when` (if set);
 //   firstLine replaces line 1, replace [[old, new], …] swaps every line equal to old, append adds
 //   lines at the end.
+// FAKE_CLAUDE_RM: a path removed (recursively) after the ledger ops.
+// FAKE_CLAUDE_STDERR: text written to stderr before the output.
 // FAKE_CLAUDE_GIT: JSON [[<git arg>, …], …], each run as `git <args>` in cwd after the ledger ops.
 // FAKE_CLAUDE_BY_KEY: JSON {<key>: {<env var>: <value>}}; the key is the prompt's
 //   `with the arguments "<key>"`; its values override the env vars above for that child.
 // The log's `head` is cwd's .git/HEAD (the branch the child started on), or null.
-import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawn } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 const chunks = [];
@@ -37,6 +44,8 @@ for (const op of JSON.parse(process.env.FAKE_CLAUDE_LEDGER_APPEND || '[]')) {
   mkdirSync(dirname(op.file), { recursive: true });
   writeFileSync(op.file, lines.join('\n') + '\n');
 }
+if (process.env.FAKE_CLAUDE_STDERR) process.stderr.write(process.env.FAKE_CLAUDE_STDERR);
+if (process.env.FAKE_CLAUDE_RM) rmSync(process.env.FAKE_CLAUDE_RM, { recursive: true, force: true });
 for (const args of JSON.parse(process.env.FAKE_CLAUDE_GIT || '[]')) execFileSync('git', args, { stdio: 'ignore' });
 
 const mode = process.env.FAKE_CLAUDE || 'ok:RUNNER: done';
@@ -58,7 +67,22 @@ if (mode.startsWith('ok:')) ok(mode.slice(3));
 else if (mode === 'error') {
   out({ type: 'system', subtype: 'init', cwd: process.cwd(), tools: [] });
   out({ type: 'result', subtype: 'success', is_error: true, num_turns: 1, total_cost_usd: 0.01, duration_ms: 1000, result: 'usage limit reached' });
+} else if (mode === 'apierror') {
+  out({ type: 'system', subtype: 'init', cwd: process.cwd(), tools: [] });
+  out({ type: 'result', subtype: 'success', is_error: true, num_turns: 0, total_cost_usd: 0, duration_ms: 500, result: 'API Error: 401 {"type":"authentication_error","message":"invalid x-api-key"}' });
 } else if (mode === 'crash') process.exit(1);
+else if (mode === 'crashafter') {
+  out({ type: 'system', subtype: 'init', cwd: process.cwd(), tools: ['Skill'] });
+  out({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'working' }] } });
+  process.exitCode = 1;
+} else if (mode === 'hang') {
+  out({ type: 'system', subtype: 'init', cwd: process.cwd(), tools: ['Skill'] });
+  setInterval(() => {}, 1 << 30);
+} else if (mode === 'grandchild') {
+  const ms = Number(process.env.FAKE_CLAUDE_HOLD_MS) || 3000;
+  spawn(process.execPath, ['-e', `setTimeout(() => {}, ${ms})`], { stdio: ['ignore', 'inherit', 'ignore'] }).unref();
+  ok(process.env.FAKE_CLAUDE_MARKER || 'RUNNER: done');
+}
 else if (mode === 'noresume') {
   const i = argv.indexOf('--resume');
   if (i !== -1) {
