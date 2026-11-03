@@ -1,7 +1,7 @@
 ---
 name: ship-queue
 description: Use when the user wants every sub-issue of a parent issue shipped with ship-issue, one after another, unsupervised — "ship all sub-issues of PROJ-123", "queue these issues", "run ship-issue for each sub-issue", "ship the whole epic in order". Logs what could not finish, moves on, and ends with a summary of what the user must do next. Also use to resume such a queue after a context compaction.
-argument-hint: '<parent key> [show order] [keys…] [KEY: answers…]'
+argument-hint: '<parent key> [show order] [keys…] [KEY: answers…] [--runner]'
 allowed-tools:
   - Bash(git status)
   - Bash(git status --porcelain)
@@ -276,9 +276,9 @@ handoff of its own; the queue writes one for the whole queue.
 
 ## Runner or session
 
-With `## Runner` `Mode: runner`, or the argument `--runner`, the ship runner runs the phases and this session only watches and relays: read [../ship-plan/runner-session.md](../ship-plan/runner-session.md) and follow it with `start queue …`, after Q0 and Q1 have computed the order and dependencies. Otherwise ignore this section; the skill runs as above.
+With `## Runner` `Mode: runner`, or a `--runner` flag (below), the ship runner runs the phases and this session only watches and relays: read [../ship-plan/runner-session.md](../ship-plan/runner-session.md) and follow it with `start queue …`, after Q0 and Q1 have computed the order and dependencies. Otherwise ignore this section; the skill runs as above.
 
-- **`--runner` is a flag:** read the argument without it. It is never the parent key, a sub-issue key, `show order` or answers.
+- **`--runner` is a flag only as a whole word at the start or the end of the argument** (`BILL-800 --runner`): read the argument without it. Anywhere else, or inside a word (in a `<KEY>: <answers>` part), it is part of the text and selects nothing. With no flag the argument is read exactly as if this section did not exist. It is never the parent key, a sub-issue key, `show order` or answers.
 
 ## Red flags
 

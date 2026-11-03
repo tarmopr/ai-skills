@@ -1,7 +1,7 @@
 ---
 name: ship-issue
 description: Use when the user wants an issue, or a problem described in words, taken all the way from idea to a merged PR on a green base branch without supervision, including the design, spec and plan — "ship PROJ-123 end to end", "from issue to merge", "brainstorm, plan and ship this". Also use to resume such a run after a context compaction.
-argument-hint: '[issue key | a description of the problem] [answers to a parked batch]'
+argument-hint: '[issue key | a description of the problem] [answers to a parked batch] [--runner | --session]'
 allowed-tools:
   - Bash(printenv SHIP_QUEUE_PARENT)
   - Bash(printenv SHIP_RUNNER)
@@ -264,10 +264,10 @@ Queued mode above applies, with these changes:
 
 ## Runner or session
 
-With `## Runner` `Mode: runner`, or the argument `--runner`, unless `printenv SHIP_RUNNER` prints a folder (a runner child) or the argument `--session` was given, the ship runner runs the phases and this session only watches and relays: read [../ship-plan/runner-session.md](../ship-plan/runner-session.md) and follow it with `start issue <KEY>`. The runner needs that key: an issue key, or the slug of an existing no-issue ledger. A run from a description alone (no key yet, or `Tracker: none` with no ledger yet) runs in session mode, all the way: I6 (and I0's resume row) pass `--session` to ship-plan, so it does not switch to the runner later, and I3's answer line carries `--session`. Otherwise ignore this section; the skill runs as above.
+With `## Runner` `Mode: runner`, or a `--runner` flag (below), unless `printenv SHIP_RUNNER` prints a folder (a runner child) or a `--session` flag was given, the ship runner runs the phases and this session only watches and relays: read [../ship-plan/runner-session.md](../ship-plan/runner-session.md) and follow it with `start issue <KEY>`. The runner needs that key: an issue key, or the slug of an existing no-issue ledger. A run from a description alone (no key yet, or `Tracker: none` with no ledger yet) runs in session mode, all the way: I6 (and I0's resume row) pass `--session` to ship-plan, so it does not switch to the runner later, and I3's answer line carries `--session`. Otherwise ignore this section; the skill runs as above.
 
 - **`--session`:** the user answered with a session-mode run's answer line (I3): run in session mode, as above, whatever `Mode:` says.
-- **`--runner` and `--session` are flags:** read the argument without them (I0). Neither is ever the issue key, the slug, the description or answers.
+- **`--runner` and `--session` are flags only as whole words at the start or the end of the argument** (`BILL-7 --runner`, `--session BILL-7 1A, 2B`, `BILL-7 1A, 2B --session`): read the argument without them (I0). Anywhere else, or inside a word, they are part of the text (a description, answers): they stay in it and select nothing. With neither flag the argument is read exactly as if this section did not exist. Neither is ever the issue key, the slug, the description or answers.
 
 ## Red flags
 

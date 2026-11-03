@@ -257,10 +257,14 @@ and by every session that watches a runner run (`## Runner`), which passes
 | `Child permission mode:` | The `--permission-mode` of each child session: `auto`, `acceptEdits`, `dontAsk` or `bypassPermissions` | `auto` |
 
 For runner runs (`## Runner`), the runner never reads this field. The watching
-session passes its value to `runner.mjs start --permission-mode <m>`.
-`bypassPermissions` is used by the runner only when the user started the
-session with `SHIP_RUNNER_ALLOW_BYPASS=1` in its environment (children never
-inherit it); otherwise it falls back to `auto`.
+session passes its value to `runner.mjs start --permission-mode <m>` on a
+run's first start only: a rerun passes none and keeps the first start's mode,
+which the runner records in the git dir; a wider one is refused
+([runner-session.md](runner-session.md), Start). A change to this field
+therefore reaches only new runs. `bypassPermissions` is used by the runner
+only when the user started the session with `SHIP_RUNNER_ALLOW_BYPASS=1` in
+its environment (children never inherit it); otherwise it falls back to
+`auto`, which the run then keeps.
 
 ### `## Runner`
 

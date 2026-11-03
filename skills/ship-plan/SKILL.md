@@ -1,7 +1,7 @@
 ---
 name: ship-plan
 description: Use when a written implementation plan exists and the user wants it carried, unsupervised, all the way to a merged PR on a green base branch in a GitHub, GitHub Enterprise or Azure DevOps repo that tracks work in Jira, in Linear, in GitHub Issues or in no tracker (config .claude/ship-plan.md) — "ship the plan", "ship this", "implement and merge", "take this plan to the base branch". Also use to resume such a run after a context compaction.
-argument-hint: '[plan file path, or issue key]'
+argument-hint: '[plan file path, or issue key] [--runner | --session]'
 allowed-tools:
   - Bash(printenv SHIP_QUEUE_PARENT)
   - Bash(printenv SHIP_RUNNER)
@@ -375,10 +375,10 @@ applies, with these changes:
 
 ## Runner or session
 
-With `## Runner` `Mode: runner`, or the argument `--runner`, unless `printenv SHIP_RUNNER` prints a folder (a runner child) or the argument `--session` was given, the ship runner runs the phases and this session only watches and relays: read [runner-session.md](runner-session.md) and follow it with `start plan <path>`. Otherwise ignore this section; the skill runs as above.
+With `## Runner` `Mode: runner`, or a `--runner` flag (below), unless `printenv SHIP_RUNNER` prints a folder (a runner child) or a `--session` flag was given, the ship runner runs the phases and this session only watches and relays: read [runner-session.md](runner-session.md) and follow it with `start plan <path>`. `<path>` is the plan file: the argument when it is a path; with an issue key or no argument, the `Plan:` of the open ledger the run resumes (section 0, step 2). An issue key with no open ledger names no plan file (its description is the plan, section 0, step 3), and `start plan` needs one: that run stays in session mode, as above, and says so in one line. Otherwise ignore this section; the skill runs as above.
 
 - **`--session`:** another ship skill invoked this one from its own run (ship-issue's I6 and its I0 resume row pass it), or the user answered with a session-mode run's answer line: run in session mode, as above, whatever `Mode:` says. It changes nothing else, and a runner child's Runner mode is still decided by `SHIP_RUNNER`.
-- **`--runner` and `--session` are flags:** read the argument without them. Neither is ever the plan path, the issue key or answers.
+- **`--runner` and `--session` are flags only as whole words at the start or the end of the argument** (`docs/plan.md --runner`, `--session 1A, 2B`, `1A, 2B --session`): read the argument without them. Anywhere else, or inside a word, they are part of the text (answers): they stay in it and select nothing. With neither flag the argument is read exactly as if this section did not exist. Neither is ever the plan path, the issue key or answers.
 - **Every nested ship skill from here** always gets `--session` among its arguments: verify-and-fix in sections 4 and 4R and in [red-base.md](red-base.md)'s fix-forward, and any other ship skill this run invokes. It runs inside this run, never as a runner of its own.
 
 ## Red flags

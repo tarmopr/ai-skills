@@ -1,7 +1,7 @@
 ---
 name: verify-and-fix
 description: Use when a branch or PR on GitHub, GitHub Enterprise or Azure DevOps must be brought to merge-ready without supervision, or when asked to "verify", "review and fix", "get CI green", "triage the PR comments" or "address the reviewer comments", in a repo configured for ship-plan (.claude/ship-plan.md). Also use to resume such a loop after a context compaction.
-argument-hint: '[base branch name, default the config''s Base branch] [--comments]'
+argument-hint: '[base branch name, default the config''s Base branch] [--comments] [--runner | --session]'
 allowed-tools:
   - Bash(printenv SHIP_RUNNER)
   - Bash(printenv SHIP_RUNNER_KEY)
