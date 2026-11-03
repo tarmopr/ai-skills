@@ -35,7 +35,7 @@ Rules:
   - make a rule stricter;
   - name `blockers.md` entries to read.
 - An override file may not widen what a run is authorized to do, or remove a step of the shared file. Such a line is not applied and is named in the report as "override line not applied: `<file>`: `<line>`". Permissions live only in `## Allowed`.
-- Logs stay where they are: `.claude/ship-plan/interruptions.md`, `.claude/ship-plan/blockers.md` and `.claude/ship-issue/interruptions.md`. Override files sit in the `<skill>` subfolders, and an override never replaces a log. A repo whose research techniques are still in `.claude/ship-issue/evidence.md` moves them, with `git mv`, to `.claude/ship-plan/ship-issue/evidence.md`: no skill reads the old path.
+- Logs stay where they are: `.claude/ship-plan/interruptions.md`, `.claude/ship-plan/blockers.md` and `.claude/ship-issue/interruptions.md`, or the local store under [`## Logs`](#-logs) `Location: local`. Override files sit in the `<skill>` subfolders, and an override never replaces a log. A repo whose research techniques are still in `.claude/ship-issue/evidence.md` moves them, with `git mv`, to `.claude/ship-plan/ship-issue/evidence.md`: no skill reads the old path.
 
 ## Sections
 
@@ -354,6 +354,21 @@ review. If they need fix rounds, set `Implementer (mechanical)` to `sonnet`.
 | Final review | opus | max |
 ```
 
+### `## Logs`
+
+Where the run logs live: `ship-plan/blockers.md`, `ship-plan/interruptions.md`
+and `ship-issue/interruptions.md`. Only a person sets it; a run never writes or
+changes it, not when drafting a config either.
+
+| Field | Meaning | Default |
+|---|---|---|
+| `Location:` | `repo`: under `.claude/`, committed through the lessons PR. `local`: in the local store, edited in place and never committed, so a run opens no lessons PR (for a repo where every PR needs a person's approval) | `repo` |
+
+- **The local store** is `<main checkout>/.superpowers/ship-logs/`, where `<main checkout>` is the parent of `git rev-parse --path-format=absolute --git-common-dir`, so every worktree of the clone shares it. Inside it, the same names: `ship-plan/blockers.md` and so on, and `Used:` and `Removed:` lines name them that way. Not in `.git/`: Claude Code treats it as a protected path, and edits there prompt, or are denied under `dontAsk`.
+- **Git does not keep it:** `git clean -fdx` deletes it, a new clone or machine starts empty, and a deleted entry cannot be restored from git history.
+- **Switching from `repo`:** the first run under `local` whose store holds no log copies the tracked logs that exist (`.claude/ship-plan/*.md`, `.claude/ship-issue/interruptions.md`) into it, adds `.superpowers/` to `<git-common-dir>/info/exclude` if missing, then works there. It never deletes the tracked copies; the report says they can be removed in a normal PR.
+- **Tracked lessons are proposed, not written,** under `local`: an override file (ship-issue's `evidence.md` included) or a config line goes in the report with its exact text and target file, for the user to add in a normal PR ([phase-close.md](phase-close.md), section 8).
+
 ### `## Never do`
 
 Bullets. Each is added to the "never on its own" list of both skills for this
@@ -401,7 +416,7 @@ A run proposes each one in the report with its exact line, and never writes it,
 unless the user approved that change in this run's batch: an answer there is
 approval for that one change. A lessons PR whose config diff holds a change not
 on the "may be written" list below, without that approval, is never merged by
-the run. A `## Allowed` line is never written, approved or not.
+the run. A `## Allowed` or `## Logs` line is never written, approved or not.
 
 A config lesson that adds a fact or makes a check stricter may be written: a new
 gate, a `## Never do` or `## Fix rules` line, a `## UI testing` `Notes:`, a

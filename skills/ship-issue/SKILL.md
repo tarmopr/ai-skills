@@ -74,9 +74,9 @@ ship-plan's close-out.
 
 **Before anything else, read in full** the repo's `.claude/ship-plan.md`
 (ship-plan's [config-format.md](../ship-plan/config-format.md)), and **by index**
-(ship-plan's [Reading the logs](../ship-plan/SKILL.md#reading-the-logs)) the logs
-`.claude/ship-issue/interruptions.md`, `.claude/ship-plan/interruptions.md`
-and `.claude/ship-plan/blockers.md`. A missing file is not an error; a missing
+(ship-plan's [Reading the logs](../ship-plan/SKILL.md#reading-the-logs), which defines `<logs>`) the logs
+`<logs>/ship-issue/interruptions.md`, `<logs>/ship-plan/interruptions.md`
+and `<logs>/ship-plan/blockers.md`. A missing file is not an error; a missing
 log is created from [log-formats.md](log-formats.md) at close-out. A question
 with a standing answer in any of them is not asked again.
 
@@ -151,8 +151,8 @@ Below it, one line per event, in ship-plan's formats (its section 3):
 `Ruling: <decision> — <evidence quoted> — <cost if wrong>`, `Parked: <question>
 — <options, recommendation> — <what it blocks>`, `Asked: <question> — <answer, or
 "pending">` for every question put to the user, and `Lesson: <what> — <the
-step that would have caught it>`, and `Used: <log path under .claude/> <heading>`
-(e.g. `Used: ship-issue/interruptions.md <heading>`) for each log entry applied.
+step that would have caught it>`, and `Used: <log path> <heading>`
+(the path under `<logs>`, e.g. `Used: ship-issue/interruptions.md <heading>`) for each log entry applied.
 When the batch is sent, the last line is
 `Waiting: batch of <n>, sent <date>; heads: #<pr> <sha>, …`, with the head of every open PR the issue depends on, so a resumed run can see whether one moved while the batch waited. I1 writes `Size: <small|standard> — <reason>`, and a raised size a second one. Each stage writes
 `Stage: <spec|plan> <new|revise> dispatched <date>` before its dispatch and
@@ -219,8 +219,8 @@ write a `Lesson:`.
 
 From here ship-plan runs to close-out. It copies the `From ship-issue` block
 into its ledger at pre-flight, so the rulings reach the PR body, and its
-section 8 writes this run's recurring questions to `.claude/ship-issue/interruptions.md`
-on the same lessons branch, under its rules.
+section 8 writes this run's recurring questions to `<logs>/ship-issue/interruptions.md`
+on the same lessons branch (under `## Logs` `Location: local`, in the store), under its rules.
 
 ## W. Which checkout
 
