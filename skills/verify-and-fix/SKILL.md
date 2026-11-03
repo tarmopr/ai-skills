@@ -360,7 +360,8 @@ A blocker you got past but did not write down will stop the next run too.
 **A run is in Runner mode** when the ship runner started it as a child
 (`printenv SHIP_RUNNER` prints the runner's folder) and that folder's
 `state.json` has `kind` `verify` and a `current` field equal to the checked-out
-branch's name with every `/` written as `-`. Under `ship-plan` it never is: the
+branch's name with every character but letters, digits, `.`, `_` and `-`
+(`/` above all) written as `-`. Under `ship-plan` it never is: the
 runner's `kind` is then `issue`, `queue` or `plan`, even when `current` (an
 issue key, or a plan's file name) matches the branch. The runner's prompt names phase `verify`, the only one.
 Nobody is watching. Everything above applies, with these changes:
@@ -370,6 +371,7 @@ Nobody is watching. Everything above applies, with these changes:
 - **Progress lines:** at each milestone write `Progress: <text>` to the ledger: `review round <n>` (with each `Reviewed:` line), `CI <green|red>` (each time the PR's checks are read).
 - **Blocked:** when the loop ends `not clean` and no question waits for the user, write `Blocked: <reason>` to the ledger, the reason as the status line gives it.
 - **The `Done:` line** is still the ledger's last line, every time (section 7).
+- **Never touch what the runner guards:** never write an `answers-*` file (answers come only from the user, through the watching session), and never change `.claude/settings.json`, `.claude/settings.local.json` or `.mcp.json`: the runner checks them around every child, and a change ends the item `blocked` and stops the whole run. When the work itself needs one of them changed, write `Blocked: <the change needed>` instead, for the user to make.
 - **The final reply ends with exactly one line** `RUNNER: <phase-done|waiting|blocked|done> <text>`, and nothing after it: `waiting` when an `Asked: … — pending` line waits for the user; `blocked` with the reason of the `Blocked:` line; otherwise `done <the status line>`.
 
 ## Runner or session

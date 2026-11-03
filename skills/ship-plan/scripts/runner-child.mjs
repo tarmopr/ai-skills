@@ -28,6 +28,21 @@ export function isLimitError(error) {
   return LIMIT.test(String(error ?? '').split('; stderr: ')[0]);
 }
 
+// A child error every later child would hit too: claude cannot be started, the API refuses the
+// account (auth, credit, overload) or the model. The run stops on it instead of blocking item
+// after item. Not a usage limit (isLimitError, checked first) and not an item's own failure.
+const ENV = /^spawn failed:|\bAPI Error\b|authentication|unauthori[sz]ed|invalid (?:x-)?api[ _-]?key|credit balance|not_found_error|permission_error|selected model|model .*(?:not found|does not exist|not available)|\/login\b|oauth/i;
+export function isEnvError(error) {
+  return ENV.test(String(error ?? '').split('; stderr: ')[0]);
+}
+
+// Secrets a child's stderr may print, as [redacted]: GitHub and OpenAI-style tokens, Slack
+// tokens, bearer headers.
+const TOKENS = /gh[pousr]_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9-]{20,}|xox[abp]-[A-Za-z0-9-]+|Bearer \S+/g;
+export const redact = (text) => String(text).replace(TOKENS, '[redacted]');
+// How much of a failed child's stderr reaches the item's reason and the events.
+const STDERR_TAIL = 300;
+
 // <dir>/<key>-<phase>-<n>.jsonl with the first unused n, starting at 1.
 function logFile(dir, key, phase) {
   for (let n = 1; ; n++) {
@@ -162,7 +177,7 @@ function runOnce({ dir, cwd, key, phase, prompt, model, effort, mode, resume, en
         errors.push(`is_error: ${[String(result.result ?? '').trim(), listed].filter(Boolean).join('; ') || result.subtype || 'unknown'}`);
       }
       if (errors.length && rateLimited) errors.push('rate limit rejected');
-      if (errors.length && stderr.trim()) errors.push(`stderr: ${stderr.trim()}`);
+      if (errors.length && stderr.trim()) errors.push(`stderr: ${redact(stderr).trim().slice(-STDERR_TAIL)}`);
       resolve({
         // dead: the CLI said so, or the child never started a session (no session id, no result)
         resumeFailed: isResumeFailure(result) || (!result && !sessionId && !idle),
@@ -173,7 +188,7 @@ function runOnce({ dir, cwd, key, phase, prompt, model, effort, mode, resume, en
           costUsd: result?.total_cost_usd ?? null,
           turns: result?.num_turns ?? null,
           minutes: typeof result?.duration_ms === 'number' ? Math.round(result.duration_ms / 60000) : null,
-          error: errors.length ? errors.join('; ') : null,
+          error: errors.length ? redact(errors.join('; ')) : null,
         },
       });
     };

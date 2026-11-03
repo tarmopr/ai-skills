@@ -6,7 +6,7 @@ import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { alive } from './runner-lib.mjs';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readState, runDir, writeState } from './runner-lib.mjs';
 import { MODEL_DEFAULTS, parseConfig } from './runner.mjs';
@@ -57,7 +57,11 @@ const waitsThenShips = (k, extra = {}) => ({
   ...extra,
 });
 
-const cli = (root, args, env = {}) => spawnSync(process.execPath, [RUNNER, ...args], { cwd: root, env: { ...ENV, ...env }, encoding: 'utf8' });
+// a runner that hangs fails its test (SIGTERM: it ends its children) instead of the whole suite
+const cli = (root, args, env = {}) => spawnSync(process.execPath, [RUNNER, ...args], { cwd: root, env: { ...ENV, ...env }, encoding: 'utf8', timeout: 60000 });
+// C1 (review round 1): `answer` stores answers in the checkout's git dir, never in the run dir a
+// child is told about (SHIP_RUNNER); the runner reads them only there
+const answersAt = (root, dir) => join(root, '.git', 'ship-runner', basename(dir));
 const events = (dir) => (existsSync(join(dir, 'events.log')) ? readFileSync(join(dir, 'events.log'), 'utf8') : '');
 const byKey = (state, k) => state.items.find((i) => i.key === k);
 const children = (dir) => readdirSync(dir).filter((f) => f.endsWith('.jsonl')).sort();
@@ -144,7 +148,7 @@ test('answer while running: stored, no second child started', () => {
   const before = readFileSync(join(dir, 'state.json'), 'utf8');
   const r = cli(root, ['answer', dir, 'A-2', file]);
   assert.equal(r.status, 0, r.stderr);
-  assert.equal(readFileSync(join(dir, 'answers-A-2.md'), 'utf8'), '1. postgres `$(whoami)`\n');
+  assert.equal(readFileSync(join(answersAt(root, dir), 'answers-A-2.md'), 'utf8'), '1. postgres `$(whoami)`\n');
   // the file is the record: state.json is the runner's alone, so no runner write can be lost
   assert.equal(readFileSync(join(dir, 'state.json'), 'utf8'), before);
   assert.match(events(dir), / A-2 verify progress answers received$/m);
@@ -164,7 +168,7 @@ test('answered mid-run: goes before untouched items, resumes its own session (Re
   const root = repo();
   atVerify(root, 'B-1', 'B-2', 'B-3');
   const dir = runDir(root, 'queue', 'P-1');
-  const answersRel = join(dir.slice(root.length + 1), 'answers-B-1.md');
+  const answersRel = join('.git', 'ship-runner', basename(dir), 'answers-B-1.md');
   const log = join(root, 'b1.json');
   const env = {
     'B-1': waitsThenShips('B-1', { FAKE_CLAUDE_LOG: log }),
@@ -181,8 +185,8 @@ test('answered mid-run: goes before untouched items, resumes its own session (Re
   const s = readState(dir);
   assert.deepEqual(s.items.map((i) => i.status), ['done', 'done', 'done']);
   assert.equal(byKey(s, 'B-1').answersFile, null);
-  assert.equal(existsSync(join(dir, 'answers-B-1.md')), false); // consumed, kept as answers-B-1-1.md
-  assert.equal(readFileSync(join(dir, 'answers-B-1-1.md'), 'utf8'), 'postgres\n');
+  assert.equal(existsSync(join(answersAt(root, dir), 'answers-B-1.md')), false); // consumed, kept as answers-B-1@1.md (C7)
+  assert.equal(readFileSync(join(answersAt(root, dir), 'answers-B-1@1.md'), 'utf8'), 'postgres\n');
 });
 
 test('rerun after kill with dead child pid: resumes the same item and phase, no duplicate (Review Focus 1)', () => {
@@ -342,7 +346,8 @@ test('killed during an answered child: the rerun resumes with the consumed answe
     items: [{ key: 'R-1', phase: 'verify', status: 'running', reason: '', deps: [], answersFile: 'answers-R-1-1.md',
       sessions: [{ phase: 'verify', sessionId: 's-3', costUsd: 0.1, turns: 1, minutes: 0 }] }],
   });
-  writeFileSync(join(dir, 'answers-R-1-1.md'), 'postgres\n'); // consumed; answers-R-1.md is gone
+  mkdirSync(answersAt(root, dir), { recursive: true });
+  writeFileSync(join(answersAt(root, dir), 'answers-R-1-1.md'), 'postgres\n'); // consumed; answers-R-1.md is gone
   writeFileSync(join(dir, 'lock'), JSON.stringify({ runner: deadPid(), child: deadPid() }));
   const log = join(root, 'r.json');
   const r = cli(root, ['start', 'issue', 'R-1'], waitsThenShips('R-1', { FAKE_CLAUDE_LOG: log }));
@@ -357,7 +362,8 @@ test('killed during an answered child: the rerun resumes with the consumed answe
   atVerify(root2, 'R-1');
   const dir2 = runDir(root2, 'issue', 'R-1');
   writeState(dir2, { ...readState(dir), root: root2, stopped: null, items: [{ ...readState(dir).items[0], status: 'running', answersFile: 'answers-R-1-1.md' }] });
-  writeFileSync(join(dir2, 'answers-R-1-1.md'), 'postgres\n');
+  mkdirSync(answersAt(root2, dir2), { recursive: true });
+  writeFileSync(join(answersAt(root2, dir2), 'answers-R-1-1.md'), 'postgres\n');
   const log2 = join(root2, 'r.json');
   assert.equal(cli(root2, ['start', 'issue', 'R-1'], { ...ships('R-1'), FAKE_CLAUDE_LOG: log2 }).status, 0);
   const seen2 = JSON.parse(readFileSync(log2, 'utf8'));
@@ -514,7 +520,7 @@ test('start queue: answers for the running item arrive during its child, which i
   const root = repo();
   atVerify(root, 'A-1', 'A-2');
   const dir = runDir(root, 'queue', 'P-1');
-  const answersRel = join(dir.slice(root.length + 1), 'answers-A-1.md');
+  const answersRel = join('.git', 'ship-runner', basename(dir), 'answers-A-1.md');
   const env = { 'A-1': { FAKE_CLAUDE: 'error', FAKE_CLAUDE_LEDGER_APPEND: ops([{ file: answersRel, append: ['postgres'] }]) }, 'A-2': ships('A-2') };
   const r = cli(root, ['start', 'queue', 'P-1', 'A-1,A-2'], { FAKE_CLAUDE_BY_KEY: JSON.stringify(env) });
   assert.equal(r.status, 0, r.stderr);
@@ -714,4 +720,158 @@ test('start verify: a verify ledger that cannot be read is an error, not "no led
   assert.notEqual(r.status, 0);
   assert.match(r.stderr, /EISDIR/);
   assert.equal(existsSync(runDir(root, 'verify', 'feat/z')), false); // refused before the run starts
+});
+
+// review round 1, batch C (runner security)
+
+test('answer: stored in the checkout\'s git dir, not the run dir; the child is never told where; consumed as answers-<KEY>@<n>.md', () => {
+  const root = repo();
+  atVerify(root, 'W-1');
+  const dir = runDir(root, 'queue', 'P-1');
+  const log = join(root, 'w.json');
+  const env = { 'W-1': waitsThenShips('W-1', { FAKE_CLAUDE_LOG: log }) };
+  assert.equal(cli(root, ['start', 'queue', 'P-1', 'W-1'], { FAKE_CLAUDE_BY_KEY: JSON.stringify(env) }).status, 0);
+  assert.equal(readState(dir).items[0].status, 'waiting');
+  const seen = readFileSync(log, 'utf8');
+  assert.equal(JSON.parse(seen).shipRunner, dir);
+  assert.doesNotMatch(seen, /\.git[/\\]ship-runner/);
+  writeFileSync(join(root, 'a.txt'), 'postgres\n');
+  const r = cli(root, ['answer', dir, 'W-1', join(root, 'a.txt')]);
+  assert.equal(r.status, 0, r.stderr);
+  const stored = join(answersAt(root, dir), 'answers-W-1.md');
+  assert.equal(r.stdout.trim(), `answers stored: ${stored}`);
+  assert.equal(readFileSync(stored, 'utf8'), 'postgres\n');
+  assert.ok(!readdirSync(dir).some((f) => f.startsWith('answers-')));
+  assert.match(cli(root, ['status', dir]).stdout, /^W-1 +waiting +verify +1 question; answers received /m);
+  assert.equal(cli(root, ['start', 'queue', 'P-1', 'W-1'], { FAKE_CLAUDE_BY_KEY: JSON.stringify(env) }).status, 0);
+  assert.equal(readState(dir).items[0].status, 'done');
+  assert.match(JSON.parse(readFileSync(log, 'utf8')).stdin, /copied exactly:\npostgres\n$/);
+  assert.deepEqual(readdirSync(answersAt(root, dir)), ['answers-W-1@1.md']);
+  // a runner child cannot answer through the CLI either
+  const child = cli(root, ['answer', dir, 'W-1', join(root, 'a.txt')], { SHIP_RUNNER: dir });
+  assert.equal(child.status, 2);
+  assert.match(child.stderr, /runner child/);
+});
+
+test('answers a child wrote itself: in the run dir never read; in the store during its own child rejected, with an event', () => {
+  const root = repo();
+  atVerify(root, 'J-1');
+  const dir = runDir(root, 'queue', 'P-1');
+  const runRel = join(dir.slice(root.length + 1), 'answers-J-1.md');
+  const storeRel = join('.git', 'ship-runner', basename(dir), 'answers-J-1.md');
+  const selfAnswer = (file) => ({ 'J-1': waitsThenShips('J-1', {
+    FAKE_CLAUDE: 'ok:RUNNER: waiting 1 question',
+    FAKE_CLAUDE_LEDGER_APPEND: ops([{ when: 'for phase verify.', file: planLedger('J-1'), append: [Q] }, { file, append: ['postgres'] }]),
+  }) });
+  assert.equal(cli(root, ['start', 'queue', 'P-1', 'J-1'], { FAKE_CLAUDE_BY_KEY: JSON.stringify(selfAnswer(runRel)) }).status, 0);
+  assert.equal(readState(dir).items[0].status, 'waiting');
+  assert.doesNotMatch(cli(root, ['status', dir]).stdout, /answers received/);
+  // a rerun does not take it either: nothing runs
+  assert.equal(cli(root, ['start', 'queue', 'P-1', 'J-1']).status, 0);
+  assert.deepEqual(children(dir), ['J-1-verify-1.jsonl']);
+
+  const root2 = repo();
+  atVerify(root2, 'J-1');
+  const dir2 = runDir(root2, 'queue', 'P-1');
+  assert.equal(cli(root2, ['start', 'queue', 'P-1', 'J-1'], { FAKE_CLAUDE_BY_KEY: JSON.stringify(selfAnswer(storeRel)) }).status, 0);
+  const s = readState(dir2);
+  assert.deepEqual([s.items[0].status, s.items[0].answersFile], ['waiting', null]);
+  assert.deepEqual(children(dir2), ['J-1-verify-1.jsonl']);
+  assert.match(events(dir2), / J-1 verify progress answers rejected: answers-J-1\.md was written while a child of J-1 ran \(kept as answers-J-1@rejected-1\.md\); answer again$/m);
+  assert.equal(existsSync(join(answersAt(root2, dir2), 'answers-J-1.md')), false);
+  assert.doesNotMatch(cli(root2, ['status', dir2]).stdout, /answers received/);
+});
+
+test('start/answer: a key that is not a plain issue key, or a run id with .., is refused (exit 2)', () => {
+  const root = repo();
+  put(root, 'docs/x..y.md', ['# Plan']);
+  commit(root);
+  for (const args of [['issue', 'A 1'], ['issue', '../A-1'], ['queue', 'P-1', 'A-1,A/2'], ['queue', 'P-1', 'A-1,A-2', '--deps', 'A-1:A@2'], ['plan', 'docs/x..y.md']]) {
+    const r = cli(root, ['start', ...args]);
+    assert.equal(r.status, 2, `${args.join(' ')}: ${r.stderr}`);
+  }
+  assert.equal(existsSync(join(root, '.superpowers', 'ship-runner')), false);
+  atVerify(root, 'W-1');
+  const dir = runDir(root, 'queue', 'P-1');
+  assert.equal(cli(root, ['start', 'queue', 'P-1', 'W-1'], { FAKE_CLAUDE_BY_KEY: JSON.stringify({ 'W-1': ships('W-1') }) }).status, 0);
+  writeFileSync(join(root, 'a.txt'), 'x\n');
+  const r = cli(root, ['answer', dir, '../W-1', join(root, 'a.txt')]);
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /not an issue key/);
+});
+
+test('start: .superpowers/ is added to the git info/exclude, once', () => {
+  const root = repo();
+  atVerify(root, 'X-1');
+  const exclude = join(root, '.git', 'info', 'exclude');
+  writeFileSync(exclude, '# git ls-files --others --exclude-from=.git/info/exclude\n*.log'); // no final newline
+  assert.equal(cli(root, ['start', 'issue', 'X-1'], ships('X-1')).status, 0);
+  assert.equal(readFileSync(exclude, 'utf8'), '# git ls-files --others --exclude-from=.git/info/exclude\n*.log\n.superpowers/\n');
+  assert.equal(cli(root, ['start', 'issue', 'X-1'], ships('X-1')).status, 0);
+  assert.equal(readFileSync(exclude, 'utf8').match(/\.superpowers/g).length, 1);
+  assert.equal(git(root, 'status', '--porcelain', '--untracked-files=all'), '');
+});
+
+test('status: control characters in child-written text (ledger lines, reasons) are stripped', () => {
+  const root = repo();
+  atVerify(root, 'S-1');
+  put(root, planLedger('S-1'), [planFirst('S-1', '3'), 'Asked: \x1b]0;pwned\x07which \x1b[2Jdb? — pending']);
+  const dir = runDir(root, 'queue', 'P-1');
+  writeState(dir, {
+    kind: 'queue', id: 'P-1', current: null, stopped: 'x',
+    items: [{ key: 'S-1', phase: 'verify', status: 'blocked', reason: 'bad\x1b[31m\rthing\x9b', deps: [], sessions: [], answersFile: null }],
+  });
+  const out = cli(root, ['status', dir]).stdout;
+  assert.doesNotMatch(out, /[\x00-\x08\x0b-\x1f\x7f-\x9f]/);
+  assert.match(out, /^S-1 +blocked +verify +bad\[31m thing /m);
+  assert.match(out, /S-1: Asked: \]0;pwnedwhich \[2Jdb\? — pending/);
+});
+
+test('a child that changes .claude/settings.local.json, .claude/settings.json or .mcp.json: the item is blocked and the run stops', () => {
+  for (const file of ['.claude/settings.local.json', '.claude/settings.json', '.mcp.json']) {
+    const root = repo();
+    atVerify(root, 'A-1', 'A-2');
+    if (file === '.mcp.json') put(root, file, ['{}']); // changed, not only created
+    const env = { 'A-1': { ...ships('A-1'), FAKE_CLAUDE_LEDGER_APPEND: ops([{ file: planLedger('A-1'), firstLine: planFirst('A-1', 'done') }, { file, append: ['{"hooks":{}}'] }]) }, 'A-2': ships('A-2') };
+    const r = cli(root, ['start', 'queue', 'P-1', 'A-1,A-2'], { FAKE_CLAUDE_BY_KEY: JSON.stringify(env) });
+    assert.equal(r.status, 0, r.stderr);
+    const dir = runDir(root, 'queue', 'P-1');
+    const why = `child changed ${file}`;
+    assert.deepEqual(readState(dir).items.map((i) => [i.status, i.reason]), [['blocked', why], ['not started', `runner stopped: ${why}`]]);
+    assert.deepEqual(starts(dir), ['A-1']);
+    assert.match(events(dir), new RegExp(` A-1 verify blocked ${why.replaceAll('.', '\\.')}; run stopped$`, 'm'));
+  }
+});
+
+test('an environmental child failure (spawn error, API or auth error) stops the queue; an item\'s own failure does not', () => {
+  const root = repo();
+  atVerify(root, 'A-1', 'A-2', 'A-3');
+  let r = cli(root, ['start', 'queue', 'P-1', 'A-1,A-2,A-3'], { FAKE_CLAUDE_BY_KEY: JSON.stringify({ 'A-1': { FAKE_CLAUDE: 'apierror' }, 'A-2': ships('A-2'), 'A-3': ships('A-3') }) });
+  assert.equal(r.status, 0, r.stderr);
+  let dir = runDir(root, 'queue', 'P-1');
+  let s = readState(dir);
+  assert.equal(byKey(s, 'A-1').status, 'blocked');
+  assert.match(byKey(s, 'A-1').reason, /authentication_error/);
+  for (const k of ['A-2', 'A-3']) {
+    assert.equal(byKey(s, k).status, 'not started');
+    assert.match(byKey(s, k).reason, /^runner stopped: is_error: API Error: 401 /);
+  }
+  assert.match(events(dir), / A-1 verify blocked is_error: API Error: 401 .*; run stopped$/m);
+  assert.deepEqual(starts(dir), ['A-1']);
+
+  const root2 = repo();
+  atVerify(root2, 'B-1', 'B-2');
+  r = cli(root2, ['start', 'queue', 'P-1', 'B-1,B-2'], { CLAUDE_BIN: join(root2, 'no-such-claude') });
+  assert.equal(r.status, 0, r.stderr);
+  dir = runDir(root2, 'queue', 'P-1');
+  assert.deepEqual(readState(dir).items.map((i) => [i.status, i.reason]), [['blocked', 'spawn failed: ENOENT; no result line'], ['not started', 'runner stopped: spawn failed: ENOENT; no result line']]);
+
+  // no RUNNER: line, or the child's own Blocked:: only that item
+  const root3 = repo();
+  atVerify(root3, 'C-1', 'C-2', 'C-3');
+  const env3 = { 'C-1': { FAKE_CLAUDE: 'ok:' }, 'C-2': { FAKE_CLAUDE: 'ok:RUNNER: blocked CI secret missing' }, 'C-3': ships('C-3') };
+  r = cli(root3, ['start', 'queue', 'P-1', 'C-1,C-2,C-3'], { FAKE_CLAUDE_BY_KEY: JSON.stringify(env3) });
+  assert.equal(r.status, 0, r.stderr);
+  dir = runDir(root3, 'queue', 'P-1');
+  assert.deepEqual(readState(dir).items.map((i) => [i.status, i.reason]), [['blocked', 'no RUNNER: line'], ['blocked', 'CI secret missing'], ['done', '']]);
 });

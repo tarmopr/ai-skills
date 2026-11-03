@@ -2,10 +2,11 @@
 // and the loop that runs one child per phase (per chunk of plan tasks for implement).
 // The ledgers win over a child's RUNNER: marker.
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { emit } from './runner-lib.mjs';
-import { isLimitError, resumeOrFresh, runChild } from './runner-child.mjs';
+import { isEnvError, isLimitError, resumeOrFresh, runChild } from './runner-child.mjs';
 
 export const PHASES = ['spec', 'plan', 'implement', 'verify', 'merge', 'close'];
 
@@ -312,21 +313,39 @@ export function tailProgress(root, key, onLine, intervalMs = 5000, opts = {}, on
   };
 }
 
+// What the next child loads from the checkout (permission rules, hooks, MCP servers): a child that
+// changes one of these could widen what every later child may do.
+export const GUARDED = ['.claude/settings.json', '.claude/settings.local.json', '.mcp.json'];
+
+// { [file]: sha256 of its bytes, or 'absent' }.
+function guardedHashes(root) {
+  return Object.fromEntries(GUARDED.map((f) => {
+    try {
+      return [f, createHash('sha256').update(readFileSync(join(root, f))).digest('hex')];
+    } catch (e) {
+      if (e.code === 'ENOENT' || e.code === 'ENOTDIR') return [f, 'absent'];
+      throw e;
+    }
+  }));
+}
+
 const plural = (n) => `${n} question${n === 1 ? '' : 's'}`;
 
 // Run the issue's phases until it is done, waiting, blocked or cut off.
 // ctx: { root, dir, models: {[row]: {model, effort}}, mode, env, skill = 'ship-issue',
 //        args = item.key, chunkSize = 5, tailMs = 5000, idleMs?, ledgers?: LedgerOpts, save?(item) }.
 // A child that fails on a usage limit cuts the item off (the run stops); any other child failure
-// blocks it with the error's first 300 characters.
-// state.current is set by the caller.
+// blocks it with the error's first 300 characters. ctx.stop is set (and the event ends "; run
+// stopped") when no later child should start: a failure of the environment (no claude, an API or
+// auth error, a bad model: isEnvError), or a child that changed one of GUARDED.
+// Answers files are read from ctx.answersDir (default ctx.dir). state.current is set by the caller.
 export async function runIssue(ctx, item) {
   const { root, dir } = ctx;
   const key = item.key;
   const skill = ctx.skill ?? 'ship-issue';
   const args = ctx.args ?? key;
   let answers = item.answersFile
-    ? readFileSync(isAbsolute(item.answersFile) ? item.answersFile : join(dir, item.answersFile), 'utf8')
+    ? readFileSync(isAbsolute(item.answersFile) ? item.answersFile : join(ctx.answersDir ?? dir, item.answersFile), 'utf8')
     : null;
 
   const end = (status, reason, phase, kind, text) => {
@@ -370,6 +389,7 @@ export async function runIssue(ctx, item) {
     };
     const stop = tailProgress(root, key, (line) => emit(dir, key, phase, 'progress', line), ctx.tailMs ?? 5000, ctx.ledgers,
       (e) => emit(dir, key, phase, 'progress', `ledger read failed: ${e.code || e.message}`));
+    const guarded = guardedHashes(root);
     let r;
     try {
       r = resume ? await resumeOrFresh({ ...opts, freshPrompt: prompt }) : await runChild(opts);
@@ -386,9 +406,19 @@ export async function runIssue(ctx, item) {
     item.sessions.push(session(r));
     ctx.save?.(item);
 
+    const after0 = guardedHashes(root);
+    const changed = GUARDED.filter((f) => after0[f] !== guarded[f]);
+    if (changed.length) {
+      ctx.stop = `child changed ${changed.join(', ')}`;
+      return end('blocked', ctx.stop, phase, 'blocked', `${ctx.stop}; run stopped`);
+    }
     if (!r.ok) {
       if (isLimitError(r.error)) return end('cut off', r.error, phase, 'cutoff', r.error);
       const why = String(r.error).slice(0, 300);
+      if (isEnvError(r.error)) {
+        ctx.stop = why;
+        return end('blocked', why, phase, 'blocked', `${why}; run stopped`);
+      }
       return end('blocked', why, phase, 'blocked', why);
     }
     // The ledgers win over the marker.

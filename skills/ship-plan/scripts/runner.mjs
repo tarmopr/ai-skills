@@ -8,15 +8,16 @@
 //   node runner.mjs start verify <branch> [-- <args>]   verify-and-fix alone, on the checked-out
 //                                              branch; <args> (base branch, --comments) passed to it
 // Every start but verify needs a clean checkout on the base branch (.superpowers/ aside).
-//   node runner.mjs answer <run-dir> <KEY> <file>
+//   node runner.mjs answer <run-dir> <KEY> <file>   stores the answers outside the checkout, in
+//                                              <git dir>/ship-runner/<run>/ (never told to children)
 //   node runner.mjs status <run-dir>
 // Exit: 0 done, 1 runner error, 2 usage error, 3 the run dir's lock is held; 128+n on signal n.
 import { execFileSync } from 'node:child_process';
 import { constants } from 'node:os';
-import { existsSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { acquireLock, alive, emit, readLock, readState, releaseLock, runDir, writeState } from './runner-lib.mjs';
+import { acquireLock, alive, clean, emit, readLock, readState, releaseLock, runDir, writeState } from './runner-lib.mjs';
 import { findPlanLedger, ledgerOutcome, pendingQuestions, PHASE_ROWS, PHASES, phaseFromLedgers, runIssue } from './runner-phases.mjs';
 import { killChildren } from './runner-child.mjs';
 import { nextItem } from './runner-queue.mjs';
@@ -164,27 +165,92 @@ function ledgerOpts(root, state, item) {
   return undefined;
 }
 
+// An issue key (`PROJ-12`, `#12`, `owner-repo-12`): it names files, so nothing else.
+const KEY = /^#?[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+// The checkout's own git dir (per worktree), and the dir its info/exclude lives in.
+const gitDir = (root) => git(root, 'rev-parse', '--absolute-git-dir');
+const gitCommonDir = (root) => resolve(root, git(root, 'rev-parse', '--git-common-dir'));
+
+// Where `answer` stores a run's answers: <git dir>/ship-runner/<run>/, outside the checkout. A
+// child is told the run dir (SHIP_RUNNER), never this one, so it has no path to answer its own
+// questions by; the runner reads answers only here.
+const answersStore = (root, dir) => join(gitDir(root), 'ship-runner', basename(dir));
+
 const answersName = (key) => `answers-${key}.md`;
+
+// A file written while a child of this item ran (its recorded windows, [start, end] in ms; an
+// open one runs to now) was not written by the user: the child that asked answered itself.
+const inChildWindow = (item, ms) => (item.windows ?? []).some(([from, to]) => ms >= from && ms <= (to ?? Infinity));
+
+// Whether the item's answers file is in the store and usable. One written inside a child window
+// of the item is moved aside as answers-<KEY>@rejected-<n>.md, with an event, and never used.
+function answersReady(store, dir, item) {
+  const file = join(store, answersName(item.key));
+  let mtime;
+  try {
+    mtime = statSync(file).mtimeMs;
+  } catch (e) {
+    if (e.code === 'ENOENT') return false;
+    throw e;
+  }
+  if (!inChildWindow(item, mtime)) return true;
+  const kept = unusedName(store, `answers-${item.key}@rejected-`);
+  renameSync(file, join(store, kept));
+  emit(dir, item.key, item.phase ?? '-', 'progress', `answers rejected: ${answersName(item.key)} was written while a child of ${item.key} ran (kept as ${kept}); answer again`);
+  return false;
+}
 
 // An answers file not yet consumed puts a waiting item back in line (the `answer` command may race
 // the runner's own state writes; the file is the record), and marks a queued one answered. The
 // running item, and one that ended any other way (cut off, blocked, done), are left alone: a rerun
 // re-queues those, and the file is still there for it.
-function syncAnswers(state, dir) {
+function syncAnswers(state, dir, store) {
   for (const i of state.items) {
-    if (i.key === state.current || !existsSync(join(dir, answersName(i.key)))) continue;
+    if (i.key === state.current || !['waiting', 'queued'].includes(i.status) || !answersReady(store, dir, i)) continue;
     if (i.status === 'waiting') Object.assign(i, { status: 'queued', reason: '', answersFile: answersName(i.key) });
-    else if (i.status === 'queued') i.answersFile = answersName(i.key);
+    else i.answersFile = answersName(i.key);
   }
 }
 
-// Rename answers-<KEY>.md to answers-<KEY>-<n>.md (first unused n), so it is used once.
-function consumeAnswers(dir, key) {
+// <prefix><n>.md with the first unused n, starting at 1.
+function unusedName(store, prefix) {
   let n = 1;
-  while (existsSync(join(dir, `answers-${key}-${n}.md`))) n++;
-  const name = `answers-${key}-${n}.md`;
-  renameSync(join(dir, answersName(key)), join(dir, name));
+  while (existsSync(join(store, `${prefix}${n}.md`))) n++;
+  return `${prefix}${n}.md`;
+}
+
+// Rename answers-<KEY>.md to answers-<KEY>@<n>.md (`@` never occurs in a key), so it is used once.
+function consumeAnswers(store, key) {
+  const name = unusedName(store, `answers-${key}@`);
+  renameSync(join(store, answersName(key)), join(store, name));
   return name;
+}
+
+// The newest write of any of the item's child transcripts (<KEY>-<phase>-<n>.jsonl), or null.
+function lastTranscriptWrite(dir, key) {
+  let newest = null;
+  for (const f of readdirSync(dir)) {
+    if (!f.startsWith(`${key}-`) || !f.endsWith('.jsonl')) continue;
+    newest = Math.max(newest ?? 0, statSync(join(dir, f)).mtimeMs);
+  }
+  return newest;
+}
+
+// `.superpowers/` (ledgers, run dirs and child transcripts) in the repo's info/exclude, so a
+// `git add -A` never commits them. True when it was added now.
+function excludeRunFiles(root) {
+  const file = join(gitCommonDir(root), 'info', 'exclude');
+  let text = '';
+  try {
+    text = readFileSync(file, 'utf8');
+  } catch (e) {
+    if (e.code !== 'ENOENT') throw e;
+  }
+  if (text.split(/\r?\n/).some((l) => /^\/?\.superpowers\/?$/.test(l.trim()))) return false;
+  mkdirSync(join(file, '..'), { recursive: true });
+  appendFileSync(file, `${text && !text.endsWith('\n') ? '\n' : ''}.superpowers/\n`);
+  return true;
 }
 
 const ORDER = ['done', 'waiting', 'blocked', 'cut off', 'not started', 'queued', 'running'];
@@ -204,20 +270,30 @@ function usage(msg) {
 
 const newItem = (key, deps = []) => ({ key, phase: null, status: 'queued', reason: '', deps, sessions: [], answersFile: null });
 
-// Parse `start …` arguments: { kind, id, items, skill, args } or an error string.
+// A key or file name as an item key: every character a key cannot hold becomes '-'.
+const asKey = (name) => name.replace(/[^A-Za-z0-9._-]/g, '-');
+
+// Parse `start …` arguments: { kind, id, items, skill, args } or an error string. Issue and queue
+// keys must be issue keys (KEY), exit 2 otherwise.
 function parseStart(root, [what, ...a]) {
   if (!a[0]) return `start ${what ?? ''}: missing argument`;
-  if (what === 'issue') return { kind: 'issue', id: a[0], items: [newItem(a[0])], skill: 'ship-issue' };
+  const notKey = (k) => `start ${what}: "${k}" is not an issue key (letters, digits, . _ -, an optional leading #)`;
+  if (what === 'issue') {
+    if (!KEY.test(a[0])) return notKey(a[0]);
+    return { kind: 'issue', id: a[0], items: [newItem(a[0])], skill: 'ship-issue' };
+  }
   if (what === 'queue') {
     const keys = (a[1] ?? '').split(',').map((k) => k.trim()).filter(Boolean);
     if (!keys.length) return 'start queue: no sub-issue keys';
+    const bad = keys.find((k) => !KEY.test(k));
+    if (bad) return notKey(bad);
     const twice = keys.find((k, n) => keys.indexOf(k) !== n);
     if (twice) return `start queue: ${twice} is in the list twice`;
     const deps = Object.fromEntries(keys.map((k) => [k, []]));
     const at = a.indexOf('--deps');
     for (const pair of at === -1 ? [] : (a[at + 1] ?? '').split(',').filter(Boolean)) {
       const [k, d] = pair.split(':').map((x) => x.trim());
-      if (!deps[k] || !deps[d]) return `start queue: --deps ${pair}: both keys must be in the queue`;
+      if (!Object.hasOwn(deps, k) || !Object.hasOwn(deps, d)) return `start queue: --deps ${pair}: both keys must be in the queue`;
       if (k === d) return `start queue: --deps ${pair}: a key cannot wait for itself`;
       if (!deps[k].includes(d)) deps[k].push(d);
     }
@@ -225,7 +301,7 @@ function parseStart(root, [what, ...a]) {
   }
   if (what === 'plan') {
     if (!existsSync(resolve(root, a[0]))) return `start plan: no plan at ${a[0]}`;
-    return { kind: 'plan', id: a[0], items: [newItem(basename(a[0]).replace(/\.md$/, ''))], skill: 'ship-plan', args: a[0] };
+    return { kind: 'plan', id: a[0], items: [newItem(asKey(basename(a[0]).replace(/\.md$/, '')))], skill: 'ship-plan', args: a[0] };
   }
   if (what === 'verify') {
     // verify-and-fix's own arguments (base branch, --comments) follow `--`; the branch verified is
@@ -233,7 +309,7 @@ function parseStart(root, [what, ...a]) {
     const extra = a[1] === '--' ? a.slice(2) : a.length > 1 ? null : [];
     if (!extra) return `start verify: after <branch> only -- <verify-and-fix arguments>`;
     if (extra.some((x) => /["\x00-\x1f\x7f]/.test(x))) return 'start verify: an argument after -- holds a quote or a control character';
-    const item = newItem(a[0].replaceAll('/', '-'));
+    const item = newItem(asKey(a[0]));
     try {
       item.from = readFileSync(join(root, verifyLedger(a[0])), 'utf8').replace(/\r?\n$/, '').split(/\r?\n/).length;
     } catch (e) {
@@ -284,7 +360,12 @@ async function start(rest) {
   delete process.env.SHIP_RUNNER_ALLOW_BYPASS;
   const run = parseStart(root, args);
   if (typeof run === 'string') return usage(run);
-  const dir = runDir(root, run.kind, run.id);
+  let dir;
+  try {
+    dir = runDir(root, run.kind, run.id);
+  } catch (e) {
+    return usage(`start ${run.kind}: ${e.message}`);
+  }
 
   // A live run first: its checkout may well be on its own branch. A child left running by a dead
   // runner still writes the ledgers: never start a second one.
@@ -325,6 +406,8 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
     ended = true;
     if (state) {
       state.current = null;
+      const now = Date.now();
+      for (const i of state.items) for (const w of i.windows ?? []) w[1] ??= now;
       safe(() => emit(dir, slug, '-', 'summary', summaryText(state)));
       state.stopped = new Date().toISOString();
       safe(() => writeState(dir, state));
@@ -384,15 +467,21 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
         changes.push(...waits);
       }
     }
+    // a child window left open by a runner killed outright: it ended with the child's last line
+    for (const i of state.items) {
+      for (const w of i.windows ?? []) if (w[1] === null) w[1] = lastTranscriptWrite(dir, i.key) ?? w[0];
+    }
     state.root = root;
     state.current = null;
     state.stopped = null;
+    const store = answersStore(root, dir);
     const save = () => {
-      syncAnswers(state, dir);
+      syncAnswers(state, dir, store);
       writeState(dir, state);
     };
     save();
     if (changes.length) emit(dir, slug, '-', 'progress', `queue changed: ${changes.join('; ')}`);
+    if (excludeRunFiles(root)) emit(dir, slug, '-', 'progress', '.superpowers/ added to the git info/exclude');
 
     const refused = mode === 'bypassPermissions' && !allowBypass;
     if (refused) {
@@ -409,12 +498,12 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
 
     const base = {
       root, dir, models: cfg.models, mode, env: {}, chunkSize: cfg.chunkSize, idleMs: cfg.idleMinutes * 60000,
-      skill: run.skill, args: run.args, save,
+      skill: run.skill, args: run.args, save, answersDir: store,
     };
     const pollMs = Number(process.env.SHIP_RUNNER_POLL_MS) || 30000;
     let ran = false; // a queue item has run in this start
     for (;;) {
-      syncAnswers(state, dir);
+      syncAnswers(state, dir, store);
       const item = nextItem(state);
       save();
       if (item && ran && state.kind === 'queue' && !restoreCheckout(root, baseInfo.name, state, item, dir)) break;
@@ -422,7 +511,7 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
         // a single issue waits for its answers instead of ending
         const only = state.items[0];
         if (state.kind !== 'queue' && only.status === 'waiting') {
-          while (!existsSync(join(dir, answersName(only.key)))) await new Promise((r) => setTimeout(r, pollMs));
+          while (!answersReady(store, dir, only)) await new Promise((r) => setTimeout(r, pollMs));
           continue;
         }
         break;
@@ -430,15 +519,15 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
       const ledgers = ledgerOpts(root, state, item);
       if (item.answersFile) {
         const waits = phaseFromLedgers(root, item.key, ledgers).waiting;
-        if (existsSync(join(dir, answersName(item.key)))) {
-          const used = consumeAnswers(dir, item.key);
+        if (answersReady(store, dir, item)) {
+          const used = consumeAnswers(store, item.key);
           if (waits) item.answersFile = used;
           else {
             // nothing is waiting for them: never hand answers to a child that asked nothing
             Object.assign(item, { answersFile: null, answersUnused: used });
             emit(dir, item.key, item.phase ?? '-', 'progress', `answers not used, no question pending (${used})`);
           }
-        } else if (!waits || !existsSync(join(dir, item.answersFile))) {
+        } else if (!waits || !existsSync(join(store, item.answersFile))) {
           // consumed by a run killed mid-child: its questions are answered already, or the file is gone
           if (waits) emit(dir, item.key, item.phase ?? '-', 'progress', `answers file ${item.answersFile} is gone; the questions wait again`);
           item.answersFile = null;
@@ -447,12 +536,24 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
       }
       state.current = item.key;
       ran = true;
+      // the window an answers file of this item must not be written in
+      const window = [Date.now(), null];
+      (item.windows ??= []).push(window);
       save();
+      const ctx = { ...base, ledgers };
       try {
-        await runIssue({ ...base, ledgers }, item);
+        await runIssue(ctx, item);
       } finally {
+        window[1] = Date.now();
         state.current = null;
         save();
+      }
+      // a failure every later child would hit too (no claude, auth, a bad model), or a child that
+      // changed what the next child loads: nothing more starts
+      if (ctx.stop) {
+        const why = `runner stopped: ${ctx.stop}`.slice(0, 300);
+        for (const i of state.items) if (i.status === 'queued') Object.assign(i, { status: 'not started', reason: why });
+        break;
       }
       if (item.status === 'cut off') {
         for (const i of state.items) if (i.status === 'queued') Object.assign(i, { status: 'not started', reason: 'session limit' });
@@ -503,8 +604,14 @@ function restoreCheckout(root, baseName, state, item, dir) {
   return false;
 }
 
+// The checkout a run dir belongs to: state.json's root, else <root>/.superpowers/ship-runner/<run>/.
+const rootOf = (state, dir) => state.root ?? resolve(dir, '..', '..', '..');
+
 function answer([dirArg, key, file]) {
   if (!dirArg || !key || !file) return usage('answer <run-dir> <KEY> <file>');
+  // only the watching session answers; a child answering its own questions is the thing to stop
+  if (process.env.SHIP_RUNNER) return usage('answer: refused in a runner child (SHIP_RUNNER is set)');
+  if (!KEY.test(key)) return usage(`answer: "${key}" is not an issue key`);
   const dir = resolve(dirArg);
   const state = readState(dir);
   if (!state) return usage(`answer: no run at ${dirArg}`);
@@ -512,11 +619,13 @@ function answer([dirArg, key, file]) {
   if (!item) return usage(`answer: ${key} is not in this run`);
   // The file alone is the record: the runner (now, or on the next start) puts the item back in
   // line from it. Writing state.json here could lose a write of a runner that holds the lock.
-  const tmp = join(dir, `${answersName(key)}.${process.pid}.tmp`);
+  const store = answersStore(rootOf(state, dir), dir);
+  mkdirSync(store, { recursive: true });
+  const tmp = join(store, `${answersName(key)}.${process.pid}.tmp`);
   writeFileSync(tmp, readFileSync(file));
-  renameSync(tmp, join(dir, answersName(key)));
+  renameSync(tmp, join(store, answersName(key)));
   emit(dir, key, item.phase ?? '-', 'progress', 'answers received');
-  console.log(`answers stored: ${join(dir, answersName(key))}`);
+  console.log(`answers stored: ${join(store, answersName(key))}`);
   return 0;
 }
 
@@ -525,19 +634,34 @@ function status([dirArg]) {
   const dir = resolve(dirArg);
   const state = readState(dir);
   if (!state) return usage(`status: no run at ${dirArg}`);
-  const root = state.root ?? resolve(dir, '..', '..', '..'); // <root>/.superpowers/ship-runner/<run>/
+  const root = rootOf(state, dir);
+  let store = null;
+  try {
+    store = answersStore(root, dir);
+  } catch {
+    // not a git checkout any more: no answers to show
+  }
+  const received = (i) => {
+    if (!store) return false;
+    try {
+      return !inChildWindow(i, statSync(join(store, answersName(i.key))).mtimeMs);
+    } catch {
+      return false;
+    }
+  };
+  // every cell and line below may hold text a child wrote: one line each, no control characters
   const rows = [['key', 'status', 'phase', 'reason', 'cost', 'minutes']];
   for (const i of state.items) {
     const reason = [
       i.reason,
-      existsSync(join(dir, answersName(i.key))) ? 'answers received' : '',
+      received(i) ? 'answers received' : '',
       i.answersUnused ? `answers not used (${i.answersUnused})` : '',
     ].filter(Boolean).join('; ');
-    rows.push([i.key, i.status, i.phase ?? '-', reason, `$${costOf(i).toFixed(2)}`, String(minutesOf(i))]);
+    rows.push([i.key, i.status, i.phase ?? '-', reason, `$${costOf(i).toFixed(2)}`, String(minutesOf(i))].map(clean));
   }
   const widths = rows[0].map((_, c) => Math.max(...rows.map((r) => r[c].length)));
   for (const r of rows) console.log(r.map((cell, c) => (c === r.length - 1 ? cell : cell.padEnd(widths[c]))).join('  '));
-  const questions = state.items.flatMap((i) => pendingQuestions(root, i.key, ledgerOpts(root, state, i)).map((q) => `${i.key}: ${q}`));
+  const questions = state.items.flatMap((i) => pendingQuestions(root, i.key, ledgerOpts(root, state, i)).map((q) => clean(`${i.key}: ${q}`)));
   console.log(questions.length ? `\nPending questions:\n${questions.join('\n')}` : '\nNo pending questions.');
   return 0;
 }

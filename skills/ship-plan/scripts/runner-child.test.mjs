@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { acquireLock, alive } from './runner-lib.mjs';
-import { childArgs, isLimitError, parseMarker, resumeOrFresh, runChild } from './runner-child.mjs';
+import { childArgs, isEnvError, isLimitError, parseMarker, resumeOrFresh, runChild } from './runner-child.mjs';
 
 process.env.CLAUDE_BIN = join(dirname(fileURLToPath(import.meta.url)), 'fake-claude.mjs');
 
@@ -209,4 +209,25 @@ test('runChild: a transcript write that fails never crashes the runner; one even
   const ev = readFileSync(join(dir, 'events.log'), 'utf8').split('\n').filter(Boolean);
   assert.equal(ev.length, 1);
   assert.match(ev[0], / BILL-1 spec progress child transcript not written: /);
+});
+
+// review round 1, C6: a failed child's stderr reaches events.log and state.json: a short tail, no tokens
+test('runChild: the stderr in the error is its last 300 characters, tokens redacted', async () => {
+  const dir = fresh();
+  const secrets = 'gh token ghp_abcdefghijklmnopqrstuvwxyz0123 key sk-ant-api03-abcdefghijklmnopqrst slack xoxb-123-456-abc auth: Bearer eyJhbGciOi.x.y';
+  const r = await runChild(base(dir, { FAKE_CLAUDE: 'crash', FAKE_CLAUDE_STDERR: `${'x'.repeat(900)} ${secrets}` }));
+  assert.equal(r.ok, false);
+  const tail = r.error.split('; stderr: ')[1];
+  assert.ok(tail.length <= 300, `stderr tail is ${tail.length} chars`);
+  assert.doesNotMatch(r.error, /ghp_abc|sk-ant-api03|xoxb-123|eyJhbGciOi/);
+  assert.equal(r.error.match(/\[redacted\]/g).length, 4);
+});
+
+// C9: failures every later child would hit too stop the run
+test('isEnvError: no claude, API or auth errors, a bad model; not a crash, a limit or an item\'s own failure', () => {
+  for (const e of ['spawn failed: ENOENT; no result line', 'spawn failed: EACCES', 'is_error: API Error: 401 {"type":"authentication_error"}',
+    'exit 1; is_error: There\'s an issue with the selected model (opus-9). It may not exist', 'is_error: Invalid API key · Please run /login',
+    'is_error: Credit balance is too low']) assert.equal(isEnvError(e), true, e);
+  for (const e of ['exit 1; no result line', 'killed by SIGKILL; no result line', 'child idle 60 min', 'no RUNNER: line',
+    'exit 1; no result line; stderr: API Error: 401']) assert.equal(isEnvError(e), false, e);
 });
