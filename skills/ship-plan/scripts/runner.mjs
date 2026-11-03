@@ -7,7 +7,7 @@
 //   node runner.mjs start plan <path>          ship-plan from implement
 //   node runner.mjs start verify <branch> [-- <args>]   verify-and-fix alone, on the checked-out
 //                                              branch; <args> (base branch, --comments) passed to it
-// <PARENT> and <branch>: letters, digits, . _ / # -. A rerun keeps the first start's permission mode.
+// <PARENT> and <branch>: letters, digits, . _ / # -. A rerun never widens the first start's permission mode (a flag may narrow it).
 // Every start but verify needs a clean checkout on the base branch (.superpowers/ aside).
 //   node runner.mjs answer <run-dir> <KEY> <file>   stores the answers outside the checkout, in
 //                                              <git dir>/ship-runner/answers/<run>/ (never told to children)
@@ -312,7 +312,7 @@ function summaryText(state) {
   const counts = ORDER.map((st) => [st, state.items.filter((i) => i.status === st).length]).filter(([, n]) => n);
   const cost = state.items.reduce((sum, i) => sum + costOf(i), 0);
   // the guard's warnings of this start, each item's changed files (runIssue's item.guardedChanged)
-  const guarded = state.items.filter((i) => i.guardedChanged?.length).map((i) => `${i.key} (${listed(i.guardedChanged)})`);
+  const guarded = state.items.filter((i) => Array.isArray(i.guardedChanged) && i.guardedChanged.length).map((i) => `${i.key} (${listed(i.guardedChanged)})`);
   return `${counts.map(([st, n]) => `${n} ${st}`).join(', ')}; cost $${cost.toFixed(2)}${guarded.length ? `; guarded files changed: ${guarded.join(', ')}` : ''}`;
 }
 
@@ -856,7 +856,7 @@ function status([dirArg]) {
       i.reason,
       received(i) ? 'answers received' : '',
       i.answersUnused ? `answers not used (${i.answersUnused})` : '',
-      i.guardedChanged?.length ? `guarded files changed: ${listed(i.guardedChanged)}` : '',
+      Array.isArray(i.guardedChanged) && i.guardedChanged.length ? `guarded files changed: ${listed(i.guardedChanged)}` : '',
     ].filter(Boolean).join('; ');
     rows.push([i.key, i.status, i.phase ?? '-', reason, `$${costOf(i).toFixed(2)}`, String(minutesOf(i))].map(clean));
   }

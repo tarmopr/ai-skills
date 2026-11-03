@@ -137,7 +137,7 @@ function readLedgers(root, key, opts = {}) {
     finishedBy,
     // ship-plan writes `Branch: <name>` on a body line of its own (the last one wins; its first word,
     // backticks stripped); ship-issue on its first line
-    branch: (plan ?? []).slice(1).map((l) => /^Branch:\s*`?([^\s`]+)/.exec(l)?.[1]).filter(Boolean).at(-1) || planFields.Branch || issueFields.Branch || null,
+    branch: (plan ?? []).slice(1).map((l) => /^Branch:\s*`?([A-Za-z0-9._\/#-]+)/.exec(l)?.[1]).filter(Boolean).at(-1) || planFields.Branch || issueFields.Branch || null,
     phase: unknown ? 'unknown' : phase,
     unknown,
     waiting: Boolean(batch) || pending > 0,

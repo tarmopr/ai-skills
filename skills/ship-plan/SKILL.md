@@ -201,8 +201,8 @@ gives, when it gives one.
 The pre-approval clears when the user sends a message. So every question you
 ask ends with: **"Answer with `/ship-plan <your answers>`,"** which starts the
 skill again, renews the pre-approval, and resumes from the ledger. With
-`## Runner` `Mode: runner` and this run in session mode, `--session` given or
-not (a run with no plan file, "Runner or session"), the line is **"Answer with
+`## Runner` `Mode: runner` and this run in session mode, `--session` given, or
+not given because the run has no plan file ("Runner or session"), the line is **"Answer with
 `/ship-plan <your answers> --session`,"** so the answers resume this run, not a
 new runner. A command
 still refused after that goes into the batch (section 5, step 5).
