@@ -247,8 +247,10 @@ current checkout is busy. Dependencies come from `## Prerequisites`.
 
 ### `## Queue`
 
-Read by `ship-queue` only. It runs each sub-issue in a child session
-(`claude -p`), which nobody watches and which cannot answer a permission prompt.
+Read by `ship-queue`, which runs each sub-issue in a child session
+(`claude -p`) that nobody watches and that cannot answer a permission prompt,
+and by every session that watches a runner run (`## Runner`), which passes
+`Child permission mode:` to the runner.
 
 | Field | Meaning | Default |
 |---|---|---|
@@ -262,8 +264,10 @@ inherit it); otherwise it falls back to `auto`.
 
 ### `## Runner`
 
-Read by the runner (`skills/ship-plan/scripts/runner.mjs`), which runs each ship
-phase as a `claude -p` child. Opt-in: the default is the single-session path.
+`Mode:` is read by the skills (their "Runner or session" section); every
+other field by the runner (`skills/ship-plan/scripts/runner.mjs`), which runs
+each ship phase as a `claude -p` child. Opt-in: the default is the
+single-session path.
 
 | Field | Meaning | Default |
 |---|---|---|

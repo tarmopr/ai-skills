@@ -1,6 +1,6 @@
 # A red base branch
 
-Read only when the base-branch run is red (section 6, step 3 of [SKILL.md](SKILL.md)), or validation fails (section 6b, step 3).
+Read only when the base-branch run is red (section 6, step 3 of [phase-merge.md](phase-merge.md)), or validation fails (section 6b, step 3).
 
 A failed validation in section 6b that this run's diff explains enters here like a red base-branch run. It has no failed run to read: go straight to **Real** in step 1, so fix forward or revert.
 

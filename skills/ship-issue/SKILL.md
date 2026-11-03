@@ -167,6 +167,15 @@ then write a handoff: the `handoff` skill when it is available, otherwise a
 `HANDOFF.md` next to the ledger. It names the checkout, and its resume line is
 `/ship-issue`, with no argument. Once ship-plan runs, its own rule applies.
 
+**The sections live in phase files,** named in the index below. Read a file
+when its first section starts, and on a resume the file of the section the
+resume goes to (I0's, [phase-spec.md](phase-spec.md), when it routes through
+I0). A step anywhere in this skill that sends the run to a section in another
+phase file, or names one it needs (I4's "as in I2 step 6"), reads that section
+there, for that step. A ship-plan section it names is in the ship-plan phase
+file that [ship-plan's index](../ship-plan/SKILL.md) names. This holds in every
+mode.
+
 ## I0. Route: what already exists — see [phase-spec.md](phase-spec.md); read it when this phase starts
 
 ## I1. The issue — see [phase-spec.md](phase-spec.md); read it when this phase starts
@@ -247,7 +256,7 @@ Queued mode above applies, with these changes:
 
 ## Runner or session
 
-With `## Runner` `Mode: runner`, or the argument `--runner`, the ship runner runs the phases and this session only watches and relays: read [../ship-plan/runner-session.md](../ship-plan/runner-session.md) and follow it with `start issue <KEY>`. Otherwise ignore this section; the skill runs as above.
+With `## Runner` `Mode: runner`, or the argument `--runner`, unless `printenv SHIP_RUNNER` prints a folder (a runner child), the ship runner runs the phases and this session only watches and relays: read [../ship-plan/runner-session.md](../ship-plan/runner-session.md) and follow it with `start issue <KEY>`. The runner needs that key: an issue key, or the slug of an existing no-issue ledger. A run from a description alone (no key yet, or `Tracker: none` with no ledger yet) runs in session mode. Otherwise ignore this section; the skill runs as above.
 
 ## Red flags
 
