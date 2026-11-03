@@ -135,7 +135,9 @@ function readLedgers(root, key, opts = {}) {
   return {
     outcome,
     finishedBy,
-    branch: planFields.Branch || issueFields.Branch || null,
+    // ship-plan writes `Branch: <name>` on a body line of its own (the last one wins); ship-issue on
+    // its first line
+    branch: (plan ?? []).slice(1).map((l) => /^Branch: (\S+)\s*$/.exec(l)?.[1]).filter(Boolean).at(-1) || planFields.Branch || issueFields.Branch || null,
     phase: unknown ? 'unknown' : phase,
     unknown,
     waiting: Boolean(batch) || pending > 0,
@@ -179,11 +181,6 @@ export function findPlanLedger(root, planPath) {
 // The ship-plan ledger's `Outcome:` (written at close-out, under the first line), or null.
 export function ledgerOutcome(root, key, opts = {}) {
   return readLedgers(root, key, opts).outcome;
-}
-
-// The run's branch: the ship-plan ledger's `Branch:`, else the ship-issue ledger's; null with none.
-export function ledgerBranch(root, key, opts = {}) {
-  return readLedgers(root, key, opts).branch;
 }
 
 // Every `Asked: … — pending` line of the run's ledgers.

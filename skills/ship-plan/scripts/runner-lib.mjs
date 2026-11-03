@@ -8,17 +8,19 @@ import { dirname, join, resolve } from 'node:path';
 // Every git call of the runner. A child can set `core.fsmonitor` or `core.hooksPath` in the git
 // config, or write a hook: the runner's own git (status, switch) would run that code. Both are
 // switched off here, and SHIP_RUNNER_ALLOW_BYPASS is never in git's env, so what git runs anyway
-// (a filter, an alias) never gets it. `refs/replace/` objects a child added are ignored
-// (GIT_NO_REPLACE_OBJECTS): a plan read from a run branch is that commit's own. Returns stdout; a failure throws
-// as execFileSync does (git's words in e.stderr); { encoding: 'buffer' } returns bytes.
+// (a filter, an alias) never gets it. `refs/replace/` objects and an `info/grafts` file a child
+// added are ignored (GIT_NO_REPLACE_OBJECTS, GIT_GRAFT_FILE): a plan read from a run branch is that
+// commit's own. Returns stdout; a failure throws as execFileSync does (git's words in e.stderr);
+// { encoding: 'buffer' } returns bytes.
 export const SAFE_GIT = ['-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=/dev/null'];
 export function runGit(cwd, args, { encoding = 'utf8' } = {}) {
-  const env = { ...process.env, GIT_NO_REPLACE_OBJECTS: '1' };
+  const env = { ...process.env, GIT_NO_REPLACE_OBJECTS: '1', GIT_GRAFT_FILE: '/dev/null' };
   delete env.SHIP_RUNNER_ALLOW_BYPASS;
   return execFileSync('git', [...SAFE_GIT, ...args], { cwd, env, encoding, stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024 });
 }
 
-// A run dir or an answers store: its parents as usual, itself 0700 (the user's alone) when made now.
+// A run dir, an answers store or the mode records' folder: its parents as usual, itself 0700 (the
+// user's alone) when made now.
 export function makeDir(dir) {
   mkdirSync(dirname(resolve(dir)), { recursive: true });
   try {

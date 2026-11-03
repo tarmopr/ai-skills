@@ -1361,7 +1361,7 @@ test('a planted fsmonitor or hook in the git config: never run by the runner\'s 
 // review round 2, batch E2
 
 // X5: a child can edit the config's `Child permission mode:`, and state.json; the first start's mode
-// is kept in state.json and in the answers store, and a rerun never widens it
+// is recorded in <git dir>/ship-runner/modes/ (state.json only copies it), and a rerun never widens it
 test('a rerun never widens the first start\'s permission mode: wider exit 2, none given uses it, narrower allowed', () => {
   const root = repo();
   const log = join(root, 'm.json');
@@ -1422,11 +1422,12 @@ test('start plan docs/_draft.md: its item key is one `answer` takes', async () =
   put(root, 'docs/_draft.md', ['# Plan', '### Task 1: a']);
   commit(root);
   const pl = '.superpowers/ship-plan/feat-d/ledger.md';
-  const first = 'Phase: 2 | Plan: docs/_draft.md | Branch: feat/d';
+  // ship-plan's real ledger: Branch: on a body line of its own (G-a, review round 4)
+  const first = 'Phase: 2 | Plan: docs/_draft.md | Issue: none | PR: #';
   const env = {
     FAKE_CLAUDE: 'ok:RUNNER: waiting',
     FAKE_CLAUDE_LEDGER_APPEND: ops([
-      { when: 'phase implement', file: pl, firstLine: first, append: [Q] },
+      { when: 'phase implement', file: pl, firstLine: first, append: ['Branch: feat/d', Q] },
       { when: 'copied exactly', file: pl, firstLine: first.replace('Phase: 2', 'Phase: done'), replace: [[Q, 'Asked: which db? — postgres']] },
     ]),
   };
@@ -1635,7 +1636,10 @@ test('a child gets SHIP_RUNNER_KEY, its item key: a verify branch #12-fix is 12-
   });
   assert.equal(r.status, 0, r.stderr);
   const dir = runDir(root, 'verify', '#12-fix');
-  assert.equal(JSON.parse(readFileSync(log, 'utf8')).shipRunnerKey, '12-fix');
+  const seen = JSON.parse(readFileSync(log, 'utf8'));
+  assert.equal(seen.shipRunnerKey, '12-fix');
+  // the key state.json names as current while the child runs (round 4 suggestion: pinned)
+  assert.equal(seen.stateCurrent, seen.shipRunnerKey);
   assert.deepEqual(readState(dir).items.map((i) => [i.key, i.status]), [['12-fix', 'done']]);
 });
 

@@ -612,3 +612,16 @@ test('runIssue: a child that changes guarded files -> a progress event names the
   assert.equal(q.guardedChanged, undefined);
   assert.doesNotMatch(events(quiet), /guarded/);
 });
+
+// G-a (review round 4): ship-plan writes `Branch: <name>` on its own body line of the ledger
+// (SKILL.md "The ledger", phase-implement.md section 1), never on the first line. A `start plan`
+// run (no ship-issue ledger) found no branch, so a plan committed only on that branch was "not found".
+test('runIssue, a plan run: the plan only on the run branch, named by the ledger\'s Branch: body line -> read from it', async () => {
+  const root = planOnBranch();
+  rmSync(join(root, ISSUE));
+  writeFileSync(join(root, PLAN_LEDGER), `${planFirst('2')}\nBranch: feat/bill-7\nProgress: task 1 done\n`);
+  const log = join(root, 'fake.json');
+  const ledgers = { ledger: PLAN_LEDGER, planDoc: 'docs/plan.md' };
+  await runIssue(ctxFor(root, { FAKE_CLAUDE: 'ok:RUNNER: phase-done', FAKE_CLAUDE_LOG: log }, { chunkSize: 1, ledgers }), item());
+  assert.match(JSON.parse(readFileSync(log, 'utf8')).stdin, /plan tasks 2–2\.$/);
+});

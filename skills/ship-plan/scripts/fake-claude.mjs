@@ -16,7 +16,8 @@
 //                     FAKE_CLAUDE_IGNORE_TERM=1
 //   noresume          with --resume: the CLI's "No conversation found" result line, exit 1;
 //                     otherwise like ok (marker from FAKE_CLAUDE_MARKER)
-// FAKE_CLAUDE_LOG: when set, argv, stdin, SHIP_RUNNER, SHIP_RUNNER_KEY and SHIP_RUNNER_ALLOW_BYPASS are written there as JSON.
+// FAKE_CLAUDE_LOG: when set, argv, stdin, SHIP_RUNNER, SHIP_RUNNER_KEY, SHIP_RUNNER_ALLOW_BYPASS and
+//   the run dir's state.json `current` (null without one) are written there as JSON.
 // FAKE_CLAUDE_LEDGER_APPEND: JSON [{file, when?, firstLine?, append?: string[]}], applied before
 //   the output: file is relative to cwd; an op runs only when the prompt contains `when` (if set);
 //   firstLine replaces line 1, replace [[old, new], …] swaps every line equal to old, append adds
@@ -47,7 +48,14 @@ const argv = process.argv.slice(2);
 const promptKey = /with the arguments "([^"]*)"/.exec(stdin)?.[1];
 Object.assign(process.env, JSON.parse(process.env.FAKE_CLAUDE_BY_KEY || '{}')[promptKey] ?? {});
 const head = existsSync('.git/HEAD') ? readFileSync('.git/HEAD', 'utf8').trim() : null;
-if (process.env.FAKE_CLAUDE_LOG) writeFileSync(process.env.FAKE_CLAUDE_LOG, JSON.stringify({ argv, stdin, head, shipRunner: process.env.SHIP_RUNNER, shipRunnerKey: process.env.SHIP_RUNNER_KEY ?? null, allowBypass: process.env.SHIP_RUNNER_ALLOW_BYPASS ?? null }));
+const stateCurrent = () => {
+  try {
+    return JSON.parse(readFileSync(`${process.env.SHIP_RUNNER}/state.json`, 'utf8')).current ?? null;
+  } catch {
+    return null;
+  }
+};
+if (process.env.FAKE_CLAUDE_LOG) writeFileSync(process.env.FAKE_CLAUDE_LOG, JSON.stringify({ argv, stdin, head, shipRunner: process.env.SHIP_RUNNER, shipRunnerKey: process.env.SHIP_RUNNER_KEY ?? null, allowBypass: process.env.SHIP_RUNNER_ALLOW_BYPASS ?? null, stateCurrent: stateCurrent() }));
 
 for (const op of JSON.parse(process.env.FAKE_CLAUDE_LEDGER_APPEND || '[]')) {
   if (op.when && !stdin.includes(op.when)) continue;

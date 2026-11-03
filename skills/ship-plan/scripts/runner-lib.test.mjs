@@ -195,3 +195,16 @@ test('answersNamed: answers-<KEY>.md or answers-<KEY>@<n>.md for this key only; 
   }
   assert.ok(!answersNamed('#12.x', 'answers-#12Ax@1.md'), 'a . in the key is literal');
 });
+
+// review round 4 suggestion: a child can write .git/info/grafts (or set GIT_GRAFT_FILE) to give a
+// commit other parents; the runner's git reads the history git itself recorded
+test('runGit: a grafts file a child wrote is ignored', () => {
+  const root = fresh();
+  const g = (...a) => execFileSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=t', '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', ...a], { cwd: root, stdio: 'pipe', encoding: 'utf8' });
+  g('init', '-q', '-b', 'main');
+  g('commit', '-q', '--allow-empty', '-m', 'one');
+  g('commit', '-q', '--allow-empty', '-m', 'two');
+  const head = g('rev-parse', 'HEAD').trim();
+  writeFileSync(join(root, '.git', 'info', 'grafts'), `${head}\n`); // HEAD made parentless
+  assert.equal(runGit(root, ['rev-list', '--count', 'HEAD']).trim(), '2');
+});

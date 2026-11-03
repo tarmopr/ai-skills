@@ -10,7 +10,7 @@
 //                                              branch; <args> (base branch, --comments) passed to it
 // Every start but verify needs a clean checkout on the base branch (.superpowers/ aside).
 //   node runner.mjs answer <run-dir> <KEY> <file>   stores the answers outside the checkout, in
-//                                              <git dir>/ship-runner/<run>/ (never told to children)
+//                                              <git dir>/ship-runner/answers/<run>/ (never told to children)
 //   node runner.mjs status <run-dir>
 // Exit: 0 the run ended (see summary), 1 runner error, 2 usage error, 3 the run dir's lock is held;
 // 128+n on signal n.
@@ -411,7 +411,8 @@ function holder(dir) {
 
 async function start(rest) {
   const root = checkoutRoot();
-  // --permission-mode <m> (before any `--`): the only source of the children's mode
+  // --permission-mode <m> (before any `--`): the children's mode on a first start, the only source
+  // of it (never the config); a rerun takes its first start's mode from the record, a flag may narrow it
   const args = [...rest];
   let mode = 'auto';
   let modeFrom = 'default';
@@ -454,7 +455,8 @@ async function start(rest) {
   // A rerun keeps the first start's mode, from its record (checked with or without a state.json):
   // none given takes it, a wider one is refused. An existing run with no readable record is taken
   // as the narrowest mode (fail closed). With no run dir this is a new run: a record (and an
-  // answers store) a deleted run dir left behind is removed below, never taken as this run's (X9).
+  // answers store) a deleted run dir left behind is removed once the lock is held (runLocked), never
+  // taken as this run's (X9).
   const existing = prev !== null || existsSync(dir);
   const recorded = existing ? recordedMode(root, dir) : null;
   const first = recorded ?? (existing ? 'dontAsk' : null);
@@ -480,21 +482,18 @@ async function start(rest) {
       return usage(`start: the checkout must be clean and on ${base.name} (it is on ${head}${paths.length ? `, with uncommitted changes: ${listed}` : ''}${changed.error ? `; ${changed.error}` : ''})`);
     }
   }
-  const stale = existing ? [] : leftovers(root, dir);
-  for (const [, p] of stale) rmSync(p, { recursive: true, force: true });
-  const cleared = stale.length ? `run dir gone: removed the old run's ${stale.map(([what, p]) => `${what} ${p}`).join(' and ')}; a new run` : null;
   const lock = acquireLock(dir, process.pid);
   if (!lock.ok) {
     console.log(`held by ${lock.holder}`);
     return 3;
   }
-  return runLocked({ root, dir, run, cfg, base, mode, modeFrom, allowBypass, cleared });
+  return runLocked({ root, dir, run, cfg, base, mode, modeFrom, allowBypass, fresh: !existing });
 }
 
 // Everything after the lock is taken. Whatever happens (an error, a signal, an uncaught error), the
 // run ends with a summary event and `stopped` set in state.json; the lock is released last, and
 // kept when state.json could not be written or a child's process group outlived the stop.
-async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, allowBypass, cleared }) {
+async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, allowBypass, fresh }) {
   const slug = run.id.replaceAll('/', '-');
   let state = null;
   let code = 0;
@@ -581,6 +580,11 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
   }
   try {
     state = readState(dir);
+    // A new run (start() found no run dir) removes the mode record and answers store a deleted run
+    // dir with this id left in the git dir (X9): under the lock, and only while there is no state.json.
+    const stale = fresh && !state ? leftovers(root, dir) : [];
+    for (const [, p] of stale) rmSync(p, { recursive: true, force: true });
+    const cleared = stale.length ? `run dir gone: removed the old run's ${stale.map(([what, p]) => `${what} ${p}`).join(' and ')}; a new run` : null;
     const changes = [];
     if (!state) state = { kind: run.kind, id: run.id, items: run.items, current: null, stopped: null };
     else {
@@ -591,18 +595,18 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
         if (i.answersFile !== answersName(i.key)) emit(dir, i.key, i.phase ?? '-', 'progress', `state.json names the answers file ${i.answersFile}, not one of ${i.key}'s in the store; ignored`);
         i.answersFile = null;
       }
-      // resume from files: what was cut short runs again; the ledgers say where
       // verify again on a branch verified before: a new run, from a fresh snapshot of its ledger
       // so does one that ended any other way (blocked, cut off, …): an earlier closing Done: must
-      // not end it again with no child. Not a waiting one, one holding answers, nor one with a
-      // question still pending after the old snapshot (a child that asked, then was cut off): their
-      // questions are in the lines after it.
+      // not end it again with no child. Not one with a question still pending after the old
+      // snapshot (a child that asked, then was cut off): its questions are in the lines after it.
+      // (`waiting` and a held answersFile, K1, imply such a question; kept as cheap guards.)
       if (state.kind === 'verify') {
         for (const i of state.items) {
           if (i.status === 'done') Object.assign(i, { status: 'queued', reason: '', phase: null, answersUnused: undefined });
           if (i.status !== 'waiting' && !i.answersFile && !pendingQuestions(root, i.key, ledgerOpts(root, state, i)).length) i.from = run.items[0].from;
         }
       }
+      // resume from files: what was cut short runs again; the ledgers say where
       for (const i of state.items) {
         if (['running', 'cut off', 'not started', 'blocked'].includes(i.status)) Object.assign(i, { status: 'queued', reason: '' });
         if (i.status === 'waiting' && !phaseFromLedgers(root, i.key, ledgerOpts(root, state, i)).waiting) Object.assign(i, { status: 'queued', reason: '' });
