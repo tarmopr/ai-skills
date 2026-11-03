@@ -1,7 +1,7 @@
 // Tests for the ship runner state, lock and event log. Run: node --test skills/ship-plan/scripts/
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { acquireLock, emit, readState, releaseLock, runDir, setChildPid, writeState } from './runner-lib.mjs';
@@ -70,4 +70,66 @@ test('setChildPid replaces the lock by rename, never writing it in place', () =>
   setChildPid(dir, 4242);
   assert.deepEqual(JSON.parse(readFileSync(join(dir, 'lock'), 'utf8')), { runner: process.pid, child: 4242 });
   assert.deepEqual(readdirSync(dir), ['lock']); // no temp file left behind
+});
+
+// review round 1, C2: an atomic lock, an unreadable lock judged by its age, release by the owner only
+test('lock: an empty or corrupt lock younger than 10 s is held; older, it is stale and taken over', () => {
+  for (const body of ['', '{not json']) {
+    const dir = fresh();
+    writeFileSync(join(dir, 'lock'), body);
+    assert.equal(acquireLock(dir, process.pid).ok, false, `young lock ${JSON.stringify(body)}`);
+    assert.equal(readFileSync(join(dir, 'lock'), 'utf8'), body); // left alone
+    const old = (Date.now() - 11000) / 1000;
+    utimesSync(join(dir, 'lock'), old, old);
+    assert.deepEqual(acquireLock(dir, process.pid), { ok: true });
+    assert.equal(JSON.parse(readFileSync(join(dir, 'lock'), 'utf8')).runner, process.pid);
+    assert.deepEqual(readdirSync(dir), ['lock']); // no temp or stale copy left behind
+  }
+});
+
+test('lock: taken by a hard link of a complete temp file; a dead holder\'s lock is renamed away, not removed in place', () => {
+  const dir = fresh();
+  assert.deepEqual(acquireLock(dir, process.pid), { ok: true });
+  assert.deepEqual(readdirSync(dir), ['lock']);
+  assert.equal(statSync(join(dir, 'lock')).nlink, 1); // the temp name is gone
+  const dead = fresh();
+  writeFileSync(join(dead, 'lock'), JSON.stringify({ runner: 999999, child: null }));
+  assert.deepEqual(acquireLock(dead, process.pid), { ok: true });
+  assert.deepEqual(readdirSync(dead), ['lock']);
+});
+
+test('lock: releaseLock leaves a lock that another runner holds, or one it cannot read', () => {
+  const dir = fresh();
+  writeFileSync(join(dir, 'lock'), JSON.stringify({ runner: process.pid + 1, child: null }));
+  releaseLock(dir);
+  assert.ok(existsSync(join(dir, 'lock')));
+  writeFileSync(join(dir, 'lock'), '{not json');
+  releaseLock(dir);
+  assert.ok(existsSync(join(dir, 'lock')));
+  writeFileSync(join(dir, 'lock'), JSON.stringify({ runner: process.pid, child: null }));
+  releaseLock(dir);
+  assert.equal(existsSync(join(dir, 'lock')), false);
+});
+
+test('setChildPid: only the runner that holds the lock writes it', () => {
+  const dir = fresh();
+  const other = JSON.stringify({ runner: process.pid + 1, child: null });
+  writeFileSync(join(dir, 'lock'), other);
+  setChildPid(dir, 4242);
+  assert.equal(readFileSync(join(dir, 'lock'), 'utf8'), other);
+});
+
+// C7: a run dir is one folder under ship-runner/
+test('runDir: backslashes dashed too; an id with .. is refused', () => {
+  assert.equal(runDir('/r', 'plan', 'a\\b/c'), '/r/.superpowers/ship-runner/plan-a-b-c/');
+  assert.throws(() => runDir('/r', 'plan', '../x'), /\.\./);
+  assert.throws(() => runDir('/r', 'issue', '..'), /\.\./);
+});
+
+// C5: child-written text reaches the watching session through events.log
+test('emit: control characters are stripped from the line, a tab is kept', () => {
+  const dir = fresh();
+  emit(dir, 'K-1', 'spec', 'progress', 'Progress: \x1b[31mred\x1b[0m\x07 a\tb\r\x00\x9bc');
+  const line = readFileSync(join(dir, 'events.log'), 'utf8');
+  assert.match(line, /^\S+ K-1 spec progress Progress: \[31mred\[0m a\tb c\n$/);
 });
