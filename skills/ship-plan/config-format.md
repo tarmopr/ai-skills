@@ -313,6 +313,7 @@ start runs on Opus at high effort.
 | `Final review` | `verify-and-fix` section 4: review round 1's `code-reviewer`, the run's whole-branch review | `opus`, `xhigh` |
 | `Simplify` | `ship-plan` section 2b: the simplify pass over the whole diff | `sonnet`, `high` |
 | `Review round` | `verify-and-fix` section 4: every other review agent, every round | `opus`, `high` |
+| `Wording review` | `verify-and-fix` section 4: `comment-analyzer` and `type-design-analyzer`, every round | `sonnet`, `high` |
 | `Research` | `ship-issue`, `ship-plan`, `verify-and-fix`: an `Explore` agent the session sends to read code or logs; `ship-plan` section 8's log writer | `sonnet`, `medium` |
 | `Queue run` | `ship-queue` Q2: each sub-issue's child session | `opus`, `high` |
 | `Phase: implement` | Runner: the implement child (plan tasks, in chunks) | `sonnet`, `high` |

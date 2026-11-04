@@ -123,6 +123,7 @@ regressions: a later round often finds bugs an earlier round's fixes introduced.
 ## 2. Gates
 
 - Run every `## Gates` row whose `Only when changed` globs match `git diff --name-only origin/<base>...HEAD` (no globs: always). Run each with `CI=true` in its environment and its output sent to `.superpowers/verify-and-fix/<branch>/<gate>.log`, then read its last 60 lines. Long output left in context crowds out the rest of the loop. When the cause is not in those lines, an `Explore` agent at the `## Models` `Research` row reads the log and reports at most 30 lines; so does any search of the code a fix needs (ship-plan's "This session reads little itself").
+- **After a round's fixes,** rerun the rows with no `Only when changed` globs, and the rows whose globs match `git diff --name-only <the last gated sha>..HEAD`. Every other row keeps its last result, which the gate table shows with that sha. After each gate run, write `Gated: <HEAD sha> — <the rows run>` in the ledger; the newest is the last gated sha. A merge of the base branch reruns every row.
 - Run the command **exactly as configured.** A variant you think is better (an extra flag, a one-shot form) is a proposed config change, not something you run as the gate.
 - Follow the row's `Notes` as part of the gate: a precondition, a second run under another setup, a known local-only failure. A note may change how the gate is judged; when it changes the result, the gate table names the note. A note never silently turns a fail or a skip into a pass. Empty: nothing extra.
 - Each gate has one result: **pass, fail, skipped, or could not run.** Read the tail for skip counts and the file each skip is in. The row's `Allowed skips` is a number or `files: <globs>`:
@@ -156,8 +157,10 @@ Launch the round's reviews in parallel. Every agent gets the `model` and
 `effort` of its `## Models` row ([format](../ship-plan/config-format.md))
 passed explicitly: round 1's `code-reviewer` the `Final review` row (default
 `opus`, `xhigh`), as it is the run's whole-branch review (not in `--comments`
-mode: [review-comments.md](review-comments.md)); every other agent,
-every round, the `Review round` row (default `opus`, `high`). Agents whose
+mode: [review-comments.md](review-comments.md)); `comment-analyzer` and
+`type-design-analyzer`, every round, the `Wording review` row (default
+`sonnet`, `high`); every other agent, every round, the `Review round` row
+(default `opus`, `high`). Agents whose
 definition says `model: inherit` would otherwise take whatever model the
 session runs on.
 
@@ -178,7 +181,9 @@ Any other diff gets the full panel.
 fixes since the last round. `code-reviewer`, the security review, and the
 agent whose finding each fix addressed. Tell each reviewer to read the whole
 files the delta touches, not only its hunks, and give it the previous round's
-findings and fixes. A delta of more than 200 lines, or a branch whose diff
+findings and fixes. A delta with more than 200 lines inserted plus deleted
+outside test files and docs (a hunk that changes only comments counts as
+zero), or a branch whose diff
 (`origin/<base>...HEAD`) touches `## Risk paths`: the full panel on
 `git diff origin/<base>...HEAD`, every round.
 
