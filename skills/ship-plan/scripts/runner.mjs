@@ -614,7 +614,8 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
         if (['running', 'cut off', 'not started', 'blocked'].includes(i.status)) Object.assign(i, { status: 'queued', reason: '' });
         if (i.status === 'waiting' && !phaseFromLedgers(root, i.key, ledgerOpts(root, state, i)).waiting) Object.assign(i, { status: 'queued', reason: '' });
       }
-      // a queue started again with more keys or deps: they join the run
+      // a queue started again: new keys join the run; each named key's deps become the ones given,
+      // so a dependency the session no longer finds (the parent's text changed) is dropped
       if (state.kind === 'queue') {
         const added = [];
         const waits = [];
@@ -626,11 +627,12 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
             if (n.deps.length) waits.push(`${n.key} waits for ${n.deps.join(', ')}`);
             continue;
           }
-          const more = n.deps.filter((d) => !(old.deps ?? []).includes(d));
-          if (more.length) {
-            old.deps = [...(old.deps ?? []), ...more];
-            waits.push(`${n.key} waits for ${more.join(', ')}`);
-          }
+          const before = old.deps ?? [];
+          const more = n.deps.filter((d) => !before.includes(d));
+          const gone = before.filter((d) => !n.deps.includes(d));
+          old.deps = [...n.deps];
+          if (more.length) waits.push(`${n.key} waits for ${more.join(', ')}`);
+          if (gone.length) waits.push(`${n.key} no longer waits for ${gone.join(', ')}`);
         }
         if (added.length) changes.push(`added ${added.join(', ')}`);
         changes.push(...waits);

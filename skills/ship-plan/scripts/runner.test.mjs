@@ -699,6 +699,19 @@ test('start queue rerun with more keys and deps: they are merged into the run, a
   assert.deepEqual(starts(dir), ['M-1', 'M-2', 'M-3']);
 });
 
+test('start queue rerun with fewer deps: a dropped dep is removed, the item runs, and an event says so', () => {
+  const root = repo();
+  atVerify(root, 'D-1', 'D-2');
+  const env = JSON.stringify({ 'D-1': { FAKE_CLAUDE: 'crash' }, 'D-2': ships('D-2') });
+  assert.equal(cli(root, ['start', 'queue', 'P-1', 'D-1,D-2', '--deps', 'D-2:D-1'], { FAKE_CLAUDE_BY_KEY: env }).status, 0);
+  const dir = runDir(root, 'queue', 'P-1');
+  assert.deepEqual(readState(dir).items.map((i) => [i.key, i.status]), [['D-1', 'blocked'], ['D-2', 'not started']]);
+  const r = cli(root, ['start', 'queue', 'P-1', 'D-1,D-2'], { FAKE_CLAUDE_BY_KEY: env });
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(readState(dir).items.map((i) => [i.key, i.status, i.deps]), [['D-1', 'blocked', []], ['D-2', 'done', []]]);
+  assert.match(events(dir), / P-1 - progress queue changed: D-2 no longer waits for D-1$/m);
+});
+
 test('start queue: a key twice or a key waiting for itself is refused', () => {
   const root = repo();
   let r = cli(root, ['start', 'queue', 'P-1', 'A-1,A-2,A-1']);
