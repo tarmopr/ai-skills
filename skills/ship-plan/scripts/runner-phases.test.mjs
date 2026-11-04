@@ -64,14 +64,22 @@ test('phaseFromLedgers: I2 -> spec; I5 -> plan; ship-plan 2b -> implement; 4R aw
   assert.match(odd.blocked, /unknown ship-plan phase "9z"/);
 });
 
-test('phaseFromLedgers: an empty ship-plan ledger: field -> the ledger is found from Branch: (FOR-528)', () => {
-  const noField = `Phase: I6 | Issue: ${KEY} | Branch: feat/bill-7 | Spec: docs/spec.md | Plan: docs/plan.md | ship-plan ledger:`;
-  assert.equal(phaseFromLedgers(repo({ issue: [noField], plan: [planFirst('3')] }), KEY).phase, 'verify');
+test('phaseFromLedgers: no file at the ship-plan ledger: field -> the ship-plan ledger whose Plan: names the plan (FOR-528)', () => {
+  const withField = (v) => `Phase: I6 | Issue: ${KEY} | Branch: feat/bill-7 | Spec: docs/spec.md | Plan: docs/plan.md | ship-plan ledger:${v}`;
+  // empty, `none`, or a predicted path ship-plan never made: found by its Plan: field
+  for (const v of ['', ' none', ' .superpowers/ship-plan/feat-predicted/ledger.md']) {
+    assert.equal(phaseFromLedgers(repo({ issue: [withField(v)], plan: [planFirst('3')] }), KEY).phase, 'verify', v);
+  }
   // no such ledger yet: implement, as before
-  assert.equal(phaseFromLedgers(repo({ issue: [noField] }), KEY).phase, 'implement');
-  // the field, when set, wins over Branch:
-  const other = `Phase: I6 | Issue: ${KEY} | Branch: feat/other | Plan: docs/plan.md | ship-plan ledger: ${PLAN_LEDGER}`;
-  assert.equal(phaseFromLedgers(repo({ issue: [other], plan: [planFirst('7')] }), KEY).phase, 'close');
+  assert.equal(phaseFromLedgers(repo({ issue: [withField('')] }), KEY).phase, 'implement');
+  // the field's file, when it exists, wins
+  const named = repo({ issue: [withField(` ${PLAN_LEDGER}`)], plan: [planFirst('7')] });
+  assert.equal(phaseFromLedgers(named, KEY).phase, 'close');
+  // a leftover ledger for another plan on the same branch folder is not this issue's
+  const stale = repo({ issue: [withField('')] });
+  mkdirSync(join(stale, dirname(PLAN_LEDGER)), { recursive: true });
+  writeFileSync(join(stale, PLAN_LEDGER), `Phase: done | Plan: docs/old-plan.md | Issue: OLD-1 | PR: #1 | merge: | base run: 1\n`);
+  assert.equal(phaseFromLedgers(stale, KEY).phase, 'implement');
 });
 
 test('runIssue: implement child writes only the ship-plan ledger (no field on the issue ledger) -> the run goes on (FOR-528)', async () => {
@@ -140,7 +148,7 @@ test('runIssue: marker says phase-done but ledger unchanged -> blocked, no secon
   const root = repo({ issue: [issueFirst(2)] });
   const it = await runIssue(ctxFor(root, { FAKE_CLAUDE: 'ok:RUNNER: phase-done spec written' }), item());
   assert.equal(it.status, 'blocked');
-  const why = `phase spec ended without progress: the child said phase-done, but no ledger the runner reads changed (${ISSUE}; ${PLAN_LEDGER})`;
+  const why = `phase spec ended without progress: the child said phase-done, but no ledger the runner reads changed (${ISSUE}; ${PLAN_LEDGER} (missing))`;
   assert.equal(it.reason, why);
   assert.equal(it.sessions.length, 1);
   assert.equal(existsSync(join(root, 'run', `${KEY}-spec-2.jsonl`)), false);

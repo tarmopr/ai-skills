@@ -44,18 +44,16 @@ function issueLedgerPath(root, key) {
   return join(root, '.superpowers', 'ship-issue', key.replace(/^#/, ''), 'ledger.md');
 }
 
-// The issue ledger's `ship-plan ledger:` field; while it is empty, the ledger ship-plan keeps for
-// the `Branch:` field's branch (`/` written as `-`), once that file exists. A runner child's
-// ship-plan can end its turn before ship-issue writes the field (FOR-528).
+// The issue ledger's `ship-plan ledger:` field, when a file is there; else the ship-plan ledger
+// whose first line's Plan: names the issue ledger's plan (findPlanLedger); else the field's path
+// (no ledger yet). The field can be empty, `none`, or a path ship-plan has not made: a runner
+// child's ship-plan can end its turn before ship-issue writes or corrects it (FOR-528).
 function planLedgerPath(root, issueLines) {
   const fields = issueLines ? firstLineFields(issueLines[0]) : {};
   const p = fields['ship-plan ledger'];
-  if (p) return atRoot(root, p);
-  // a ref-shaped first word, backticks stripped; git refuses `..` in a branch name
-  const branch = (fields.Branch ?? '').replaceAll('`', '').split(/\s+/)[0];
-  if (!branch || branch.includes('..') || branch.startsWith('/')) return null;
-  const byBranch = join(root, '.superpowers', 'ship-plan', branch.replaceAll('/', '-'), 'ledger.md');
-  return existsSync(byBranch) ? byBranch : null;
+  const named = p && p !== 'none' ? atRoot(root, p) : null;
+  if (named && existsSync(named)) return named;
+  return (fields.Plan ? findPlanLedger(root, fields.Plan) : null) ?? named;
 }
 
 function planPhase(value) {
@@ -574,7 +572,8 @@ export async function runIssue(ctx, item) {
         const why = r.marker.text || 'already done';
         return end('done', why, phase, 'done', why);
       }
-      const read = Object.values(ledgerFiles(root, key, ctx.ledgers)).filter(Boolean).map((f) => relative(root, f));
+      const read = Object.values(ledgerFiles(root, key, ctx.ledgers)).filter(Boolean)
+        .map((f) => relative(root, f) + (existsSync(f) ? '' : ' (missing)'));
       const why = `phase ${phase} ended without progress: the child said ${r.marker.status}, but no ledger the runner reads changed (${read.join('; ') || 'none'})`;
       return end('blocked', why, phase, 'blocked', why);
     }
