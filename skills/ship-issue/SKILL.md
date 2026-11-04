@@ -217,8 +217,8 @@ and the runner finds the work through this field. When ship-plan returns (not
 in a runner child), check a file is at that path; if ship-plan named its folder
 otherwise (it creates the branch on `<base>`), correct the field to its ledger:
 the `.superpowers/ship-plan/*/ledger.md` whose first line's `Plan:` names this
-plan and `Issue:` this issue's key or `none`, an
-open one (not `Phase: done`) first.
+plan and `Issue:` this issue's key (else `none`),
+an open one (not `Phase: done`) first within each.
 An ignored plan exists only in the checkout where it was written and does not
 travel with the branch. If ship-plan runs in a different checkout, copy the
 file there first.
@@ -268,7 +268,7 @@ Queued mode above applies, with these changes:
 - **`Asked:` lines** hold the question, then its options with the recommendation first, as verify-and-fix's Runner mode writes them: `Asked: <the question, its options, the recommendation first> — pending`. The runner's `status` prints them as they are, and the watching session asks from them.
 - **Never a worktree, never another checkout** (section W and [worktree.md](worktree.md)): on `<base>`, clean, branch there, or `git switch <branch>` when this issue's branch exists already (a resume); on this issue's branch, stay. Where W would create a new worktree (the checkout dirty or on another branch), write `Blocked: needs a new worktree — <reason>` to this ledger, or with no ledger yet put it in the `RUNNER:` line, and end `RUNNER: blocked`.
 - **Only the named phase, reading only its phase file:** `spec` is I0–I3 ([phase-spec.md](phase-spec.md)); `plan` is I4 and I5 ([phase-plan.md](phase-plan.md)). A phase ends where the next one begins: rewrite the `Phase:` field of the ledger's first line, keeping its other fields, to `Phase: I4` once the spec holds no `[pending Q<n>` marker, and to `Phase: I6` after I5, then end.
-- **`implement`, `verify`, `merge` and `close` are ship-plan's:** skip this skill's reads before I0 and go straight to the hand-over: with no ship-plan ledger for this issue (no file at this ledger's first-line `ship-plan ledger:` path, and none under `.superpowers/ship-plan/*/ledger.md` whose first line's `Plan:` names this ledger's plan and `Issue:` this issue's key or `none`, an open one first), I6; with one, write its path into the field if it differs, then invoke ship-plan with `--session` and no other argument, as I0's row for a ship-plan ledger does. ship-plan runs in its own Runner mode (its "Runner mode (ship-runner)" section) for the phase and task range the runner named, and its `RUNNER:` line ends this run's reply.
+- **`implement`, `verify`, `merge` and `close` are ship-plan's:** skip this skill's reads before I0 and go straight to the hand-over: with no ship-plan ledger for this issue (no file at this ledger's first-line `ship-plan ledger:` path, and none under `.superpowers/ship-plan/*/ledger.md` whose first line's `Plan:` names this ledger's plan and `Issue:` this issue's key (else `none`), an open one first within each), I6; with one, write its path into the field if it differs, then invoke ship-plan with `--session` and no other argument, as I0's row for a ship-plan ledger does. ship-plan runs in its own Runner mode (its "Runner mode (ship-runner)" section) for the phase and task range the runner named, and its `RUNNER:` line ends this run's reply.
 - **I0's live-run row** does not apply to this issue's own ledgers in this checkout: the runner's lock lets only one child run at a time, and the last write may be the previous child's. A ledger for the issue in any other checkout still counts.
 - **Progress lines:** at each milestone write `Progress: <text>` to this ledger: `spec done <path>`, `batch of <n> sent`, `plan done <path>`.
 - **The batch:** write `Progress: batch of <n> sent` before the `Waiting: batch …` line. That line stays the ledger's last line until the answers come; write nothing after it.
