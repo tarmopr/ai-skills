@@ -209,6 +209,12 @@ function runOnce({ dir, cwd, key, phase, prompt, model, effort, mode, resume, en
   return new Promise((resolve) => {
     let sessionId = null;
     let result = null;
+    // a child with background tasks ends a turn per task notification: one result line each.
+    // num_turns and duration_ms count that turn only, and the RUNNER: line may sit in an earlier one
+    let turns = 0;
+    let marker = null; // the last RUNNER: line of any result; `stale` when a later result had none
+    let costUsd = null;
+    const startedAt = Date.now();
     let stderr = '';
     let spawnError = null;
     let idle = null;
@@ -250,7 +256,17 @@ function runOnce({ dir, cwd, key, phase, prompt, model, effort, mode, resume, en
       let msg;
       try { msg = JSON.parse(line); } catch { return; } // not JSON: logged, otherwise ignored
       if (msg && typeof msg.session_id === 'string') sessionId = msg.session_id;
-      if (msg && msg.type === 'result') result = msg;
+      if (msg && msg.type === 'result') {
+        result = msg;
+        if (typeof msg.num_turns === 'number') turns += msg.num_turns;
+        if (typeof msg.total_cost_usd === 'number') costUsd = Math.max(costUsd ?? 0, msg.total_cost_usd);
+        // a later turn without a line (a background task's notice) keeps the earlier one, flagged:
+        // the work after it may have overtaken a blocked or done, so runIssue trusts those only
+        // while the ledgers stand still
+        const m = parseMarker(msg.result);
+        if (m) marker = m;
+        else if (marker) marker = { ...marker, stale: true };
+      }
       if (msg && msg.type === 'rate_limit_event' && msg.rate_limit_info?.status === 'rejected') rateLimited = true;
     });
     const linesDone = new Promise((r) => lines.on('close', r));
@@ -294,10 +310,10 @@ function runOnce({ dir, cwd, key, phase, prompt, model, effort, mode, resume, en
         child: {
           ok: errors.length === 0,
           sessionId,
-          marker: result ? parseMarker(result.result) : null,
-          costUsd: result?.total_cost_usd ?? null,
-          turns: result?.num_turns ?? null,
-          minutes: typeof result?.duration_ms === 'number' ? Math.round(result.duration_ms / 60000) : null,
+          marker: result ? marker : null,
+          costUsd,
+          turns: result ? turns : null,
+          minutes: result ? Math.round((Date.now() - startedAt) / 60000) : null,
           error: errors.length ? redact(errors.join('; ')) : null,
         },
       });

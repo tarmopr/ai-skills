@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -64,6 +64,119 @@ test('phaseFromLedgers: I2 -> spec; I5 -> plan; ship-plan 2b -> implement; 4R aw
   assert.match(odd.blocked, /unknown ship-plan phase "9z"/);
 });
 
+test('phaseFromLedgers: no file at the ship-plan ledger: field -> the ship-plan ledger whose Plan: names the plan (FOR-528)', () => {
+  const withField = (v) => `Phase: I6 | Issue: ${KEY} | Branch: feat/bill-7 | Spec: docs/spec.md | Plan: docs/plan.md | ship-plan ledger:${v}`;
+  // empty, `none`, or a predicted path ship-plan never made: found by its Plan: field
+  for (const v of ['', ' none', ' .superpowers/ship-plan/feat-predicted/ledger.md']) {
+    assert.equal(phaseFromLedgers(repo({ issue: [withField(v)], plan: [planFirst('3')] }), KEY).phase, 'verify', v);
+  }
+  // no such ledger yet: implement, as before
+  assert.equal(phaseFromLedgers(repo({ issue: [withField('')] }), KEY).phase, 'implement');
+  // the field's file, when it exists, wins
+  const named = repo({ issue: [withField(` ${PLAN_LEDGER}`)], plan: [planFirst('7')] });
+  assert.equal(phaseFromLedgers(named, KEY).phase, 'close');
+  // a leftover ledger for another plan on the same branch folder is not this issue's
+  const stale = repo({ issue: [withField('')] });
+  mkdirSync(join(stale, dirname(PLAN_LEDGER)), { recursive: true });
+  writeFileSync(join(stale, PLAN_LEDGER), `Phase: done | Plan: docs/old-plan.md | Issue: OLD-1 | PR: #1 | merge: | base run: 1\n`);
+  assert.equal(phaseFromLedgers(stale, KEY).phase, 'implement');
+  // a done ledger for the same plan but another issue (a re-ship) is not this issue's either
+  const reship = repo({ issue: [withField('')] });
+  mkdirSync(join(reship, dirname(PLAN_LEDGER)), { recursive: true });
+  writeFileSync(join(reship, PLAN_LEDGER), `Phase: done | Plan: docs/plan.md | Issue: OLD-1 | PR: #1 | merge: | base run: 1\n`);
+  assert.equal(phaseFromLedgers(reship, KEY).phase, 'implement');
+  // the field's file is used only when its Plan: names this plan: else the lookup
+  const left = repo({ issue: [withField(' .superpowers/ship-plan/left/ledger.md')], plan: [planFirst('3')] });
+  mkdirSync(join(left, '.superpowers/ship-plan/left'), { recursive: true });
+  writeFileSync(join(left, '.superpowers/ship-plan/left/ledger.md'), `Phase: done | Plan: docs/old-plan.md | Issue: ${KEY}\n`);
+  assert.equal(phaseFromLedgers(left, KEY).phase, 'verify');
+  // no tracker: the run key is a slug, both ledgers say Issue: none
+  const slug = 'fix-login';
+  const noTracker = repo();
+  const put = (rel, text) => { mkdirSync(join(noTracker, dirname(rel)), { recursive: true }); writeFileSync(join(noTracker, rel), text + '\n'); };
+  put(`.superpowers/ship-issue/${slug}/ledger.md`, 'Phase: I6 | Issue: none | Branch: fix/login | Plan: docs/plan.md | ship-plan ledger: none');
+  put('.superpowers/ship-plan/fix-login/ledger.md', 'Phase: 3 | Plan: docs/plan.md | Issue: none');
+  assert.equal(phaseFromLedgers(noTracker, slug).phase, 'verify');
+  // the field names a folder, not a file: the lookup still runs
+  const dirField = repo({ issue: [withField(' .superpowers/ship-plan/feat-bill-7')], plan: [planFirst('3')] });
+  assert.equal(phaseFromLedgers(dirField, KEY).phase, 'verify');
+  // ... and with no ledger to find: no ship-plan ledger yet, not an EISDIR
+  const emptyDir = repo({ issue: [withField(' .superpowers/ship-plan/empty')] });
+  mkdirSync(join(emptyDir, '.superpowers/ship-plan/empty'), { recursive: true });
+  assert.equal(phaseFromLedgers(emptyDir, KEY).phase, 'implement');
+  // a tracker run whose ship-plan went on with no issue (tracker unavailable): its Issue: none
+  // ledger for this plan still counts
+  const trackerless = repo({ issue: [withField(' none')] });
+  mkdirSync(join(trackerless, dirname(PLAN_LEDGER)), { recursive: true });
+  writeFileSync(join(trackerless, PLAN_LEDGER), 'Phase: 3 | Plan: docs/plan.md | Issue: none\n');
+  assert.equal(phaseFromLedgers(trackerless, KEY).phase, 'verify');
+});
+
+test('findPlanLedger { issue }: Issue: must match; unreadable entries skipped; the newest open one wins', () => {
+  const root = repo();
+  const put = (slug, first, mtime) => {
+    const f = join(root, '.superpowers/ship-plan', slug, 'ledger.md');
+    mkdirSync(dirname(f), { recursive: true });
+    writeFileSync(f, first + '\n');
+    if (mtime) utimesSync(f, mtime, mtime);
+    return f;
+  };
+  put('a-other-issue', 'Phase: 3 | Plan: docs/plan.md | Issue: OLD-1');
+  assert.equal(findPlanLedger(root, 'docs/plan.md', { issue: KEY }), null);
+  assert.ok(findPlanLedger(root, 'docs/plan.md')); // without { issue }: as before
+  mkdirSync(join(root, '.superpowers/ship-plan/b-broken/ledger.md'), { recursive: true }); // EISDIR
+  const older = put('c-open', `Phase: 2 | Plan: docs/plan.md | Issue: ${KEY}`, 1_000_000);
+  assert.equal(findPlanLedger(root, 'docs/plan.md', { issue: KEY }), older);
+  // newer, and later in the listing than c-open: picked by mtime, not by name
+  const newer = put('d-renamed', `Phase: 3 | Plan: docs/plan.md | Issue: ${KEY}`, 2_000_000);
+  put('0-first', `Phase: 4 | Plan: docs/plan.md | Issue: ${KEY}`, 1_500_000); // first by name, older
+  assert.equal(findPlanLedger(root, 'docs/plan.md', { issue: KEY.toLowerCase() }), newer);
+  // an open one beats a newer done one; a leading # is ignored on either side
+  put('e-done', `Phase: done | Plan: docs/plan.md | Issue: #${KEY}`, 3_000_000);
+  assert.equal(findPlanLedger(root, 'docs/plan.md', { issue: `#${KEY}` }), newer);
+  // GitHub key forms name the same issue: #12, owner/name#12, an issues URL
+  const gh = repo();
+  const f = join(gh, '.superpowers/ship-plan/x/ledger.md');
+  mkdirSync(dirname(f), { recursive: true });
+  writeFileSync(f, 'Phase: 3 | Plan: docs/plan.md | Issue: #12\n');
+  for (const k of ['#12', '12', 'acme/app#12', 'https://github.com/acme/app/issues/12']) {
+    assert.equal(findPlanLedger(gh, 'docs/plan.md', { issue: k }), f, k);
+  }
+  assert.equal(findPlanLedger(gh, 'docs/plan.md', { issue: 'acme/app#120' }), null);
+});
+
+test('runIssue: a stale RUNNER: blocked (an earlier turn) -> its reason when the ledger is unchanged, ignored when it advanced', async () => {
+  const unchanged = repo({ issue: [issueFirst(2)] });
+  const a = await runIssue(ctxFor(unchanged, { FAKE_CLAUDE: 'multi', FAKE_CLAUDE_MARKER: 'RUNNER: blocked needs a new worktree' }), item());
+  assert.equal(a.status, 'blocked');
+  assert.equal(a.reason, 'needs a new worktree');
+  // a stale done, the ledgers unmoved: done (I0's "already done", then a background task's notice)
+  const doneUnchanged = repo({ issue: [issueFirst(2)] });
+  const c = await runIssue(ctxFor(doneUnchanged, { FAKE_CLAUDE: 'multi', FAKE_CLAUDE_MARKER: 'RUNNER: done already merged' }), item());
+  assert.equal(c.status, 'done');
+  assert.equal(c.reason, 'already merged');
+  const advanced = repo({ issue: [issueFirst(2)], tasks: 1 });
+  const ops = ledgerOps([
+    { file: ISSUE, when: 'phase spec', firstLine: issueFirst(4) },
+    { file: ISSUE, when: 'phase plan', firstLine: issueFirst(6) },
+    { file: PLAN_LEDGER, when: 'phase implement', firstLine: planFirst('done') },
+  ]);
+  const b = await runIssue(ctxFor(advanced, { FAKE_CLAUDE: 'multi', FAKE_CLAUDE_MARKER: 'RUNNER: blocked old', FAKE_CLAUDE_LEDGER_APPEND: ops }), item());
+  assert.equal(b.status, 'done', events(advanced));
+});
+
+test('runIssue: implement child writes only the ship-plan ledger (no field on the issue ledger) -> the run goes on (FOR-528)', async () => {
+  const noField = `Phase: I6 | Issue: ${KEY} | Branch: feat/bill-7 | Spec: docs/spec.md | Plan: docs/plan.md | ship-plan ledger:`;
+  const root = repo({ issue: [noField], tasks: 1 });
+  const ops = ledgerOps([
+    { file: PLAN_LEDGER, when: 'phase implement, plan tasks', firstLine: planFirst('2'), append: ['Progress: task 1 done'] },
+    { file: PLAN_LEDGER, when: 'for phase implement.', firstLine: planFirst('3') },
+    { file: PLAN_LEDGER, when: 'phase verify', firstLine: planFirst('done') },
+  ]);
+  const it = await runIssue(ctxFor(root, { FAKE_CLAUDE: 'ok:RUNNER: phase-done', FAKE_CLAUDE_LEDGER_APPEND: ops }), item());
+  assert.equal(it.status, 'done', events(root));
+});
+
 test('waiting: Waiting: batch line or Asked … — pending', () => {
   const batch = repo({ issue: [issueFirst(3), 'Asked: which db? — pending', 'Waiting: batch of 1, sent 2026-11-03; heads: none'] });
   assert.equal(phaseFromLedgers(batch, KEY).waiting, true);
@@ -118,10 +231,11 @@ test('runIssue: marker says phase-done but ledger unchanged -> blocked, no secon
   const root = repo({ issue: [issueFirst(2)] });
   const it = await runIssue(ctxFor(root, { FAKE_CLAUDE: 'ok:RUNNER: phase-done spec written' }), item());
   assert.equal(it.status, 'blocked');
-  assert.equal(it.reason, 'phase spec ended without progress');
+  const why = `phase spec ended without progress: the child said phase-done, but no ledger the runner reads changed (${ISSUE}; ${PLAN_LEDGER} (missing))`;
+  assert.equal(it.reason, why);
   assert.equal(it.sessions.length, 1);
   assert.equal(existsSync(join(root, 'run', `${KEY}-spec-2.jsonl`)), false);
-  assert.match(events(root), / BILL-7 spec blocked phase spec ended without progress$/m);
+  assert.ok(events(root).includes(` BILL-7 spec blocked ${why}\n`));
 });
 
 test('runIssue: no marker but ledger advanced -> continues (Review Focus 2)', async () => {
@@ -136,8 +250,8 @@ test('runIssue: no marker but ledger advanced -> continues (Review Focus 2)', as
   const it = await runIssue(ctxFor(root, { FAKE_CLAUDE: 'ok:', FAKE_CLAUDE_LEDGER_APPEND: ops }, { save: (i) => saved.push(i.status) }), item());
   assert.equal(it.status, 'done');
   assert.deepEqual(it.sessions, [
-    { phase: 'plan', sessionId: 's-1', costUsd: 0.42, turns: 3, minutes: 3 },
-    { phase: 'verify', sessionId: 's-1', costUsd: 0.42, turns: 3, minutes: 3 },
+    { phase: 'plan', sessionId: 's-1', costUsd: 0.42, turns: 3, minutes: 0 },
+    { phase: 'verify', sessionId: 's-1', costUsd: 0.42, turns: 3, minutes: 0 },
   ]);
   assert.ok(saved.length >= 1);
   assert.match(events(root), / BILL-7 plan start /);
@@ -418,8 +532,8 @@ test('runIssue: a dead resume with answers -> the fresh child gets them, answers
   assert.match(seen.stdin, /copied exactly:\npostgres\n$/);
   assert.equal(it.answersFile, null);
   assert.deepEqual(it.sessions.slice(1, 3), [
-    { phase: 'spec', sessionId: 's-9', costUsd: 0, turns: 0, minutes: null },
-    { phase: 'spec', sessionId: 's-1', costUsd: 0.42, turns: 3, minutes: 3 },
+    { phase: 'spec', sessionId: 's-9', costUsd: 0, turns: 0, minutes: 0 },
+    { phase: 'spec', sessionId: 's-1', costUsd: 0.42, turns: 3, minutes: 0 },
   ]);
 });
 

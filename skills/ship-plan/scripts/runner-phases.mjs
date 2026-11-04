@@ -2,7 +2,7 @@
 // and the loop that runs one child per phase (per chunk of plan tasks for implement).
 // The ledgers win over a child's RUNNER: marker.
 import { createHash } from 'node:crypto';
-import { lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync, statSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { answersNamed, emit, readAnswers, runGit } from './runner-lib.mjs';
 import { isEnvError, isLimitError, resumeOrFresh, runChild } from './runner-child.mjs';
@@ -44,9 +44,29 @@ function issueLedgerPath(root, key) {
   return join(root, '.superpowers', 'ship-issue', key.replace(/^#/, ''), 'ledger.md');
 }
 
+// The issue ledger's `ship-plan ledger:` field, when a file is there whose Plan: names the issue
+// ledger's plan; else the ship-plan ledger for this plan and issue (findPlanLedger); else the
+// field's path (no ledger yet). The field can be empty, `none`, a path ship-plan has not made or
+// a leftover folder's: a runner child's ship-plan can end its turn before ship-issue writes or
+// corrects it (FOR-528).
 function planLedgerPath(root, issueLines) {
-  const p = issueLines ? firstLineFields(issueLines[0])['ship-plan ledger'] : '';
-  return p ? atRoot(root, p) : null;
+  const fields = issueLines ? firstLineFields(issueLines[0]) : {};
+  const p = fields['ship-plan ledger'];
+  const named = p && p !== 'none' ? atRoot(root, p) : null;
+  if (!fields.Plan) return named;
+  let namedPlan = null;
+  let readable = true;
+  try {
+    namedPlan = named ? firstLineFields(readLines(named)?.[0]).Plan : null;
+  } catch {
+    readable = false; // a folder or an unreadable file: never read as the ledger
+  }
+  if (namedPlan && resolve(root, namedPlan) === resolve(root, fields.Plan)) return named;
+  // this issue's ledger; else one ship-plan kept with no issue (no tracker, or the tracker was
+  // unavailable to it): the plan path names the issue already
+  const issue = fields.Issue || 'none';
+  const found = findPlanLedger(root, fields.Plan, { issue }) ?? findPlanLedger(root, fields.Plan, { issue: 'none' });
+  return found ?? (readable ? named : null);
 }
 
 function planPhase(value) {
@@ -153,9 +173,12 @@ function readLedgers(root, key, opts = {}) {
   };
 }
 
-// The ship-plan ledger whose first line's Plan: field names planPath: an open one first, else a
-// done one, else null.
-export function findPlanLedger(root, planPath) {
+// The ship-plan ledger whose first line's Plan: field names planPath (and, with `issue`, whose
+// Issue: field is that key: case ignored, a GitHub issue by its number; a missing Issue: reads as
+// `none`): the newest open one (by mtime), else
+// the newest done one, else null. An entry that cannot be read is skipped: another run's broken
+// folder never stops this one. A ship-plan folder that cannot be listed is an error.
+export function findPlanLedger(root, planPath, { issue } = {}) {
   const base = join(root, '.superpowers', 'ship-plan');
   let names;
   try {
@@ -165,17 +188,30 @@ export function findPlanLedger(root, planPath) {
     throw e;
   }
   const want = resolve(root, planPath);
-  let done = null;
+  // GitHub's #12, owner/name#12 and …/issues/12 are one issue: its number
+  const key = (k) => {
+    const s = String(k ?? '').trim().toLowerCase();
+    return /(?:#|\/issues\/)(\d+)\/?$/.exec(s)?.[1] ?? (s.replace(/^#/, '') || 'none');
+  };
+  const best = { open: null, done: null };
   for (const name of names) {
     const file = join(base, name, 'ledger.md');
-    const first = readLines(file)?.[0];
+    let first;
+    let mtime;
+    try {
+      first = readLines(file)?.[0];
+      mtime = statSync(file).mtimeMs;
+    } catch {
+      continue;
+    }
     if (!first) continue;
     const f = firstLineFields(first);
     if (!f.Plan || resolve(root, f.Plan) !== want) continue;
-    if (f.Phase !== 'done') return file;
-    done ??= file;
+    if (issue !== undefined && key(f.Issue) !== key(issue)) continue;
+    const slot = f.Phase === 'done' ? 'done' : 'open';
+    if (!best[slot] || mtime > best[slot].mtime) best[slot] = { file, mtime };
   }
-  return done;
+  return (best.open ?? best.done)?.file ?? null;
 }
 
 // The ship-plan ledger's `Outcome:` (written at close-out, under the first line), or null.
@@ -552,7 +588,7 @@ export async function runIssue(ctx, item) {
     }
     if (after.phase === 'finished' || after.unknown) continue;
     if (after.waiting) return end('waiting', plural(after.questions), phase, 'waiting', plural(after.questions));
-    if (r.marker?.status === 'blocked') {
+    if (r.marker?.status === 'blocked' && !r.marker.stale) {
       const why = r.marker.text || `phase ${phase} reported blocked`;
       return end('blocked', why, phase, 'blocked', why);
     }
@@ -560,12 +596,19 @@ export async function runIssue(ctx, item) {
     if (after.signature === before.signature) {
       // No ledger change: without a RUNNER: line the child did not finish its phase.
       if (!r.marker) return end('blocked', 'no RUNNER: line', phase, 'blocked', 'no RUNNER: line');
+      // an earlier turn's blocked, the ledgers unmoved since: it stands
+      if (r.marker.status === 'blocked') {
+        const why = r.marker.text || `phase ${phase} reported blocked`;
+        return end('blocked', why, phase, 'blocked', why);
+      }
       // nothing to do: the issue was finished already (ship-issue I0's first row)
       if (r.marker.status === 'done') {
         const why = r.marker.text || 'already done';
         return end('done', why, phase, 'done', why);
       }
-      const why = `phase ${phase} ended without progress`;
+      const read = Object.values(ledgerFiles(root, key, ctx.ledgers)).filter(Boolean)
+        .map((f) => relative(root, f) + (existsSync(f) ? '' : ' (missing)'));
+      const why = `phase ${phase} ended without progress: the child said ${r.marker.status}, but no ledger the runner reads changed (${read.join('; ') || 'none'})`;
       return end('blocked', why, phase, 'blocked', why);
     }
   }
