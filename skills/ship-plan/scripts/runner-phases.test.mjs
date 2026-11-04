@@ -90,6 +90,16 @@ test('phaseFromLedgers: no file at the ship-plan ledger: field -> the ship-plan 
   mkdirSync(join(left, '.superpowers/ship-plan/left'), { recursive: true });
   writeFileSync(join(left, '.superpowers/ship-plan/left/ledger.md'), `Phase: done | Plan: docs/old-plan.md | Issue: ${KEY}\n`);
   assert.equal(phaseFromLedgers(left, KEY).phase, 'verify');
+  // no tracker: the run key is a slug, both ledgers say Issue: none
+  const slug = 'fix-login';
+  const noTracker = repo();
+  const put = (rel, text) => { mkdirSync(join(noTracker, dirname(rel)), { recursive: true }); writeFileSync(join(noTracker, rel), text + '\n'); };
+  put(`.superpowers/ship-issue/${slug}/ledger.md`, 'Phase: I6 | Issue: none | Branch: fix/login | Plan: docs/plan.md | ship-plan ledger: none');
+  put('.superpowers/ship-plan/fix-login/ledger.md', 'Phase: 3 | Plan: docs/plan.md | Issue: none');
+  assert.equal(phaseFromLedgers(noTracker, slug).phase, 'verify');
+  // the field names a folder, not a file: the lookup still runs
+  const dirField = repo({ issue: [withField(' .superpowers/ship-plan/feat-bill-7')], plan: [planFirst('3')] });
+  assert.equal(phaseFromLedgers(dirField, KEY).phase, 'verify');
 });
 
 test('findPlanLedger { issue }: Issue: must match; unreadable entries skipped; the newest open one wins', () => {
@@ -107,8 +117,13 @@ test('findPlanLedger { issue }: Issue: must match; unreadable entries skipped; t
   mkdirSync(join(root, '.superpowers/ship-plan/b-broken/ledger.md'), { recursive: true }); // EISDIR
   const older = put('c-open', `Phase: 2 | Plan: docs/plan.md | Issue: ${KEY}`, 1_000_000);
   assert.equal(findPlanLedger(root, 'docs/plan.md', { issue: KEY }), older);
-  const newer = put('a-renamed', `Phase: 3 | Plan: docs/plan.md | Issue: ${KEY}`, 2_000_000);
+  // newer, and later in the listing than c-open: picked by mtime, not by name
+  const newer = put('d-renamed', `Phase: 3 | Plan: docs/plan.md | Issue: ${KEY}`, 2_000_000);
+  put('0-first', `Phase: 4 | Plan: docs/plan.md | Issue: ${KEY}`, 1_500_000); // first by name, older
   assert.equal(findPlanLedger(root, 'docs/plan.md', { issue: KEY.toLowerCase() }), newer);
+  // an open one beats a newer done one; a leading # is ignored on either side
+  put('e-done', `Phase: done | Plan: docs/plan.md | Issue: #${KEY}`, 3_000_000);
+  assert.equal(findPlanLedger(root, 'docs/plan.md', { issue: `#${KEY}` }), newer);
 });
 
 test('runIssue: a stale RUNNER: blocked (an earlier turn) -> its reason when the ledger is unchanged, ignored when it advanced', async () => {
@@ -116,6 +131,11 @@ test('runIssue: a stale RUNNER: blocked (an earlier turn) -> its reason when the
   const a = await runIssue(ctxFor(unchanged, { FAKE_CLAUDE: 'multi', FAKE_CLAUDE_MARKER: 'RUNNER: blocked needs a new worktree' }), item());
   assert.equal(a.status, 'blocked');
   assert.equal(a.reason, 'needs a new worktree');
+  // a stale done, the ledgers unmoved: done (I0's "already done", then a background task's notice)
+  const doneUnchanged = repo({ issue: [issueFirst(2)] });
+  const c = await runIssue(ctxFor(doneUnchanged, { FAKE_CLAUDE: 'multi', FAKE_CLAUDE_MARKER: 'RUNNER: done already merged' }), item());
+  assert.equal(c.status, 'done');
+  assert.equal(c.reason, 'already merged');
   const advanced = repo({ issue: [issueFirst(2)], tasks: 1 });
   const ops = ledgerOps([
     { file: ISSUE, when: 'phase spec', firstLine: issueFirst(4) },

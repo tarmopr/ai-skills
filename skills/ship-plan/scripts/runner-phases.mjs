@@ -49,14 +49,20 @@ function issueLedgerPath(root, key) {
 // field's path (no ledger yet). The field can be empty, `none`, a path ship-plan has not made or
 // a leftover folder's: a runner child's ship-plan can end its turn before ship-issue writes or
 // corrects it (FOR-528).
-function planLedgerPath(root, key, issueLines) {
+function planLedgerPath(root, issueLines) {
   const fields = issueLines ? firstLineFields(issueLines[0]) : {};
   const p = fields['ship-plan ledger'];
   const named = p && p !== 'none' ? atRoot(root, p) : null;
   if (!fields.Plan) return named;
-  const namedPlan = named ? firstLineFields(readLines(named)?.[0]).Plan : null;
+  let namedPlan = null;
+  try {
+    namedPlan = named ? firstLineFields(readLines(named)?.[0]).Plan : null;
+  } catch {
+    // a folder or an unreadable file: no match, the lookup runs
+  }
   if (namedPlan && resolve(root, namedPlan) === resolve(root, fields.Plan)) return named;
-  return findPlanLedger(root, fields.Plan, { issue: fields.Issue && fields.Issue !== 'none' ? fields.Issue : key }) ?? named;
+  // no tracker: both ledgers say Issue: none (the run key is then a slug, never written there)
+  return findPlanLedger(root, fields.Plan, { issue: fields.Issue || 'none' }) ?? named;
 }
 
 function planPhase(value) {
@@ -90,7 +96,7 @@ function ledgerFiles(root, key, opts = {}) {
     return { issueFile: null, planFile: p ? atRoot(root, p) : null };
   }
   const issueFile = issueLedgerPath(root, key);
-  return { issueFile, planFile: planLedgerPath(root, key, readLines(issueFile)) };
+  return { issueFile, planFile: planLedgerPath(root, readLines(issueFile)) };
 }
 
 // Everything the runner reads from both ledgers.
@@ -164,7 +170,7 @@ function readLedgers(root, key, opts = {}) {
 }
 
 // The ship-plan ledger whose first line's Plan: field names planPath (and, with `issue`, whose
-// Issue: field is that key, case and a leading # ignored): the newest open one (by mtime), else
+// Issue: field is that key, case and a leading # ignored; a missing Issue: reads as `none`): the newest open one (by mtime), else
 // the newest done one, else null. An entry that cannot be read is skipped: another run's broken
 // folder never stops this one. A ship-plan folder that cannot be listed is an error.
 export function findPlanLedger(root, planPath, { issue } = {}) {
@@ -177,7 +183,7 @@ export function findPlanLedger(root, planPath, { issue } = {}) {
     throw e;
   }
   const want = resolve(root, planPath);
-  const key = (k) => String(k ?? '').replace(/^#/, '').toLowerCase();
+  const key = (k) => String(k ?? '').replace(/^#/, '').toLowerCase() || 'none';
   const best = { open: null, done: null };
   for (const name of names) {
     const file = join(base, name, 'ledger.md');
