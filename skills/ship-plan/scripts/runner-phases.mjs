@@ -55,14 +55,18 @@ function planLedgerPath(root, issueLines) {
   const named = p && p !== 'none' ? atRoot(root, p) : null;
   if (!fields.Plan) return named;
   let namedPlan = null;
+  let readable = true;
   try {
     namedPlan = named ? firstLineFields(readLines(named)?.[0]).Plan : null;
   } catch {
-    // a folder or an unreadable file: no match, the lookup runs
+    readable = false; // a folder or an unreadable file: never read as the ledger
   }
   if (namedPlan && resolve(root, namedPlan) === resolve(root, fields.Plan)) return named;
-  // no tracker: both ledgers say Issue: none (the run key is then a slug, never written there)
-  return findPlanLedger(root, fields.Plan, { issue: fields.Issue || 'none' }) ?? named;
+  // this issue's ledger; else one ship-plan kept with no issue (no tracker, or the tracker was
+  // unavailable to it): the plan path names the issue already
+  const issue = fields.Issue || 'none';
+  const found = findPlanLedger(root, fields.Plan, { issue }) ?? findPlanLedger(root, fields.Plan, { issue: 'none' });
+  return found ?? (readable ? named : null);
 }
 
 function planPhase(value) {
@@ -170,7 +174,8 @@ function readLedgers(root, key, opts = {}) {
 }
 
 // The ship-plan ledger whose first line's Plan: field names planPath (and, with `issue`, whose
-// Issue: field is that key, case and a leading # ignored; a missing Issue: reads as `none`): the newest open one (by mtime), else
+// Issue: field is that key: case ignored, a GitHub issue by its number; a missing Issue: reads as
+// `none`): the newest open one (by mtime), else
 // the newest done one, else null. An entry that cannot be read is skipped: another run's broken
 // folder never stops this one. A ship-plan folder that cannot be listed is an error.
 export function findPlanLedger(root, planPath, { issue } = {}) {
@@ -183,7 +188,11 @@ export function findPlanLedger(root, planPath, { issue } = {}) {
     throw e;
   }
   const want = resolve(root, planPath);
-  const key = (k) => String(k ?? '').replace(/^#/, '').toLowerCase() || 'none';
+  // GitHub's #12, owner/name#12 and …/issues/12 are one issue: its number
+  const key = (k) => {
+    const s = String(k ?? '').trim().toLowerCase();
+    return /(?:#|\/issues\/)(\d+)\/?$/.exec(s)?.[1] ?? (s.replace(/^#/, '') || 'none');
+  };
   const best = { open: null, done: null };
   for (const name of names) {
     const file = join(base, name, 'ledger.md');

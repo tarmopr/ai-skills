@@ -100,6 +100,16 @@ test('phaseFromLedgers: no file at the ship-plan ledger: field -> the ship-plan 
   // the field names a folder, not a file: the lookup still runs
   const dirField = repo({ issue: [withField(' .superpowers/ship-plan/feat-bill-7')], plan: [planFirst('3')] });
   assert.equal(phaseFromLedgers(dirField, KEY).phase, 'verify');
+  // ... and with no ledger to find: no ship-plan ledger yet, not an EISDIR
+  const emptyDir = repo({ issue: [withField(' .superpowers/ship-plan/empty')] });
+  mkdirSync(join(emptyDir, '.superpowers/ship-plan/empty'), { recursive: true });
+  assert.equal(phaseFromLedgers(emptyDir, KEY).phase, 'implement');
+  // a tracker run whose ship-plan went on with no issue (tracker unavailable): its Issue: none
+  // ledger for this plan still counts
+  const trackerless = repo({ issue: [withField(' none')] });
+  mkdirSync(join(trackerless, dirname(PLAN_LEDGER)), { recursive: true });
+  writeFileSync(join(trackerless, PLAN_LEDGER), 'Phase: 3 | Plan: docs/plan.md | Issue: none\n');
+  assert.equal(phaseFromLedgers(trackerless, KEY).phase, 'verify');
 });
 
 test('findPlanLedger { issue }: Issue: must match; unreadable entries skipped; the newest open one wins', () => {
@@ -124,6 +134,15 @@ test('findPlanLedger { issue }: Issue: must match; unreadable entries skipped; t
   // an open one beats a newer done one; a leading # is ignored on either side
   put('e-done', `Phase: done | Plan: docs/plan.md | Issue: #${KEY}`, 3_000_000);
   assert.equal(findPlanLedger(root, 'docs/plan.md', { issue: `#${KEY}` }), newer);
+  // GitHub key forms name the same issue: #12, owner/name#12, an issues URL
+  const gh = repo();
+  const f = join(gh, '.superpowers/ship-plan/x/ledger.md');
+  mkdirSync(dirname(f), { recursive: true });
+  writeFileSync(f, 'Phase: 3 | Plan: docs/plan.md | Issue: #12\n');
+  for (const k of ['#12', '12', 'acme/app#12', 'https://github.com/acme/app/issues/12']) {
+    assert.equal(findPlanLedger(gh, 'docs/plan.md', { issue: k }), f, k);
+  }
+  assert.equal(findPlanLedger(gh, 'docs/plan.md', { issue: 'acme/app#120' }), null);
 });
 
 test('runIssue: a stale RUNNER: blocked (an earlier turn) -> its reason when the ledger is unchanged, ignored when it advanced', async () => {

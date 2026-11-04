@@ -1084,9 +1084,11 @@ test('an uncaught error while locked: item blocked runner error, the rest not st
 test('a runner error before the item starts: that item blocked, the queued ones not started, each with the reason', () => {
   const root = repo();
   atVerify(root, 'A-1', 'A-2');
-  const pl = join(root, planLedger('A-1'));
-  execFileSync('rm', [pl]);
-  mkdirSync(pl); // a folder: reading it fails with EISDIR
+  // the issue ledger as a folder: reading it fails with EISDIR (a ship-plan ledger path that is a
+  // folder is skipped by the lookup since the FOR-528 fix, so it no longer serves here)
+  const il = join(root, issueLedger('A-1'));
+  execFileSync('rm', [il]);
+  mkdirSync(il);
   const r = cli(root, ['start', 'queue', 'P-1', 'A-1,A-2'], { FAKE_CLAUDE_BY_KEY: JSON.stringify({ 'A-1': ships('A-1'), 'A-2': ships('A-2') }) });
   assert.equal(r.status, 1, r.stderr);
   const dir = runDir(root, 'queue', 'P-1');
