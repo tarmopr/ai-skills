@@ -54,7 +54,7 @@ review): the PR's comments are the only new findings. Run this section and secti
 them, then the gates. Run a review round only when a fix changes behaviour, and
 then only on the fix commits (`git diff <commit before the fixes>..HEAD`), not
 the whole branch: reviewers already saw the rest. It runs as a delta round
-(section 4, *Round 2 and later*), every agent at the `Review round` row, never
+(section 4, *Round 2 and later*), every agent at its `Review round` or `Wording review` row, never
 `Final review`; the 200-line and `## Risk paths` tests apply to the fix diff,
 and a full panel reviews the fix diff, not the branch. A red PR check is a finding
 in this mode too. The round count starts at 1 on each call. **Clean in this
