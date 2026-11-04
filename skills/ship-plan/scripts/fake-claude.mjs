@@ -14,6 +14,9 @@
 //                     then ok output (marker from FAKE_CLAUDE_MARKER) and exit; the grandchild's pid
 //                     goes to FAKE_CLAUDE_PIDFILE when set, and it ignores SIGTERM when
 //                     FAKE_CLAUDE_IGNORE_TERM=1
+//   multi             a child with background tasks: two result lines, the first ending with the
+//                     marker (FAKE_CLAUDE_MARKER, default RUNNER: phase-done), the second (a later
+//                     task notification's turn) with none; num_turns 4 and 2, total_cost_usd 0.30 and 0.35
 //   noresume          with --resume: the CLI's "No conversation found" result line, exit 1;
 //                     otherwise like ok (marker from FAKE_CLAUDE_MARKER)
 // FAKE_CLAUDE_LOG: when set, argv, stdin, SHIP_RUNNER, SHIP_RUNNER_KEY, SHIP_RUNNER_ALLOW_BYPASS and
@@ -124,6 +127,14 @@ else if (mode === 'crashafter') {
   g.unref();
   if (process.env.FAKE_CLAUDE_PIDFILE) writeFileSync(process.env.FAKE_CLAUDE_PIDFILE, String(g.pid));
   ok(process.env.FAKE_CLAUDE_MARKER || 'RUNNER: done');
+}
+else if (mode === 'multi') {
+  out({ type: 'system', subtype: 'init', cwd: process.cwd(), tools: ['Skill'] });
+  out({ type: 'result', subtype: 'success', is_error: false, num_turns: 4, total_cost_usd: 0.30, duration_ms: 60000,
+    result: `Tasks done.\n${process.env.FAKE_CLAUDE_MARKER || 'RUNNER: phase-done'}` });
+  out({ type: 'system', subtype: 'task_notification' });
+  out({ type: 'result', subtype: 'success', is_error: false, num_turns: 2, total_cost_usd: 0.35, duration_ms: 2000,
+    result: 'Stale wait finished; nothing new.' });
 }
 else if (mode === 'noresume') {
   const i = argv.indexOf('--resume');

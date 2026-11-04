@@ -93,13 +93,23 @@ test('parseMarker: last RUNNER line wins; none -> null', () => {
   assert.equal(parseMarker(''), null);
 });
 
+test('runChild: several result lines (background tasks) -> turns summed, highest cost, an earlier marker kept', async () => {
+  const dir = fresh();
+  const r = await runChild(base(dir, { FAKE_CLAUDE: 'multi', FAKE_CLAUDE_MARKER: 'RUNNER: phase-done tasks 1-5' }));
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.marker, { status: 'phase-done', text: 'tasks 1-5' });
+  assert.equal(r.turns, 6);
+  assert.equal(r.costUsd, 0.35);
+  assert.equal(r.minutes, 0);
+});
+
 test('runChild ok: sessionId, marker, cost; jsonl written; prompt not in argv', async () => {
   const dir = fresh();
   const log = join(dir, 'fake.json');
   const r = await runChild(base(dir, { FAKE_CLAUDE: 'ok:RUNNER: phase-done spec written', FAKE_CLAUDE_LOG: log }));
   assert.deepEqual(r, {
     ok: true, sessionId: 's-1', marker: { status: 'phase-done', text: 'spec written' },
-    costUsd: 0.42, turns: 3, minutes: 3, error: null,
+    costUsd: 0.42, turns: 3, minutes: 0, error: null, // minutes: the child's wall clock, not duration_ms
   });
   const lines = readFileSync(join(dir, 'BILL-1-spec-1.jsonl'), 'utf8').trim().split('\n');
   assert.deepEqual(lines.map((l) => JSON.parse(l).type), ['system', 'system', 'assistant', 'rate_limit_event', 'result']);

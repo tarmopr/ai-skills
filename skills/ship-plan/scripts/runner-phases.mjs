@@ -2,7 +2,7 @@
 // and the loop that runs one child per phase (per chunk of plan tasks for implement).
 // The ledgers win over a child's RUNNER: marker.
 import { createHash } from 'node:crypto';
-import { lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync, statSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { answersNamed, emit, readAnswers, runGit } from './runner-lib.mjs';
 import { isEnvError, isLimitError, resumeOrFresh, runChild } from './runner-child.mjs';
@@ -44,9 +44,18 @@ function issueLedgerPath(root, key) {
   return join(root, '.superpowers', 'ship-issue', key.replace(/^#/, ''), 'ledger.md');
 }
 
+// The issue ledger's `ship-plan ledger:` field; while it is empty, the ledger ship-plan keeps for
+// the `Branch:` field's branch (`/` written as `-`), once that file exists. A runner child's
+// ship-plan can end its turn before ship-issue writes the field (FOR-528).
 function planLedgerPath(root, issueLines) {
-  const p = issueLines ? firstLineFields(issueLines[0])['ship-plan ledger'] : '';
-  return p ? atRoot(root, p) : null;
+  const fields = issueLines ? firstLineFields(issueLines[0]) : {};
+  const p = fields['ship-plan ledger'];
+  if (p) return atRoot(root, p);
+  // a ref-shaped first word, backticks stripped; git refuses `..` in a branch name
+  const branch = (fields.Branch ?? '').replaceAll('`', '').split(/\s+/)[0];
+  if (!branch || branch.includes('..') || branch.startsWith('/')) return null;
+  const byBranch = join(root, '.superpowers', 'ship-plan', branch.replaceAll('/', '-'), 'ledger.md');
+  return existsSync(byBranch) ? byBranch : null;
 }
 
 function planPhase(value) {
@@ -565,7 +574,8 @@ export async function runIssue(ctx, item) {
         const why = r.marker.text || 'already done';
         return end('done', why, phase, 'done', why);
       }
-      const why = `phase ${phase} ended without progress`;
+      const read = Object.values(ledgerFiles(root, key, ctx.ledgers)).filter(Boolean).map((f) => relative(root, f));
+      const why = `phase ${phase} ended without progress: the child said ${r.marker.status}, but no ledger the runner reads changed (${read.join('; ') || 'none'})`;
       return end('blocked', why, phase, 'blocked', why);
     }
   }

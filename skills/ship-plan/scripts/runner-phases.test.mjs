@@ -64,6 +64,28 @@ test('phaseFromLedgers: I2 -> spec; I5 -> plan; ship-plan 2b -> implement; 4R aw
   assert.match(odd.blocked, /unknown ship-plan phase "9z"/);
 });
 
+test('phaseFromLedgers: an empty ship-plan ledger: field -> the ledger is found from Branch: (FOR-528)', () => {
+  const noField = `Phase: I6 | Issue: ${KEY} | Branch: feat/bill-7 | Spec: docs/spec.md | Plan: docs/plan.md | ship-plan ledger:`;
+  assert.equal(phaseFromLedgers(repo({ issue: [noField], plan: [planFirst('3')] }), KEY).phase, 'verify');
+  // no such ledger yet: implement, as before
+  assert.equal(phaseFromLedgers(repo({ issue: [noField] }), KEY).phase, 'implement');
+  // the field, when set, wins over Branch:
+  const other = `Phase: I6 | Issue: ${KEY} | Branch: feat/other | Plan: docs/plan.md | ship-plan ledger: ${PLAN_LEDGER}`;
+  assert.equal(phaseFromLedgers(repo({ issue: [other], plan: [planFirst('7')] }), KEY).phase, 'close');
+});
+
+test('runIssue: implement child writes only the ship-plan ledger (no field on the issue ledger) -> the run goes on (FOR-528)', async () => {
+  const noField = `Phase: I6 | Issue: ${KEY} | Branch: feat/bill-7 | Spec: docs/spec.md | Plan: docs/plan.md | ship-plan ledger:`;
+  const root = repo({ issue: [noField], tasks: 1 });
+  const ops = ledgerOps([
+    { file: PLAN_LEDGER, when: 'phase implement, plan tasks', firstLine: planFirst('2'), append: ['Progress: task 1 done'] },
+    { file: PLAN_LEDGER, when: 'for phase implement.', firstLine: planFirst('3') },
+    { file: PLAN_LEDGER, when: 'phase verify', firstLine: planFirst('done') },
+  ]);
+  const it = await runIssue(ctxFor(root, { FAKE_CLAUDE: 'ok:RUNNER: phase-done', FAKE_CLAUDE_LEDGER_APPEND: ops }), item());
+  assert.equal(it.status, 'done', events(root));
+});
+
 test('waiting: Waiting: batch line or Asked … — pending', () => {
   const batch = repo({ issue: [issueFirst(3), 'Asked: which db? — pending', 'Waiting: batch of 1, sent 2026-11-03; heads: none'] });
   assert.equal(phaseFromLedgers(batch, KEY).waiting, true);
@@ -118,10 +140,11 @@ test('runIssue: marker says phase-done but ledger unchanged -> blocked, no secon
   const root = repo({ issue: [issueFirst(2)] });
   const it = await runIssue(ctxFor(root, { FAKE_CLAUDE: 'ok:RUNNER: phase-done spec written' }), item());
   assert.equal(it.status, 'blocked');
-  assert.equal(it.reason, 'phase spec ended without progress');
+  const why = `phase spec ended without progress: the child said phase-done, but no ledger the runner reads changed (${ISSUE}; ${PLAN_LEDGER})`;
+  assert.equal(it.reason, why);
   assert.equal(it.sessions.length, 1);
   assert.equal(existsSync(join(root, 'run', `${KEY}-spec-2.jsonl`)), false);
-  assert.match(events(root), / BILL-7 spec blocked phase spec ended without progress$/m);
+  assert.ok(events(root).includes(` BILL-7 spec blocked ${why}\n`));
 });
 
 test('runIssue: no marker but ledger advanced -> continues (Review Focus 2)', async () => {
@@ -136,8 +159,8 @@ test('runIssue: no marker but ledger advanced -> continues (Review Focus 2)', as
   const it = await runIssue(ctxFor(root, { FAKE_CLAUDE: 'ok:', FAKE_CLAUDE_LEDGER_APPEND: ops }, { save: (i) => saved.push(i.status) }), item());
   assert.equal(it.status, 'done');
   assert.deepEqual(it.sessions, [
-    { phase: 'plan', sessionId: 's-1', costUsd: 0.42, turns: 3, minutes: 3 },
-    { phase: 'verify', sessionId: 's-1', costUsd: 0.42, turns: 3, minutes: 3 },
+    { phase: 'plan', sessionId: 's-1', costUsd: 0.42, turns: 3, minutes: 0 },
+    { phase: 'verify', sessionId: 's-1', costUsd: 0.42, turns: 3, minutes: 0 },
   ]);
   assert.ok(saved.length >= 1);
   assert.match(events(root), / BILL-7 plan start /);
@@ -418,8 +441,8 @@ test('runIssue: a dead resume with answers -> the fresh child gets them, answers
   assert.match(seen.stdin, /copied exactly:\npostgres\n$/);
   assert.equal(it.answersFile, null);
   assert.deepEqual(it.sessions.slice(1, 3), [
-    { phase: 'spec', sessionId: 's-9', costUsd: 0, turns: 0, minutes: null },
-    { phase: 'spec', sessionId: 's-1', costUsd: 0.42, turns: 3, minutes: 3 },
+    { phase: 'spec', sessionId: 's-9', costUsd: 0, turns: 0, minutes: 0 },
+    { phase: 'spec', sessionId: 's-1', costUsd: 0.42, turns: 3, minutes: 0 },
   ]);
 });
 
