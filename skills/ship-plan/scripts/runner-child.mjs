@@ -212,8 +212,7 @@ function runOnce({ dir, cwd, key, phase, prompt, model, effort, mode, resume, en
     // a child with background tasks ends a turn per task notification: one result line each.
     // num_turns and duration_ms count that turn only, and the RUNNER: line may sit in an earlier one
     let turns = 0;
-    let marker = null; // the last result's RUNNER: line, or an earlier phase-done or waiting one
-    let carried = null;
+    let marker = null; // the last RUNNER: line of any result; `stale` when a later result had none
     let costUsd = null;
     const startedAt = Date.now();
     let stderr = '';
@@ -261,11 +260,12 @@ function runOnce({ dir, cwd, key, phase, prompt, model, effort, mode, resume, en
         result = msg;
         if (typeof msg.num_turns === 'number') turns += msg.num_turns;
         if (typeof msg.total_cost_usd === 'number') costUsd = Math.max(costUsd ?? 0, msg.total_cost_usd);
-        marker = parseMarker(msg.result);
-        if (marker) carried = marker;
-        // a later turn without a line (a background task's notice) keeps a phase-done or waiting;
-        // never an older blocked or done, which the work after it may have overtaken
-        else if (carried && ['phase-done', 'waiting'].includes(carried.status)) marker = carried;
+        // a later turn without a line (a background task's notice) keeps the earlier one, flagged:
+        // the work after it may have overtaken a blocked or done, so runIssue trusts those only
+        // while the ledgers stand still
+        const m = parseMarker(msg.result);
+        if (m) marker = m;
+        else if (marker) marker = { ...marker, stale: true };
       }
       if (msg && msg.type === 'rate_limit_event' && msg.rate_limit_info?.status === 'rejected') rateLimited = true;
     });

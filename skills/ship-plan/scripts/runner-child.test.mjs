@@ -97,16 +97,14 @@ test('runChild: several result lines (background tasks) -> turns summed, highest
   const dir = fresh();
   const r = await runChild(base(dir, { FAKE_CLAUDE: 'multi', FAKE_CLAUDE_MARKER: 'RUNNER: phase-done tasks 1-5' }));
   assert.equal(r.ok, true);
-  assert.deepEqual(r.marker, { status: 'phase-done', text: 'tasks 1-5' });
+  assert.deepEqual(r.marker, { status: 'phase-done', text: 'tasks 1-5', stale: true }); // from an earlier turn
   assert.equal(r.turns, 6);
   assert.equal(r.costUsd, 0.35);
   assert.equal(r.minutes, 0);
-  // an earlier blocked or done marker is not carried past a later turn: only phase-done and waiting are
-  for (const m of ['RUNNER: blocked old reason', 'RUNNER: done old']) {
-    assert.equal((await runChild(base(dir, { FAKE_CLAUDE: 'multi', FAKE_CLAUDE_MARKER: m }))).marker, null, m);
-  }
-  assert.deepEqual((await runChild(base(dir, { FAKE_CLAUDE: 'multi', FAKE_CLAUDE_MARKER: 'RUNNER: waiting 1 question' }))).marker,
-    { status: 'waiting', text: '1 question' });
+  // every earlier marker is carried, flagged stale: runIssue trusts a stale blocked or done only
+  // when the ledgers did not move
+  assert.deepEqual((await runChild(base(dir, { FAKE_CLAUDE: 'multi', FAKE_CLAUDE_MARKER: 'RUNNER: blocked old reason' }))).marker,
+    { status: 'blocked', text: 'old reason', stale: true });
 });
 
 test('runChild ok: sessionId, marker, cost; jsonl written; prompt not in argv', async () => {
