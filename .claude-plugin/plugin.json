@@ -1,7 +1,7 @@
 {
   "name": "ai-skills",
   "description": "Ship a plan, an issue or a queue of a parent issue's sub-issues to merged PRs on GitHub or Azure DevOps with Jira, Linear, GitHub Issues or no tracker, verify a branch to merge-ready, and hand off work between sessions.",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "author": {
     "name": "Tarmo Protsin"
   },
