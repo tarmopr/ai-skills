@@ -7,7 +7,9 @@ from the config's `## Models` row, and the prompt below with every `<…>`
 filled in. Paths are absolute. `<skill dir>` is this skill's base directory.
 `<check model>` and `<check effort>` come from the `Spec check` row; `<row>`
 is `small` when the dispatch uses the `Spec stage (small)` row, else
-`standard`.
+`standard`. `<plan path>` is
+`<checkout>/docs/superpowers/plans/<yyyy-mm-dd>-<KEY-n>-<slug>.md`, the key
+written as the config's `Branch:` pattern writes it.
 
 A stage cannot ask the user anything. It returns its questions in its report,
 and this session asks them in the I3 batch.
@@ -27,10 +29,31 @@ and report "wrong checkout: <what you saw>". Work only there. Branch
 Mode: <new | revise>. Row: <row>.
 
 When Row is `small` and the change turns out to cross modules or services, to
-widen access, change money, need a migration, or do something a follow-up
-commit cannot undo, write no spec. An open choice that nothing quotable
+widen access, change money, need a migration, add a public contract (a route,
+an event, a schema), or do something a follow-up commit cannot undo, write no
+spec. An open choice that nothing quotable
 decides is a question (below), not a reason to resize. On a resize: end with the
 stage report, `File: none`, and the line `Resize: standard — <reason>`.
+
+## Row small: a light spec
+When Row is `small`, these replace the rules below that they name:
+- Research: a budget of about 25 tool calls, not 80. Read the code the change
+  touches and its direct callers. History (step 2) only when a line's reason
+  decides the design. No probe (step 4) unless the design rests on one of
+  those claims.
+- Design: one approach, and each alternative you rejected in one line with
+  its reason. No builder-check subagent: do brainstorming's self-review
+  yourself, and write one Ruling: that the builder check is skipped for a
+  small row.
+- The spec: at most about 150 lines, in these parts: why, evidence, the
+  change, tests, acceptance with the baseline, out of scope, decisions.
+- The plan, in the same run: when the spec holds no `[pending Q<n>` marker,
+  also do the Plan stage's work, as its prompt in
+  <skill dir>/stage-prompts.md (section "Plan stage") says, with
+  superpowers:writing-plans, and save it to <plan path>. Its review and
+  execution-method stops are skipped as that prompt says. Name the file in
+  the report's `Plan:` line. With a marker left, write no plan: mode revise
+  writes it once the answers are in, and updates it if it exists.
 
 Read first, in full: the issue <ledger dir>/issue.md; the repo config
 <checkout>/.claude/ship-plan.md; <skill dir>/evidence.md, then
@@ -42,9 +65,9 @@ Then, in either mode, re-check every PR the issue, the spec or the ledger
 depends on, as the host's *Find open PRs* reads a named PR's state
 (<skill dir>/../ship-plan/hosts/<host>.md), and fetch `origin/<base>` when the
 repo has an `origin` remote. A PR can merge or move while the run waits on the
-batch. If one has changed since the ledger last recorded it, say so as a
-Lesson: and write the spec for the state you see now, not the state the ledger
-describes.
+batch. If one has changed since the ledger last recorded it, write the spec
+for the state you see now, not the state the ledger describes, and say so in a
+Ruling:. When nothing changed, write nothing about it.
 
 ## Research (mode new)
 Budget: read with `git grep -n` and line ranges (`sed -n <a>,<b>p`), never a
@@ -64,18 +87,9 @@ that would write to one is a question.
    migrations, model snapshots, scaffolded clients. Generated code breaks
    rules too (a generated `public` class in a project that allows one public
    type), and finding it here costs a spec line instead of a plan rewrite.
-   When the change removes a copied value (a literal, a limit, a rule),
-   `git grep` the value itself, not only its name, across every module and
-   service. A match in another module's domain is a copy across a boundary,
-   which the design treats differently from a literal in the same module.
-   A first draft once took another module's two limits for its own rules; they
-   copy two limits across the boundary.
-   When the issue is about personal data (logs, events, masking), count as
-   personal data every stored text a person can be identified by: a name, a
-   display name, an email, an identity provider's subject. That holds whether
-   or not any code writes it yet: a mapped column with no writer today is
-   still exposed once one exists. A spec once said a module maps no
-   plaintext personal data; its review found a display name and a subject.
+   When the change removes or changes a copied value (a literal, a limit, a
+   rule), or the issue is about personal data, read the section of that name
+   in <skill dir>/spec-probes.md ("Copied values", "Personal data").
 2. History: `git log -S'<string>' --format='%h %ad %s' --date=short -- <file>`
    shows when and why the code arrived.
 3. The running system, read-only, following evidence.md and the config's
@@ -85,28 +99,11 @@ that would write to one is a question.
    sign-in. If it can't, or `## Evidence` is absent, it is a reproduction
    (input, observed output, expected output). The failing test that captures
    it is the plan's first task, not research.
-4. Claims the design rests on, proved before they go in the spec:
-   - A concurrency claim (writes do not interleave, a lock is enough, an
-     append is atomic): run a two-writer probe in a scratch directory outside
-     <checkout> and quote its result. A first spec once said concurrent
-     appends do not interleave; in .NET, FileMode.Append seeks to the end once,
-     at open, and a second writer overwrote the first line.
-   - A source generator or analyzer the design relies on (`[LoggerMessage]`,
-     `[GeneratedRegex]`, a JSON source generator): check it reaches the new
-     project. Prove it with a build: add one use of the generator to the
-     project, run `dotnet build` on it, quote the result, and remove the
-     probe. A .nuspec's `exclude="Analyzers"` is not proof: A prompt
-     once said a package keeps `[LoggerMessage]` out of a project, and on the
-     SDK in use it did not.
-   - A schema claim (what a migration does, a column's type, what a schema
-     test will find): apply the migration to a scratch database and run there
-     every query the spec's tests will run, quoting what each returns.
-     A column-classification query was once written but never run; it
-     would also have matched EF Core's `__ef_migrations_history`, which the
-     module keeps in the same schema. Run each probe command on its own: a
-     worktree-isolated session refuses a `docker exec … psql` joined to
-     another command. Start a session that must hold a lock while another
-     runs with `run_in_background`.
+4. Claims the design rests on are proved before they go in the spec. When the
+   design rests on a concurrency claim, a source generator or analyzer, or a
+   schema claim, read that section of <skill dir>/spec-probes.md
+   ("Concurrency", "Source generator or analyzer", "Schema") and run its
+   probe. Read no section whose trigger does not apply.
 
 ## Acceptance checks
 Every acceptance command the spec lists (a grep, `git merge-tree`, a test
@@ -130,6 +127,22 @@ authorize" list. A choice that passes is a Ruling:. A choice that fails is a
 question: write the spec on your recommendation, mark each place that depends
 on it `[pending Q<n>: <question>]`, and return the question.
 
+Recommend the approach with the least new code and the least new mechanism,
+its tests included, unless the issue or a quoted repo rule asks for more.
+Size the tests to the change:
+- A configuration value is covered by the startup or options validation the
+  service already runs, plus at most one test that starts the service in that
+  environment. No test reads deployment files (Helm values, pipeline YAML,
+  manifests).
+- No test parses a file format with code written for the test. A design that
+  needs one is the wrong approach.
+- When the spec's tests would add more lines than the change they test, take
+  the simpler approach, or say in the spec why the extra size is needed.
+A first spec once put two configuration values in Helm charts and tested them
+with a hand-written YAML reader; the reader took eight review rounds, and the
+user's review moved the values to `appsettings.<Environment>.json` and dropped
+those tests.
+
 Leave nothing as "the builder's call": each task's implementer sees only its
 own task, so a choice the spec leaves open is ruled on in the Plan stage
 without your research. Rule on each such choice (a name, the form of a test,
@@ -151,9 +164,11 @@ reads it.
 
 ## Mode revise
 The spec exists at <spec path>. The user answered: <answers, numbered as the
-Q<n> markers>. Replace each answered marker with the decision, follow its
+Q<n> markers> (or, from I4 step 0, the base branch moved: <the commits>, and
+there is no marker to replace). Replace each answered marker with the decision, follow its
 consequences through the whole spec, and re-run brainstorming's self-review.
-Research again only where an answer opens new ground.
+Research again only where an answer opens new ground. When Row is `small`,
+then write or update the plan as "Row small: a light spec" says.
 
 Then compare the spec's facts about the branch and its dependencies (the base
 commit, which PRs it contains, merges it plans) with the ledger's Ruling:
@@ -233,6 +248,7 @@ formats, and only these headings:
 File: <absolute path written, or "none">
 Status: <done | wrong checkout: … | blocked: <what, and the exact error>>
 Resize: <only from a small-row Spec stage that wrote no spec: standard — <reason>>
+Plan: <only from a small-row Spec stage that wrote the plan: its absolute path>
 Skills: <every skill you called with the Skill tool, comma-separated, or "none">
 ### Rulings
 Ruling: <decision> — <evidence quoted> — <cost if wrong>
@@ -242,6 +258,8 @@ Q<n>: <question> — <options, recommendation first> — <what it blocks>
 Parked: <question> — <options, recommendation> — <what it blocks>
 ### Lessons
 Lesson: <what> — <the step that would have caught it>
+(Only something a skill, prompt or repo file should change. A check that found
+nothing to change is not a lesson: leave it out.)
 ```
 
 An empty section keeps its heading and says `none`.

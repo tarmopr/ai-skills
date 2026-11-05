@@ -47,8 +47,9 @@ See [config-format.md](skills/ship-plan/config-format.md).
 
 Each subagent role runs at the model and effort of its row in the config's `## Models` (defaults in
 `skills/ship-plan/config-format.md`). `ship-issue` sizes each issue: a `small` one (one module, a clear
-reproduction or a spelled-out change, nothing touching access, money or migrations) gets its spec on
-`Spec stage (small)`, the rest on `Spec stage`. `verify-and-fix` sends a small diff (at most 200 changed lines,
+reproduction or a spelled-out change such as configuration, nothing touching access, money, migrations or a
+public contract) gets a light spec and its plan in one `Spec stage (small)` dispatch, the rest a full spec on
+`Spec stage` and a separate `Plan stage`. `verify-and-fix` sends a small diff (at most 200 changed lines,
 nothing under `## Risk paths`) to one code reviewer plus the security review, and later rounds review only the
 fixes. `ship-queue` runs each sub-issue in a fresh `claude -p` child session (`## Queue`, `Queue run` row) and
 logs each one's cost. While a ship run is live, the plugin's `PreToolUse` hook refuses any Agent dispatch that
@@ -59,7 +60,10 @@ passes no `model` or no `effort`.
 Set `## Runner` `Mode: runner` in `.claude/ship-plan.md`, or pass `--runner`, and a dependency-free Node script
 (`skills/ship-plan/scripts/runner.mjs`) runs each phase (spec, plan, implement in chunks, verify, merge, close) as a
 short headless `claude -p` child. The session you started only relays progress and questions, so it works with
-Remote Control on a phone. A question parks only that sub-issue and the queue goes on. When a child changes a file
+Remote Control on a phone. A question parks only that sub-issue and the queue goes on. A queue runs every
+ready sub-issue's spec before it builds any, then builds in queue order, so the questions come in one round (a
+sub-issue that depends on another waits for it, spec included), and a network error is retried
+(after 1, 5 and 15 minutes) before it stops the run. When a child changes a file
 later children load (settings, hooks, agents, `CLAUDE.md`, …), you get a warning on the phone (the watching session
 pushes it) and in the runner's summary; it does not stop the run. The default is
 `Mode: session`, the single-session path.

@@ -123,12 +123,13 @@ regressions: a later round often finds bugs an earlier round's fixes introduced.
 ## 2. Gates
 
 - Run every `## Gates` row whose `Only when changed` globs match `git diff --name-only origin/<base>...HEAD` (no globs: always). Run each with `CI=true` in its environment and its output sent to `.superpowers/verify-and-fix/<branch>/<gate>.log`, then read its last 60 lines. Long output left in context crowds out the rest of the loop. When the cause is not in those lines, an `Explore` agent at the `## Models` `Research` row reads the log and reports at most 30 lines; so does any search of the code a fix needs (ship-plan's "This session reads little itself").
-- **After a round's fixes,** rerun the rows with no `Only when changed` globs, and the rows whose globs match `git diff --name-only <the last gated sha>..HEAD`. Every other row keeps its last result, which the gate table shows with that sha. After each gate run, write `Gated: <HEAD sha> — <the rows run>` in the ledger; the newest is the last gated sha. A merge of the base branch reruns every row.
+- **After a round's fixes,** rerun the rows with no `Only when changed` globs, and the rows whose globs match `git diff --name-only <the last gated sha>..HEAD`, each by its `Fix rounds` command when it has one and the round will not push (no open PR; with one, every round pushes, so the full `Command` runs at once) (`{changed}` replaced by those files). Every other row keeps its last result, which the gate table shows with that sha. A `Fix rounds` result is not the gate's result: before a push and before the loop ends as clean, run the full `Command` of each row that ran only by `Fix rounds` since its last full run, and write `Gated:` for it. After each gate run, write `Gated: <HEAD sha> — <the rows run>` in the ledger; the newest is the last gated sha. A merge of the base branch reruns every row.
 - Run the command **exactly as configured.** A variant you think is better (an extra flag, a one-shot form) is a proposed config change, not something you run as the gate.
 - Follow the row's `Notes` as part of the gate: a precondition, a second run under another setup, a known local-only failure. A note may change how the gate is judged; when it changes the result, the gate table names the note. A note never silently turns a fail or a skip into a pass. Empty: nothing extra.
 - Each gate has one result: **pass, fail, skipped, or could not run.** Read the tail for skip counts and the file each skip is in. The row's `Allowed skips` is a number or `files: <globs>`:
   - A number: any skipped test or suite beyond it makes the gate "skipped", never pass; skips within it are a pass, noted in the gate table.
   - `files: <globs>`: search the gate's log for each skip's file. A skip inside a matching file is allowed, noted in the gate table; a skip in any other file, or one whose file the log does not name, makes the gate "skipped".
+- **Waiting for a background gate, agent or CI watch:** the session is told when it ends; read the result then, never by polling its output file. When nothing else can go on meanwhile and the turn must not end (a runner child: ending the turn ends the run), wait with one loop that checks every 15 seconds up to the timeout (`until <done>; do sleep 15; done`), never a fixed `sleep` of more than 30 seconds before the first check: a sleep that outlasts the work idles the run. A pause a skill or host file names on purpose keeps its length (the review wait, a host's poll interval, red-base.md's waits before a rerun).
 - **Timeout:** the row's `Timeout`, else 20 minutes. Run the gate in the background and check it; at the limit, stop it. The result is "could not run: <reason>", for example "watch mode, never exits". Propose a one-shot command as a config change, and go on with the other gates.
 - **Could not run** (no prerequisite, timeout, missing tool): keep running the other gates and the review rounds, but the loop cannot end as clean. The report names the gate, why it could not run, and what the user has to do.
 - **No gates configured:** the loop cannot end as clean. Say so in the question batch.
@@ -261,6 +262,19 @@ reviewer put on it.
 
 When a round's only fixes are behaviour-keeping suggestions (a rename, a comment,
 dead code), rerun the gates, but not a review round. Every other fix gets both.
+
+**The same code a third time.** When a round from round 3 on has a Critical or
+Important finding in a file that two earlier rounds' fix commits already
+changed (`git log --format=%s -- <file>` since the run's first `Reviewed:`
+sha), stop patching that file: its design is producing the findings. Make
+one fix that removes the class of finding (an existing library in place of
+hand-written parsing, a narrower input, a whitelist in place of a blacklist),
+and write `Ruling: redesign <file> — <the repeated class of finding> — <cost
+if wrong>`. When the code exists only to test or support something the spec
+could do more simply (a test helper that parses a deployment file), also
+write `Parked: drop or replace <file> — <the simpler way, recommended> — <what
+it blocks>`, and put it at the top of the report: deleting a test the spec asked
+for is the user's call.
 
 Fix rules: the config's `## Fix rules`, plus: never weaken or delete a test to
 make it pass; never change an expected value without a separately justified
@@ -411,6 +425,7 @@ With `## Runner` `Mode: runner`, or the argument `--runner`, unless `printenv SH
 | "The toast said saved" | Check the network response and reload. A toast over a 403 is a failed scenario. |
 | "It's not security-sensitive" | Run the security review anyway. Tenancy leaks look like ordinary queries. |
 | "I'll keep looping until it's perfect" | Stop at clean gates plus a clean review round, or at round 5. |
+| "One more patch to the same parser and it's done" | A third round of findings in the same file means its design is wrong: redesign it once (section 5, *The same code a third time*). |
 | "The repo obviously uses this tool, I'll just run it" | Only configured gates run. Propose the gate as a config change. |
 | "Nobody asked me to add repo config, I'll keep the gate list in a scratch note" | No config means draft `.claude/ship-plan.md`, ask once, and run no gate until it is confirmed. |
 | "I'll rerun the gate with a better flag" | Run it as configured. A better command is a proposed config change. |

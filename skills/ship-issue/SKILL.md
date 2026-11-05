@@ -100,7 +100,7 @@ Research, spec and plan proceed meanwhile; no gate runs until it is confirmed.
 Once confirmed, commit it on the feature branch with a `Ruling:`.
 
 **Two stages run as subagents:** the Spec stage (research, design, spec) and
-the Plan stage, each from a fresh context at the model and effort of its
+the Plan stage (for a `small` issue, the Spec stage writes the plan too, I2 step 4), each from a fresh context at the model and effort of its
 `## Models` row, by [stage-prompts.md](stage-prompts.md). This session never
 changes its own model or effort, which would invalidate its prompt cache: start
 it on Opus at high effort. It does the routing, the tracker, the checkout, the batch,
@@ -151,7 +151,7 @@ Below it, one line per event, in ship-plan's formats (its section 3):
 `Ruling: <decision> — <evidence quoted> — <cost if wrong>`, `Parked: <question>
 — <options, recommendation> — <what it blocks>`, `Asked: <question> — <answer, or
 "pending">` for every question put to the user, and `Lesson: <what> — <the
-step that would have caught it>`, and `Used: <log path> <heading>`
+step that would have caught it>` (only for something a skill, prompt or repo file should change: a check that found nothing changed, "open PRs unchanged", is no lesson), and `Used: <log path> <heading>`
 (the path under `<logs>`, e.g. `Used: ship-issue/interruptions.md <heading>`) for each log entry applied.
 When the batch is sent, the last line is
 `Waiting: batch of <n>, sent <date>; heads: #<pr> <sha>, …`, with the head of every open PR the issue depends on, so a resumed run can see whether one moved while the batch waited. I1 writes `Size: <small|standard> — <reason>`, and a raised size a second one. Each stage writes
@@ -267,7 +267,7 @@ Queued mode above applies, with these changes:
 - **The answer line** of the batch comment is **"Answer in the session that started the run."**, in place of the `/ship-queue` one. The answers come back in a later runner prompt, after "The user's answers, copied exactly:". Rewrite each answered `Asked: … — pending` line in place with its answer, never as a second line: the runner counts every line that still ends in `— pending`. Then go on as I0 says for a resume with answers.
 - **`Asked:` lines** hold the question, then its options with the recommendation first, as verify-and-fix's Runner mode writes them: `Asked: <the question, its options, the recommendation first> — pending`. The runner's `status` prints them as they are, and the watching session asks from them.
 - **Never a worktree, never another checkout** (section W and [worktree.md](worktree.md)): on `<base>`, clean, branch there, or `git switch <branch>` when this issue's branch exists already (a resume); on this issue's branch, stay. Where W would create a new worktree (the checkout dirty or on another branch), write `Blocked: needs a new worktree — <reason>` to this ledger, or with no ledger yet put it in the `RUNNER:` line, and end `RUNNER: blocked`.
-- **Only the named phase, reading only its phase file:** `spec` is I0–I3 ([phase-spec.md](phase-spec.md)); `plan` is I4 and I5 ([phase-plan.md](phase-plan.md)). A phase ends where the next one begins: rewrite the `Phase:` field of the ledger's first line, keeping its other fields, to `Phase: I4` once the spec holds no `[pending Q<n>` marker, and to `Phase: I6` after I5, then end.
+- **Only the named phase, reading only its phase file:** `spec` is I0–I3 ([phase-spec.md](phase-spec.md)); `plan` is I4 and I5 ([phase-plan.md](phase-plan.md)). A phase ends where the next one begins: rewrite the `Phase:` field of the ledger's first line, keeping its other fields, to `Phase: I4` once the spec holds no `[pending Q<n>` marker, and to `Phase: I6` after I5, then end. **A `small` issue whose Spec stage wrote the plan** (the ledger's last `Stage:` line is `Stage: plan done <path> — combined with spec (small)`) and whose spec holds no `[pending Q<n>` marker, with no batch waiting (no `Waiting: batch …` line, no `Asked: … — pending`): `spec` goes on through I4 and I5 in the same child, reading [phase-plan.md](phase-plan.md), and ends at `Phase: I6`; no plan child starts.
 - **`implement`, `verify`, `merge` and `close` are ship-plan's:** skip this skill's reads before I0 and go straight to the hand-over: with no ship-plan ledger for this issue (no file at this ledger's first-line `ship-plan ledger:` path, and none under `.superpowers/ship-plan/*/ledger.md` whose first line's `Plan:` names this ledger's plan and `Issue:` this issue's key (else `none`), an open one first within each), I6; with one, write its path into the field if it differs, then invoke ship-plan with `--session` and no other argument, as I0's row for a ship-plan ledger does. ship-plan runs in its own Runner mode (its "Runner mode (ship-runner)" section) for the phase and task range the runner named, and its `RUNNER:` line ends this run's reply.
 - **I0's live-run row** does not apply to this issue's own ledgers in this checkout: the runner's lock lets only one child run at a time, and the last write may be the previous child's. A ledger for the issue in any other checkout still counts.
 - **Progress lines:** at each milestone write `Progress: <text>` to this ledger: `spec done <path>`, `batch of <n> sent`, `plan done <path>`.

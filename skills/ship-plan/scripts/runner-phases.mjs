@@ -5,9 +5,14 @@ import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync, statSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { answersNamed, emit, readAnswers, runGit } from './runner-lib.mjs';
-import { isEnvError, isLimitError, resumeOrFresh, runChild } from './runner-child.mjs';
+import { isEnvError, isLimitError, isNetworkError, resumeOrFresh, runChild } from './runner-child.mjs';
 
 export const PHASES = ['spec', 'plan', 'implement', 'verify', 'merge', 'close'];
+
+// Pauses before each retry of a child that failed on the network (isNetworkError); once they are
+// used up, the error stops the run as an environment error does.
+export const NET_RETRY_MINUTES = [1, 5, 15];
+const pause = (ms) => new Promise((done) => setTimeout(done, ms));
 
 // `## Models` row for each phase's child.
 export const PHASE_ROWS = {
@@ -489,7 +494,10 @@ const plural = (n) => `${n} question${n === 1 ? '' : 's'}`;
 // A child that fails on a usage limit cuts the item off (the run stops); any other child failure
 // blocks it with the error's first 300 characters. ctx.stop is set (and the event ends "; run
 // stopped") when no later child should start: a failure of the environment (no claude, an API or
-// auth error, a bad model: isEnvError). The guarded files (guardedHashes) are hashed before and after
+// auth error, a bad model: isEnvError). A network error (isNetworkError) first reruns the same
+// phase after each pause of ctx.netRetryMinutes (default NET_RETRY_MINUTES; ctx.sleep(ms) waits).
+// ctx.yieldAfterSpec(item): when it returns true once a spec phase is done, runIssue ends with the
+// item `queued` at its next phase, so the queue can run another item's spec first. The guarded files (guardedHashes) are hashed before and after
 // each child; those that changed during it, by the child or a branch switch, are named in a
 // progress event and added to item.guardedChanged: a warning, never a stop (the user's ruling).
 // Answers files are read from ctx.answersDir (default ctx.dir). state.current is set by the caller.
@@ -513,6 +521,7 @@ export async function runIssue(ctx, item) {
     return item;
   };
 
+  let netRetries = 0;
   for (;;) {
     const before = readLedgers(root, key, ctx.ledgers);
     const finished = before.phase === 'finished';
@@ -559,6 +568,7 @@ export async function runIssue(ctx, item) {
       answers = null;
       item.answersFile = null;
     }
+    if (r.ok) netRetries = 0; // the retries count failures in a row
     const session = (c) => ({ phase, sessionId: c.sessionId, costUsd: c.costUsd, turns: c.turns, minutes: c.minutes });
     if (r.failedResume) item.sessions.push(session(r.failedResume));
     item.sessions.push(session(r));
@@ -573,7 +583,14 @@ export async function runIssue(ctx, item) {
     if (!r.ok) {
       if (isLimitError(r.error)) return end('cut off', r.error, phase, 'cutoff', r.error);
       const why = String(r.error).slice(0, 300);
-      if (isEnvError(r.error)) {
+      const waits = ctx.netRetryMinutes ?? NET_RETRY_MINUTES;
+      if (isNetworkError(r.error) && netRetries < waits.length) {
+        const minutes = waits[netRetries++];
+        emit(dir, key, phase, 'progress', `network error, retry ${netRetries} of ${waits.length} in ${minutes} min: ${why}`);
+        await (ctx.sleep ?? pause)(minutes * 60000);
+        continue;
+      }
+      if (isEnvError(r.error) || isNetworkError(r.error)) {
         ctx.stop = why;
         return end('blocked', why, phase, 'blocked', `${why}; run stopped`);
       }
@@ -593,6 +610,13 @@ export async function runIssue(ctx, item) {
       return end('blocked', why, phase, 'blocked', why);
     }
     if (after.blockedCount > before.blockedCount) return end('blocked', after.blocked, phase, 'blocked', after.blocked);
+    // the spec is done: in a queue, the other items' specs run first (every item's questions go out
+    // before any item is built), then the items are built in queue order; this one comes back at
+    // its next phase (ctx.yieldAfterSpec decides)
+    if (phase === 'spec' && after.phase !== 'spec' && ctx.yieldAfterSpec?.(item)) {
+      item.phase = after.phase;
+      return end('queued', '', phase, 'progress', `spec done; other items first, back at ${after.phase}`);
+    }
     if (after.signature === before.signature) {
       // No ledger change: without a RUNNER: line the child did not finish its phase.
       if (!r.marker) return end('blocked', 'no RUNNER: line', phase, 'blocked', 'no RUNNER: line');

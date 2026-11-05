@@ -550,6 +550,71 @@ test('runIssue: a child error that is not a usage limit -> blocked with the real
   assert.equal(long.reason.length, 300);
 });
 
+test('runIssue: a network error reruns the phase after each pause, then the run goes on', async () => {
+  const root = repo({ issue: [issueFirst(2)] });
+  const ops = ledgerOps([{ file: ISSUE, append: ['Asked: which db? — pending', 'Waiting: batch of 1, sent 2026-11-05; heads: none'] }]);
+  const waited = [];
+  const ctx = ctxFor(root, { FAKE_CLAUDE: 'ok:RUNNER: waiting', FAKE_CLAUDE_NETFAILS: `2:${join(root, 'netfails')}`, FAKE_CLAUDE_LEDGER_APPEND: ops },
+    { sleep: async (ms) => waited.push(ms) });
+  const it = await runIssue(ctx, item());
+  assert.equal(it.status, 'waiting', events(root));
+  assert.deepEqual(waited, [60000, 300000]);
+  assert.equal(it.sessions.length, 3);
+  assert.match(events(root), / BILL-7 spec progress network error, retry 1 of 3 in 1 min: .*ECONNREFUSED/);
+  assert.match(events(root), / BILL-7 spec progress network error, retry 2 of 3 in 5 min: /);
+  assert.equal(ctx.stop, undefined);
+});
+
+test('runIssue: a network error past the last retry -> blocked, run stopped', async () => {
+  const root = repo({ issue: [issueFirst(2)] });
+  const waited = [];
+  const ctx = ctxFor(root, { FAKE_CLAUDE: 'ok:RUNNER: phase-done', FAKE_CLAUDE_NETFAILS: `9:${join(root, 'netfails')}` },
+    { sleep: async (ms) => waited.push(ms), netRetryMinutes: [1, 2] });
+  const it = await runIssue(ctx, item());
+  assert.equal(it.status, 'blocked');
+  assert.match(it.reason, /ECONNREFUSED/);
+  assert.deepEqual(waited, [60000, 120000]);
+  assert.equal(it.sessions.length, 3);
+  assert.match(ctx.stop, /ECONNREFUSED/);
+  assert.match(events(root), / BILL-7 spec blocked .*ECONNREFUSED.*; run stopped/);
+});
+
+test('runIssue: the network retries count failures in a row; a child that gets through resets them', async () => {
+  const root = repo({ issue: [issueFirst(2)] });
+  // spec: one failure, then through to I4; plan: one failure, then through to waiting
+  const ops = ledgerOps([
+    { file: ISSUE, when: 'phase spec', firstLine: issueFirst(4) },
+    { file: ISSUE, when: 'phase plan', append: ['Asked: which db? — pending', 'Waiting: batch of 1, sent 2026-11-05; heads: none'] },
+  ]);
+  const waited = [];
+  // runs 1 (spec) and 3 (plan) fail; 2 and 4 get through
+  const ctx = ctxFor(root, { FAKE_CLAUDE: 'ok:RUNNER: phase-done', FAKE_CLAUDE_LEDGER_APPEND: ops, FAKE_CLAUDE_NETFAILS: `1,3:${join(root, 'netfails')}` },
+    { sleep: async (ms) => waited.push(ms), netRetryMinutes: [1] });
+  const it = await runIssue(ctx, item());
+  // with one retry allowed, the plan phase's failure is retried too: the spec's success reset the count
+  assert.equal(it.status, 'waiting', events(root));
+  assert.deepEqual(waited, [60000, 60000]);
+});
+
+test('runIssue: a spec child that moves the phase on but reports blocked stays blocked, never yields', async () => {
+  const root = repo({ issue: [issueFirst(2)] });
+  const ops = ledgerOps([{ file: ISSUE, firstLine: issueFirst(6) }]);
+  const it = await runIssue(ctxFor(root, { FAKE_CLAUDE: 'ok:RUNNER: blocked tracker write refused', FAKE_CLAUDE_LEDGER_APPEND: ops },
+    { yieldAfterSpec: () => true }), item());
+  assert.deepEqual([it.status, it.reason], ['blocked', 'tracker write refused']);
+});
+
+test('runIssue: yieldAfterSpec true after a spec -> queued at the next phase; false -> the item goes on', async () => {
+  const ops = ledgerOps([{ file: ISSUE, when: 'phase spec', firstLine: issueFirst(4) },
+    { file: ISSUE, when: 'phase plan', append: ['Asked: x? — pending', 'Waiting: batch of 1, sent 2026-11-05; heads: none'] }]);
+  const root = repo({ issue: [issueFirst(2)] });
+  const y = await runIssue(ctxFor(root, { FAKE_CLAUDE: 'ok:RUNNER: phase-done', FAKE_CLAUDE_LEDGER_APPEND: ops }, { yieldAfterSpec: () => true }), item());
+  assert.deepEqual([y.status, y.phase, y.sessions.length], ['queued', 'plan', 1]);
+  const root2 = repo({ issue: [issueFirst(2)] });
+  const n = await runIssue(ctxFor(root2, { FAKE_CLAUDE: 'ok:RUNNER: phase-done', FAKE_CLAUDE_LEDGER_APPEND: ops }, { yieldAfterSpec: () => false }), item());
+  assert.deepEqual([n.status, n.sessions.length], ['waiting', 2]);
+});
+
 test('runIssue: a child silent for the idle timeout -> blocked, child idle', async () => {
   const root = repo({ issue: [issueFirst(2)] });
   const it = await runIssue(ctxFor(root, { FAKE_CLAUDE: 'hang' }, { idleMs: 300 }), item());
