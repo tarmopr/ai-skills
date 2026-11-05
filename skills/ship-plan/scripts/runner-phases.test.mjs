@@ -177,6 +177,38 @@ test('runIssue: implement child writes only the ship-plan ledger (no field on th
   assert.equal(it.status, 'done', events(root));
 });
 
+test('runIssue: once ship-plan\'s ledger names the issue, implement on starts ship-plan directly; before it, ship-issue', async () => {
+  const root = repo({ issue: [issueFirst(6)], tasks: 1 });
+  const log = join(root, 'child.json');
+  const ops = ledgerOps([
+    { file: PLAN_LEDGER, when: 'ship-issue skill', firstLine: planFirst('2') },
+    { file: PLAN_LEDGER, when: 'ship-plan skill', firstLine: planFirst('done') },
+  ]);
+  const it = await runIssue(ctxFor(root, { FAKE_CLAUDE: 'ok:RUNNER: phase-done', FAKE_CLAUDE_LEDGER_APPEND: ops, FAKE_CLAUDE_LOG: log }), item());
+  assert.equal(it.status, 'done', events(root));
+  assert.equal(it.sessions.length, 2);
+  const last = JSON.parse(readFileSync(log, 'utf8')).stdin;
+  assert.match(last, /^Invoke the ai-skills:ship-plan skill with the Skill tool, with the arguments "--session"\. .*phase implement/);
+  // a ship-plan ledger for another issue: ship-issue still
+  const other = repo({ issue: [issueFirst(6)], plan: [planFirst('2').replace(`Issue: ${KEY}`, 'Issue: BILL-8')], tasks: 1 });
+  const log2 = join(other, 'child.json');
+  await runIssue(ctxFor(other, { FAKE_CLAUDE: 'ok:RUNNER: blocked stop', FAKE_CLAUDE_LOG: log2 }), item());
+  assert.match(JSON.parse(readFileSync(log2, 'utf8')).stdin, /ai-skills:ship-issue skill/);
+});
+
+test('runIssue: a small issue\'s verify child takes the Phase: verify (small) row; a raised size the Phase: verify row', async () => {
+  const models = { ...MODELS, 'Phase: verify': { model: 'opus', effort: 'high' }, 'Phase: verify (small)': { model: 'sonnet', effort: 'medium' } };
+  const argvFor = async (sizes) => {
+    const root = repo({ issue: [issueFirst(6), ...sizes], plan: [planFirst('3')], tasks: 1 });
+    const log = join(root, 'child.json');
+    await runIssue(ctxFor(root, { FAKE_CLAUDE: 'ok:RUNNER: blocked stop', FAKE_CLAUDE_LOG: log }, { models }), item());
+    return JSON.parse(readFileSync(log, 'utf8')).argv.join(' ');
+  };
+  assert.match(await argvFor(['Size: small — "a typo"']), /--model sonnet --effort medium/);
+  assert.match(await argvFor(['Size: small — "a typo"', 'Size: standard — crosses modules']), /--model opus --effort high/);
+  assert.match(await argvFor([]), /--model opus --effort high/);
+});
+
 test('waiting: Waiting: batch line or Asked … — pending', () => {
   const batch = repo({ issue: [issueFirst(3), 'Asked: which db? — pending', 'Waiting: batch of 1, sent 2026-11-03; heads: none'] });
   assert.equal(phaseFromLedgers(batch, KEY).waiting, true);

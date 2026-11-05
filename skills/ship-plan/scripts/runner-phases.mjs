@@ -12,6 +12,9 @@ export const PHASES = ['spec', 'plan', 'implement', 'verify', 'merge', 'close'];
 // Pauses before each retry of a child that failed on the network (isNetworkError); once they are
 // used up, the error stops the run as an environment error does.
 export const NET_RETRY_MINUTES = [1, 5, 15];
+// Phases a ship-issue run hands to ship-plan: the runner starts ship-plan for them directly once
+// ship-plan's ledger for the issue exists.
+const DIRECT_PHASES = new Set(['implement', 'verify', 'merge', 'close']);
 const pause = (ms) => new Promise((done) => setTimeout(done, ms));
 
 // `## Models` row for each phase's child.
@@ -23,6 +26,7 @@ export const PHASE_ROWS = {
   merge: 'Phase: merge',
   close: 'Phase: close',
 };
+export const SMALL_VERIFY_ROW = 'Phase: verify (small)';
 
 function readLines(file) {
   try {
@@ -165,6 +169,10 @@ function readLedgers(root, key, opts = {}) {
     branch: (plan ?? []).slice(1).map((l) => /^Branch:\s*`?([A-Za-z0-9._\/#-]+)/.exec(l)?.[1]).filter(Boolean).at(-1) || planFields.Branch || issueFields.Branch || null,
     phase: unknown ? 'unknown' : phase,
     unknown,
+    // the ship-plan ledger's Issue: field, once that ledger exists with a Phase: line
+    planIssue: hasPhaseLine ? planFields.Issue ?? null : null,
+    // ship-issue's size: its last `Size:` line (a raised size writes a second one)
+    size: (issue ?? []).map((l) => /^Size:\s*(small|standard)\b/.exec(l)?.[1]).filter(Boolean).at(-1) ?? null,
     waiting: Boolean(batch) || pending > 0,
     questions: pending || (batch ? Number(batch[1]) : 0),
     pendingLines,
@@ -536,13 +544,18 @@ export async function runIssue(ctx, item) {
     if (finished) item.phase = phase;
     if (before.waiting && !answers) return end('waiting', plural(before.questions), phase, 'waiting', plural(before.questions));
 
-    const row = PHASE_ROWS[phase];
-    const pick = ctx.models?.[row];
+    // a small issue's verify child takes the cheaper `Phase: verify (small)` row
+    const row = phase === 'verify' && before.size === 'small' ? SMALL_VERIFY_ROW : PHASE_ROWS[phase];
+    const pick = ctx.models?.[row] ?? (row === SMALL_VERIFY_ROW ? ctx.models?.[PHASE_ROWS.verify] : undefined);
     if (!pick) return end('blocked', `no ## Models row "${row}"`, phase, 'blocked', `no ## Models row "${row}"`);
 
     const chunk = phase === 'implement' ? nextChunk(root, before, ctx.chunkSize ?? 5) : null;
     if (chunk?.missing) return end('blocked', chunk.missing, phase, 'blocked', chunk.missing);
-    const prompt = phasePrompt({ skill, args, phase, chunk, answers });
+    // an issue run that ship-plan holds (its ledger names this issue): from implement on, ship-issue
+    // would only hand over to ship-plan, so the child starts ship-plan itself (its Runner mode finds
+    // the run by the issue key) and skips loading ship-issue
+    const direct = skill === 'ship-issue' && before.planIssue === key && DIRECT_PHASES.has(phase);
+    const prompt = phasePrompt({ skill: direct ? 'ship-plan' : skill, args: direct ? '--session' : args, phase, chunk, answers });
     const resume = answers ? item.sessions.filter((s) => s.phase === phase).at(-1)?.sessionId ?? null : null;
     item.phase = phase;
     item.status = 'running';

@@ -311,7 +311,7 @@ start runs on Opus at high effort.
 | `Implementer (complex)` | `ship-plan` section 2: a task tagged `Tier: complex` | `opus`, `high` |
 | `Escalation` | `ship-plan` section 2: fix rounds 4–5, a stuck implementer | `opus`, `high` |
 | `Task review` | `ship-plan` section 2: each task's spec and quality reviewers | `sonnet`, `high` |
-| `Final review` | `verify-and-fix` section 4: review round 1's `code-reviewer`, the run's whole-branch review | `opus`, `xhigh` |
+| `Final review` | `verify-and-fix` section 4: review round 1's `code-reviewer`, the run's whole-branch review; a small diff's takes `Review round` | `opus`, `xhigh` |
 | `Simplify` | `ship-plan` section 2b: the simplify pass over the whole diff | `sonnet`, `high` |
 | `Review round` | `verify-and-fix` section 4: every other review agent, every round | `opus`, `high` |
 | `Wording review` | `verify-and-fix` section 4: `comment-analyzer` and `type-design-analyzer`, every round | `sonnet`, `high` |
@@ -319,12 +319,13 @@ start runs on Opus at high effort.
 | `Queue run` | `ship-queue` Q2: each sub-issue's child session | `opus`, `high` |
 | `Phase: implement` | Runner: the implement child (plan tasks, in chunks) | `sonnet`, `high` |
 | `Phase: verify` | Runner: the verify child | `opus`, `high` |
+| `Phase: verify (small)` | Runner: the verify child of an issue whose ship-issue ledger's last `Size:` line is `small` | `sonnet`, `high` |
 | `Phase: merge` | Runner: the merge child | `sonnet`, `high` |
 | `Phase: close` | Runner: the close child | `sonnet`, `medium` |
 
 The runner's spec and plan children use the `Spec stage` and `Plan stage` rows.
-It does not use `Spec stage (small)`: its spec child always takes `Spec stage`.
-It matches these six roles case-insensitively, and ignores a row whose model
+It does not use `Spec stage (small)`: its spec child always takes `Spec stage`. From implement on, a ship-issue run whose ship-plan ledger names the issue gets a ship-plan child directly (`--session`), without loading ship-issue.
+It matches these seven roles case-insensitively, and ignores a row whose model
 is not a model name or whose effort is not one of the five below.
 
 **The hook.** While a ship run's ledger is live (changed in the last 6 hours
