@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readState, runDir, writeState } from './runner-lib.mjs';
-import { MODEL_DEFAULTS, parseConfig } from './runner.mjs';
+import { byPhase, MODEL_DEFAULTS, parseConfig } from './runner.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const RUNNER = join(HERE, 'runner.mjs');
@@ -110,7 +110,7 @@ test('start queue: three items, the middle one waits, the third (no deps) still 
   assert.deepEqual(starts(dir), ['A-1', 'A-2', 'A-3']);
   const summary = events(dir).split('\n').filter((l) => / summary /.test(l));
   assert.equal(summary.length, 1);
-  assert.match(summary[0], / P-1 - summary 2 done, 1 waiting, 1 not started; cost \$1\.26$/);
+  assert.match(summary[0], / P-1 - summary 2 done, 1 waiting, 1 not started; cost \$1\.26 \(verify \$1\.26\/0m\)$/);
   // a dep outside the queue is refused before anything runs
   const bad = cli(repo(), ['start', 'queue', 'P-2', 'A-1', '--deps', 'A-1:Z-9']);
   assert.equal(bad.status, 2);
@@ -129,7 +129,7 @@ test('start queue: cut off stops the queue; remaining not started: session limit
   for (const k of ['A-2', 'A-3']) assert.deepEqual([byKey(s, k).status, byKey(s, k).reason], ['not started', 'session limit']);
   assert.deepEqual(children(dir), ['A-1-verify-1.jsonl']);
   assert.match(events(dir), / A-1 verify cutoff /);
-  assert.match(events(dir), / P-1 - summary 1 cut off, 2 not started; cost \$0\.01$/m);
+  assert.match(events(dir), / P-1 - summary 1 cut off, 2 not started; cost \$0\.01(?: \([^)]*\))?$/m);
   // rerunning the command resumes from the files: everything ships
   assert.equal(run(ships('A-1')).status, 0);
   s = readState(dir);
@@ -626,7 +626,7 @@ test('SIGTERM to the runner: its child is killed, the item cut off, summary writ
   assert.ok(s.stopped);
   assert.deepEqual([s.items[0].status, s.items[0].reason], ['cut off', 'runner stopped (SIGTERM)']);
   assert.match(events(dir), / T-1 verify cutoff runner stopped \(SIGTERM\)$/m);
-  assert.match(events(dir), / T-1 - summary 1 cut off; cost \$0\.00$/m);
+  assert.match(events(dir), / T-1 - summary 1 cut off; cost \$0\.00(?: \([^)]*\))?$/m);
 });
 
 test('parseConfig: ## Models roles match case-insensitively; bad rows, chunk and idle timeout are warned and ignored', () => {
@@ -871,7 +871,7 @@ test('a child that changes .claude/settings.local.json, .claude/settings.json or
     assert.deepEqual(starts(dir), ['A-1', 'A-2']);
     assert.ok(events(dir).includes(warned('A-1', file)), events(dir));
     assert.doesNotMatch(events(dir), / blocked /);
-    assert.ok(summaryLine(dir).endsWith(` P-1 - summary 2 done; cost $0.84; guarded files changed: A-1 (${file})`), summaryLine(dir));
+    assert.ok(summaryLine(dir).replace(/ \([^)]*\);/, ';').endsWith(` P-1 - summary 2 done; cost $0.84; guarded files changed: A-1 (${file})`), summaryLine(dir));
     // round 5: status names them too, in the item's reason
     const out = cli(root, ['status', dir]).stdout;
     assert.ok(out.split('\n').some((l) => /^A-1 +done +/.test(l) && l.includes(`guarded files changed: ${file}`)), out);
@@ -1026,7 +1026,7 @@ test('a child that switches to a branch with another CLAUDE.md and commits a set
   assert.equal(cli(root, ['start', 'queue', 'P-1', 'A-1,A-2']).status, 2, 'the checkout is on feat/A-2');
   git(root, 'switch', '-q', 'main');
   assert.equal(cli(root, ['start', 'queue', 'P-1', 'A-1,A-2']).status, 0);
-  assert.match(summaryLine(dir), / P-1 - summary 2 done; cost \$\d+\.\d\d$/);
+  assert.match(summaryLine(dir), / P-1 - summary 2 done; cost \$\d+\.\d\d(?: \([^)]*\))?$/);
 });
 
 // review round 2, batch E1 (runner lifecycle and answers)
@@ -1089,7 +1089,7 @@ test('SIGINT or SIGHUP during a 2-item queue: the running item cut off, the queu
       assert.equal(alive(child), false, sig);
       assert.equal(existsSync(join(dir, 'lock')), false, sig);
       assert.deepEqual(starts(dir), ['Q-1'], sig);
-      assert.match(events(dir), new RegExp(` P-1 - summary 1 cut off, 1 not started; cost \\$0\\.00$`, 'm'), sig);
+      assert.match(events(dir), new RegExp(` P-1 - summary 1 cut off, 1 not started; cost \\$0\\.00(?: \\([^)]*\\))?$`, 'm'), sig);
     } finally {
       killQuietly(child);
     }
@@ -1821,4 +1821,13 @@ test('status: an answers file that is a link is not shown as received', () => {
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /^S-1 +waiting +verify +1 question; answers received /m);
   assert.match(r.stdout, /^S-2 +waiting +verify +1 question +\$/m);
+});
+
+test('byPhase: cost and minutes summed per phase, in phase order; unknown and empty phases left out', () => {
+  const items = [
+    { sessions: [{ phase: 'verify', costUsd: 1.5, minutes: 10 }, { phase: 'spec', costUsd: 0.25, minutes: 4 }] },
+    { sessions: [{ phase: 'verify', costUsd: 0.5, minutes: 5 }, { phase: 'odd', costUsd: 9, minutes: 9 }, { phase: 'merge', costUsd: null, minutes: null }] },
+  ];
+  assert.equal(byPhase(items), 'spec $0.25/4m, verify $2.00/15m, merge $0.00/0m');
+  assert.equal(byPhase([{ sessions: [] }]), '');
 });
