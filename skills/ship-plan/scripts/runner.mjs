@@ -691,7 +691,16 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
     let ran = false; // a queue item has run in this start
     for (;;) {
       syncAnswers(state, dir, store);
-      const item = nextItem(state);
+      // an item's phase before it first runs comes from its ledgers (a resumed queue's items may be past their spec)
+      const phaseOf = (i) => {
+        if (i.phase != null) return i.phase;
+        try {
+          return phaseFromLedgers(root, i.key, ledgerOpts(root, state, i)).phase;
+        } catch {
+          return null;
+        }
+      };
+      const item = nextItem(state, { phaseOf });
       save();
       if (item && ran && state.kind === 'queue' && !restoreCheckout(root, baseInfo.name, state, item, dir)) break;
       if (!item) {
@@ -736,6 +745,15 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
       // closed once the item's outcome is known, before its event (runIssue's end): an `answer`
       // right after a `waiting` event finds no open window
       const ctx = { ...base, ledgers, beforeEnd: () => { window[1] ??= Date.now(); } };
+      // a queue asks every item's questions before it builds any, then builds in queue order: after
+      // this item's spec it gives way to a ready item still at its spec, or to one earlier in the
+      // queue (nextItem picks which)
+      if (state.kind === 'queue') {
+        const at = (k) => state.items.findIndex((x) => x.key === k);
+        ctx.yieldAfterSpec = (it) => state.items.some((i) => i !== it && i.status === 'queued'
+          && ([null, 'spec'].includes(phaseOf(i)) || at(i.key) < at(it.key))
+          && (i.deps ?? []).every((d) => state.items.find((x) => x.key === d)?.status === 'done'));
+      }
       current = item;
       try {
         await runIssue(ctx, item);

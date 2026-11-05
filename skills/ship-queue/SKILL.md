@@ -47,6 +47,9 @@ allowed-tools:
 One run takes every open sub-issue of a parent issue through **ship-issue**,
 one after another: the next starts only when the previous run has ended, so
 each starts from a base branch that already holds the previous merged change.
+Under the ship runner, the queue first runs every ready sub-issue's spec, so all
+questions reach the user in one round, then builds them in queue order; each
+plan re-checks the base branch its spec was written on (ship-issue I4).
 **The user starts this skill so they can walk away.** A sub-issue that cannot
 be started or finished does not stop the queue: its state goes into the
 queue's ledger and onto the sub-issue, and the next one starts. At the end,

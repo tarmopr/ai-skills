@@ -9,11 +9,15 @@ const DEPENDS = /^depends on /;
  * The next item to run, or null. Before choosing, every queued item whose deps hold it back
  * becomes `not started` with reason `depends on <KEY> (<status>)` (transitively); an item that is
  * `not started` only because of a dependency is re-checked first, so an answered dependency frees
- * it. Among queued items whose deps are all `done`, answered ones (answersFile set) go first, then
- * queue order. When nothing can run, queued items left (a cycle) become `not started`.
+ * it. Among queued items whose deps are all `done`, those still at their spec (phase null or
+ * `spec`) go first, answered ones before the rest, so every item's questions reach the user in one
+ * round before any item is built; then answered ones (answersFile set), then queue order. When
+ * nothing can run, queued items left (a cycle) become `not started`.
  * @param {{items: Array<{key: string, status: string, reason: string, deps: string[], answersFile: string|null}>}} state
+ * @param {{phaseOf?: (item: object) => string|null}} [opts] the phase an item is at (default its
+ *   `phase` field; the runner reads an item's ledgers, which name it before the item first runs)
  */
-export function nextItem(state) {
+export function nextItem(state, { phaseOf = (i) => i.phase } = {}) {
   const items = state.items;
   const byKey = new Map(items.map((i) => [i.key, i]));
   for (const i of items) {
@@ -37,7 +41,8 @@ export function nextItem(state) {
   }
 
   const ready = items.filter((i) => i.status === 'queued' && (i.deps ?? []).every((d) => byKey.get(d)?.status === 'done'));
-  const next = ready.find((i) => i.answersFile) ?? ready[0] ?? null;
+  const early = (i) => { const p = phaseOf(i); return p == null || p === 'spec'; };
+  const next = ready.find((i) => early(i) && i.answersFile) ?? ready.find(early) ?? ready.find((i) => i.answersFile) ?? ready[0] ?? null;
   if (!next) {
     // only a cycle is left: each waits on a queued item that waits on it
     for (const i of items.filter((x) => x.status === 'queued')) {

@@ -865,6 +865,29 @@ test('a child that changes .claude/settings.local.json, .claude/settings.json or
   }
 });
 
+test('a queue runs every item\'s spec before it builds any, then builds in queue order', () => {
+  const root = repo();
+  const atSpec = (k) => put(root, issueLedger(k), [issueFirst(k).replace('Phase: I6', 'Phase: I2')]);
+  atSpec('A-1');
+  atSpec('A-2');
+  const flow = (k) => ({
+    FAKE_CLAUDE: 'ok:RUNNER: phase-done',
+    FAKE_CLAUDE_LEDGER_APPEND: ops([
+      { when: 'for phase spec.', file: issueLedger(k), firstLine: issueFirst(k).replace('Phase: I6', 'Phase: I4') },
+      { when: 'for phase plan.', file: issueLedger(k), firstLine: issueFirst(k) },
+      { when: 'for phase plan.', file: planLedger(k), firstLine: planFirst(k, 'done') },
+    ]),
+  });
+  const r = cli(root, ['start', 'queue', 'P-1', 'A-1,A-2'], { FAKE_CLAUDE_BY_KEY: JSON.stringify({ 'A-1': flow('A-1'), 'A-2': flow('A-2') }) });
+  assert.equal(r.status, 0, r.stderr);
+  const dir = runDir(root, 'queue', 'P-1');
+  const runs = [...events(dir).matchAll(/ (\S+) (\S+) start /g)].map((m) => `${m[1]} ${m[2]}`);
+  assert.deepEqual(runs, ['A-1 spec', 'A-2 spec', 'A-1 plan', 'A-2 plan'], events(dir));
+  assert.match(events(dir), / A-1 spec progress spec done; other items first, back at plan$/m);
+  assert.match(events(dir), / A-2 spec progress spec done; other items first, back at plan$/m);
+  assert.deepEqual(readState(dir).items.map((i) => i.status), ['done', 'done'], events(dir));
+});
+
 test('an environmental child failure (spawn error, API or auth error) stops the queue; an item\'s own failure does not', () => {
   const root = repo();
   atVerify(root, 'A-1', 'A-2', 'A-3');

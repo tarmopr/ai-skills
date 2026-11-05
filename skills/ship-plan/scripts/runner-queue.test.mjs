@@ -29,6 +29,19 @@ test('nextItem: answered item goes before untouched (Review Focus 3)', () => {
   assert.equal(nextItem(s).key, 'B');
 });
 
+test('nextItem: items still at their spec go first, answered ones first among them, so questions go out in one round', () => {
+  const s = state(item('A', { phase: 'implement', answersFile: 'answers-A.md' }), item('B', { phase: 'plan' }), item('C'),
+    item('D', { phase: 'spec', answersFile: 'answers-D.md' }));
+  assert.equal(nextItem(s).key, 'D');
+  by(s, 'D').phase = 'plan';
+  by(s, 'D').answersFile = null;
+  assert.equal(nextItem(s).key, 'C');
+  by(s, 'C').status = 'waiting';
+  assert.equal(nextItem(s).key, 'A');
+  by(s, 'A').status = 'done';
+  assert.equal(nextItem(s).key, 'B');
+});
+
 test('nextItem: waits for a queued dep, takes the next item whose deps are done', () => {
   const s = state(item('A', { deps: ['B'] }), item('B'), item('C', { status: 'done' }), item('D', { deps: ['C'] }));
   assert.equal(nextItem(s).key, 'B');
