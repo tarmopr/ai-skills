@@ -56,7 +56,11 @@ When Row is `small`, these replace the rules below that they name:
   also do the Plan stage's work, as its prompt in
   <skill dir>/stage-prompts.md (section "Plan stage") says, with
   superpowers:writing-plans, and save it to <plan path>. Its review and
-  execution-method stops are skipped as that prompt says. Name the file in
+  execution-method stops are skipped as that prompt says. At most about 200
+  lines: a step shows code only where its words do not settle it (a new
+  signature, a non-obvious expression, a test's assertions); a one-line edit
+  is the file:line and the change in words. This overrides writing-plans'
+  complete-code rule; write one Ruling: for it. Name the file in
   the report's `Plan:` line. With a marker left, write no plan: mode revise
   writes it once the answers are in, and updates it if it exists.
 
