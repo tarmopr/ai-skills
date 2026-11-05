@@ -104,9 +104,10 @@ Answer, in order, with the exact commands and tool calls:
   `gh issue edit 41 … --add-label in-progress`.
 - Answer 4: `fix/41-<slug>`; `fix/2fa-login` carries no key.
 - Answer 5: `gh issue view 41 … --json body`, then the whole body written
-  back with `gh issue edit 41 … --body-file`. At 70,000 characters the body
-  gets `## Plan` and `## Done when` and a pointer line, and the plan goes in
-  comments headed `Full plan (<i>/<n>)`.
+  back with `gh issue edit 41 … --body-file`. A committed plan: `## Plan`,
+  `## Done when` and a `Full plan: <path> on branch <branch>` line. A
+  git-ignored plan at 70,000 characters: `## Plan`, `## Done when` and a
+  pointer line, and the plan goes in comments headed `Full plan (<i>/<n>)`.
 - Answer 6: the PR body links the issue as `[#41](<issue url>)`; a title or
   commit subject names it at most as `(#41)` at its end. No closing keyword
   (`Fixes #41`, `Closes #41`, `Resolves: #41` or the like) anywhere.

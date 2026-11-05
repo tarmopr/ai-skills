@@ -310,7 +310,7 @@ Every log path below and in the other skills is under `<logs>`.
 `.superpowers/ship-plan/<branch>/ledger.md`, with every `/` in the branch name written as `-` (`feature/x` → `feature-x`), so section 0, step 2's `*/ledger.md` listing finds it (`.superpowers/` goes in
 `.git/info/exclude`, never `.gitignore`). Its first line is always
 `Phase: <n> | Plan: <path> | Issue: <id or none> | PR: #<n> | merge: <sha> | base run: <id>`,
-rewritten as each value becomes known; a finished run ends with `Phase: done`. Below it, one line per event: phase
+rewritten as each value becomes known; a finished run ends with `Phase: done`. Below it, one line per event, one fact in at most about 300 characters (detail belongs in the plan, a commit or the PR): phase
 changes, `Ruling:` lines, `Asked:` lines (every question put to the user, with
 its answer), questions parked, CI results, `Lesson:` lines (each names something a skill, prompt or repo file should change; a re-check that found nothing changed is not one), `Used:` and `Removed:` lines, and a `Branch: <name>` line
 once the branch exists (section 1), which a resume switches to.

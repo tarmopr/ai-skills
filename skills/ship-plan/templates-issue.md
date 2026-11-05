@@ -66,7 +66,7 @@ Source: `<plan path>` · Spec: `<spec path, or "none">`
 
 ## Plan appended
 
-Add the Plan section above at the end of the issue's text, as the tracker's *Append the plan* says. ship-plan appends `## Plan` only; ship-issue appends `## Plan`, `## Done when` and `## Full plan`. Never replace the user's text.
+Add the Plan section above at the end of the issue's text, as the tracker's *Append the plan* says. ship-plan appends `## Plan` only; ship-issue appends `## Plan`, `## Done when` and a `Full plan: <plan path> on branch <branch>` line (`## Full plan` with the text only for a git-ignored plan). Never replace the user's text.
 
 ## Issue comment: merged
 
