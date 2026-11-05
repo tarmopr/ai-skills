@@ -31,7 +31,10 @@ Mode: <new | revise>. Row: <row>.
 When Row is `small` and the change turns out to cross modules or services, to
 widen access, change money, need a migration, add a public contract (a route,
 an event, a schema), or do something a follow-up commit cannot undo, write no
-spec. An open choice that nothing quotable
+spec. When the ledger's last `Size:` line says `user: --small`, the user chose
+the size: resize only for access, money, a migration or what a follow-up commit
+cannot undo, and write a Ruling: for a change across modules or a public
+contract instead. An open choice that nothing quotable
 decides is a question (below), not a reason to resize. On a resize: end with the
 stage report, `File: none`, and the line `Resize: standard — <reason>`.
 

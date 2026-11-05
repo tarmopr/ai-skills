@@ -6,7 +6,7 @@ Sections I0–I3 of [ship-issue](SKILL.md). Everything in SKILL.md applies here.
 
 **Under `## Logs` `Location: local`,** when the store holds no log, copy the tracked logs into it first, as [`## Logs`](../ship-plan/config-format.md#-logs) says.
 
-**Read the argument first,** without a `--runner` or `--session` flag at its start or end (SKILL.md's "Runner or session"; the same words inside the text are text):
+**Read the argument first,** without a `--runner`, `--session` or `--small` flag at its start or end (SKILL.md's "Runner or session"; the same words inside the text are text):
 
 - **Its first word names an existing `.superpowers/ship-issue/<dir>/`** (an issue key as file names write it, so GitHub Issues' `#<n>` names `<n>/`; or with no issue the slug) in this checkout or one `git worktree list` shows: this is a resume, and the rest of the argument is answers. Record each as `Asked: … — <answer>` and a `Ruling: user <date>`, then continue from the ledger's first line.
 - **An issue key** (the tracker's *Issue keys*): that is the issue.
@@ -51,6 +51,8 @@ These are the only questions asked before research.
 
 - `small`: the change stays in one module or service; the issue says what to change, or it is a bug with a reproduction; and it needs no migration, widens no access, changes no money and adds no public contract (a route, an event, a schema). Configuration values, documentation, a rename, a flag, a validation rule or a step order are `small`. A value the issue does not give is a question for the batch, not a reason for `standard`;
 - `standard`: a change across modules or services, a new public contract, or anything on the confidence test's fail list (it widens access, changes money, a migration, anything a follow-up commit cannot undo).
+
+**`--small` given** (SKILL.md's "Runner or session"): the size is `small`, whatever the criteria above say. Write `Size: small — user: --small`. The Spec stage then returns `Resize:` only for the confidence test's fail list (it widens access, changes money, a migration, anything a follow-up commit cannot undo); a change across modules or a new public contract stays `small`, with a `Ruling:` naming it.
 
 Write `Size: <small|standard> — <the issue's words that decide it, quoted>` in the ledger once the checkout is chosen. A size may be raised, never lowered: a `small` Spec stage that finds the change is `standard` returns `Resize:` (I2 step 6).
 
