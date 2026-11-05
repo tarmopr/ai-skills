@@ -183,7 +183,7 @@ No run of BILL-701 has started before.
 
 **S18a**
 
-- Q1: the ledger gets `Size: small — <reason>`. The Spec stage is an Agent call with `subagent_type: general-purpose`, `model: sonnet`, `effort: high`, at `Row: small`: no builder-check subagent (a `Ruling:` says it is skipped), and with no question pending its report names a `Plan:` file, so I4 dispatches no Plan stage.
+- Q1: the ledger gets `Size: small — <reason>`. The Spec stage is an Agent call with `subagent_type: general-purpose`, `model: sonnet`, `effort: high`, at `Row: small`: it calls no brainstorming skill and runs no builder-check subagent, and with no question pending its report names a `Plan:` file, so I4 dispatches no Plan stage.
 - Q2: `Size: standard — <reason>`. The Spec stage has `model: opus`, `effort: high`. The builder check gets `sonnet` and `high`.
 - Q3: the ledger gets `Size: standard — the label key is shared by billing, admin and onboarding` (or that reason, quoted). The next dispatch is the Spec stage again, mode `new`, `model: opus`, `effort: high`.
 

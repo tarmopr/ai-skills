@@ -227,6 +227,18 @@ test('rerun after kill with dead child pid: resumes the same item and phase, no 
   assert.match(events(dir), / K-1 verify start verify$/m);
 });
 
+test('start issue <KEY> --small: every child gets "<KEY> --small" as ship-issue\'s arguments; anything else after the key is refused', () => {
+  const root = repo();
+  atVerify(root, 'S-1');
+  const log = join(root, 's.json');
+  const r = cli(root, ['start', 'issue', 'S-1', '--small'], { ...ships('S-1'), FAKE_CLAUDE_LOG: log });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(JSON.parse(readFileSync(log, 'utf8')).stdin, /with the arguments "S-1 --small"/);
+  const bad = cli(root, ['start', 'issue', 'S-1', '--big']);
+  assert.equal(bad.status, 2);
+  assert.match(bad.stderr, /unexpected argument "--big"/);
+});
+
 test('start issue waiting: picks up answers file and resumes with --resume <sessionId>', async () => {
   const root = repo();
   atVerify(root, 'W-1');

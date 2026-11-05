@@ -26,7 +26,7 @@ Run from the checkout, with the Bash tool and `run_in_background`:
 
 | Run | Command |
 |---|---|
-| one issue | `<runner> start issue '<KEY>' --permission-mode <m>` |
+| one issue | `<runner> start issue '<KEY>' --permission-mode <m>`, with `--small` after the key when ship-issue got `--small` |
 | a queue | `<runner> start queue '<PARENT>' '<KEY>,<KEY>…' --deps '<KEY>:<DEP>,…' --permission-mode <m>` |
 | a plan | `<runner> start plan '<path>' --permission-mode <m>` |
 | verify | `<runner> start verify '<branch>' --permission-mode <m> [-- <args>]` (the checkout must be on `<branch>`; `<args>`: verify-and-fix's own arguments, its base branch and `--comments`, each single-quoted; one holding a double quote or a control character is refused with exit 2) |

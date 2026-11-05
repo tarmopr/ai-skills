@@ -2,7 +2,7 @@
 // The ship runner's CLI. Run from the checkout:
 //   node runner.mjs start [--permission-mode auto|acceptEdits|dontAsk|bypassPermissions] <run>, <run> one of:
 //   (bypassPermissions only with SHIP_RUNNER_ALLOW_BYPASS=1 in the runner's env; never passed to children)
-//   node runner.mjs start issue <KEY>
+//   node runner.mjs start issue <KEY> [--small]   (--small reaches each child's ship-issue arguments)
 //   node runner.mjs start queue <PARENT> <KEY>,<KEY>… [--deps <KEY>:<DEP>,…]   (<KEY> waits for <DEP>)
 //   node runner.mjs start plan <path>          ship-plan from implement
 //   node runner.mjs start verify <branch> [-- <args>]   verify-and-fix alone, on the checked-out
@@ -338,8 +338,9 @@ function parseStart(root, [what, ...a]) {
   const extra = (from) => (a.length > from ? `start ${what}: unexpected argument "${a[from]}"` : null);
   if (what === 'issue') {
     if (!KEY.test(a[0])) return notKey(a[0]);
-    if (extra(1)) return extra(1);
-    return { kind: 'issue', id: a[0], items: [newItem(a[0])], skill: 'ship-issue' };
+    const small = a[1] === '--small';
+    if (extra(small ? 2 : 1)) return extra(small ? 2 : 1);
+    return { kind: 'issue', id: a[0], items: [newItem(a[0])], skill: 'ship-issue', ...(small ? { args: `${a[0]} --small` } : {}) };
   }
   const notId = (id) => `start ${what}: "${id}" holds a character other than letters, digits, . _ / # -`;
   if (what === 'queue') {

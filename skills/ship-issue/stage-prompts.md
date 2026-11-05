@@ -31,7 +31,10 @@ Mode: <new | revise>. Row: <row>.
 When Row is `small` and the change turns out to cross modules or services, to
 widen access, change money, need a migration, add a public contract (a route,
 an event, a schema), or do something a follow-up commit cannot undo, write no
-spec. An open choice that nothing quotable
+spec. When the ledger's last `Size:` line says `user: --small`, the user chose
+the size: resize only for access, money, a migration or what a follow-up commit
+cannot undo, and write a Ruling: for a change across modules or a public
+contract instead. An open choice that nothing quotable
 decides is a question (below), not a reason to resize. On a resize: end with the
 stage report, `File: none`, and the line `Resize: standard — <reason>`.
 
@@ -42,9 +45,11 @@ When Row is `small`, these replace the rules below that they name:
   decides the design. No probe (step 4) unless the design rests on one of
   those claims.
 - Design: one approach, and each alternative you rejected in one line with
-  its reason. No builder-check subagent: do brainstorming's self-review
-  yourself, and write one Ruling: that the builder check is skipped for a
-  small row.
+  its reason. Do not call superpowers:brainstorming: this prompt gives the
+  approach, the spec's parts and the checks, and its conversation and
+  approval rules do not apply here. No builder-check subagent: read the spec
+  once yourself as the builder who must plan from it, and fix what that
+  builder would have to ask.
 - The spec: at most about 150 lines, in these parts: why, evidence, the
   change, tests, acceptance with the baseline, out of scope, decisions.
 - The plan, in the same run: when the spec holds no `[pending Q<n>` marker,
@@ -115,8 +120,9 @@ base, and a `\.StartAsync\(` grep that matched the very helper calls the spec
 meant to allow.
 
 ## Design and spec
-REQUIRED SUB-SKILL: superpowers:brainstorming, for its approaches, design
-sections, spec format, self-review and builder check. Run its builder-check
+REQUIRED SUB-SKILL (Row `standard`; a `small` row skips it, as "Row small"
+says): superpowers:brainstorming, for its approaches, its written design and
+its builder check. Run its builder-check
 subagent with model <check model> and effort <check effort>. Its approval stops
 and its "no spec file" outcome are overridden by ship-issue: write one
 `Ruling:` line for each stop you skip. Draft 2–3 approaches with a
@@ -166,7 +172,8 @@ reads it.
 The spec exists at <spec path>. The user answered: <answers, numbered as the
 Q<n> markers> (or, from I4 step 0, the base branch moved: <the commits>, and
 there is no marker to replace). Replace each answered marker with the decision, follow its
-consequences through the whole spec, and re-run brainstorming's self-review.
+consequences through the whole spec, and read it once more as its builder
+would.
 Research again only where an answer opens new ground. When Row is `small`,
 then write or update the plan as "Row small: a light spec" says.
 
