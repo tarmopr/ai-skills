@@ -82,7 +82,7 @@ On `waiting` for an item:
 
 On `summary` (the runner has exited):
 
-1. Print `<runner> status '<run dir>'`.
+1. Print `<runner> status '<run dir>'`. Its `By phase:` line (and the `summary` text's `(spec $…/<n>m, …)`) gives each phase's cost and minutes over all items: name the costliest phase to the user.
 2. The runner exits whenever it reaches `summary`. Ask every still-pending question in one batch (Questions, steps 2 to 5). If any were answered, run the same `start …` command again, whatever the run (issue, queue, plan or verify), with the same arguments but no `--permission-mode` (Start): it uses the stored items and resumes the answered ones first. The checkout rule of Start applies. Arm the Monitor first, from `N` = `wc -l` + 1 of `events.log` (Watch), then start.
 3. Finish with the skill's own summary of what the user must do, built from the ledgers.
 4. **A queue's ledger:** the runner writes no ship-queue `Result:` or `Cost:` lines; `status` and the sub-issues' ledgers are the record. If Q0 and Q1 started a ship-queue ledger, close it here, once the queue is finished: write `Summary: posted <time>` as its last line, as ship-queue's Q4 says.
