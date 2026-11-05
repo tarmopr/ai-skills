@@ -106,8 +106,10 @@ model and effort, by [stage-prompts.md](stage-prompts.md): the Spec stage
 writes the plan too, I2 step 4). This session never changes its own model or effort (that invalidates
 its prompt cache): start it on Opus, high effort. It does routing, tracker,
 checkout, batch, commits and ship-plan; by ship-plan's
-"This session reads little itself" (its section "The run"), code and long logs go to an `Explore`
-agent at the `Research` row.
+"This session reads little itself" (its section "The run"), code, long logs and tracker or wiki pages go to an `Explore`
+agent at the `Research` row. **Every Agent dispatch passes both `model` and
+`effort`** from its role's `## Models` row (a research agent: `Research`,
+default `sonnet`, `medium`); the hook refuses a dispatch missing either.
 
 **All work is tracked in an issue in the repo's tracker.** `Tracker: none`: the
 PR is the record, no issue question. With a tracker there is no "no issue" path:
