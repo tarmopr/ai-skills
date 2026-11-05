@@ -123,54 +123,52 @@ allowed-tools:
 # Ship a plan
 
 One run takes a written plan to a merged PR on a green base branch, tracked in
-an issue in the repo's tracker unless the tracker is `none` or the user answers that the work has none. **The user starts this skill so they can
-walk away.** Every question you ask costs them a context switch. Each run
-should need fewer questions than the last, and the repo's two logs are how that
-happens.
+an issue in the repo's tracker unless the tracker is `none` or the user answers
+that the work has none. **The user starts this skill to walk away:** each
+question costs them a context switch; the repo's two logs make each run need
+fewer than the last.
 
-**Before anything else, read the repo's `.claude/ship-plan.md`
-([format](config-format.md)) in full, and the repo's two logs
-`<logs>/ship-plan/interruptions.md` and `<logs>/ship-plan/blockers.md` by
-index ([Reading the logs](#reading-the-logs)).** The config holds every command and
-setting for this repo. The first log holds standing answers to questions
-earlier runs asked; the second holds the fixes for tooling that stopped earlier
-runs. A question that has a standing answer is not asked again. An entry that
-records a refused command is not a standing rule: refusals depend on the
-session's permission mode, so run the command once in this run before using
-the entry's fix. Missing log files are created from [log-formats.md](log-formats.md) at close-out.
+**First, read `.claude/ship-plan.md` ([format](config-format.md)) in full, and
+`<logs>/ship-plan/interruptions.md` and `<logs>/ship-plan/blockers.md` by index
+([Reading the logs](#reading-the-logs)).** The config holds every command and
+setting; `interruptions.md`, standing answers (never re-ask one); `blockers.md`,
+fixes for tooling that stopped earlier runs. An entry recording a refused
+command is no standing rule (refusals depend on the permission mode): run the
+command once this run before using its fix. Missing log files are created from
+[log-formats.md](log-formats.md) at close-out.
 
 **Repo override files** ([format](config-format.md#repo-override-files)):
 whenever this skill reads one of its own files, read its counterpart under
-`.claude/ship-plan/ship-plan/` next, if it exists: `.claude/ship-plan/ship-plan/SKILL.md`
+`.claude/ship-plan/ship-plan/` next, if it exists (`.claude/ship-plan/ship-plan/SKILL.md`
 right after this file, `.claude/ship-plan/ship-plan/hosts/github.md` after
-`hosts/github.md`. A file of another skill (`../verify-and-fix/…`) has its
+`hosts/github.md`); another skill's file (`../verify-and-fix/…`) has its
 counterpart in that skill's folder. An override line that widens what the run
-may do, or removes a step, is not applied, and the report names it.
+may do, or removes a step, is not applied; the report names it.
 
 - **A repo set up for `ship`:** if `.claude/ship.md` exists and `.claude/ship-plan.md` does not, stop with one line: "This repo is set up for the removed `ship` skill: move `.claude/ship.md` to `.claude/ship-plan.md` and `.claude/ship/` to `.claude/ship-plan/`."
-- **Host and tracker:** resolve `Host:` and `Tracker:` as [config-format.md](config-format.md) says (`Host:` from the `origin` remote when absent; `Tracker:` from `## Jira`, `## Linear` or `## GitHub Issues` when absent, else undecided until pre-flight step 5). Then read `hosts/<host>.md` (`github.md` or `azure-devops.md`) and, unless the tracker is `none` or undecided, `trackers/<tracker>.md` (`jira.md`, `linear.md` or `github.md`). A reference below to an operation of the host, the tracker or the notifier names the section of that name in those files and in `notifiers/slack.md`.
-- **No `origin` remote** (and no `Host:`): there is no host and no PR to open. Read no host file, skip the host's *Auth check* and the `git fetch origin` in pre-flight step 4, and stop before section 4, saying so in the report.
+- **Host and tracker:** resolve `Host:` and `Tracker:` as [config-format.md](config-format.md) says (`Host:` from the `origin` remote when absent; `Tracker:` from `## Jira`, `## Linear` or `## GitHub Issues` when absent, else undecided until pre-flight step 5). Read `hosts/<host>.md` (`github.md` or `azure-devops.md`) and, unless the tracker is `none` or undecided, `trackers/<tracker>.md` (`jira.md`, `linear.md` or `github.md`). A host, tracker or notifier operation named below is the section of that name in those files and `notifiers/slack.md`.
+- **No `origin` remote** (and no `Host:`): no host, no PR. Read no host file, skip the host's *Auth check* and pre-flight step 4's `git fetch origin`, stop before section 4, and say so in the report.
 
 ## What invoking this skill authorizes
 
 Invoking the skill is the user's standing authorization, for this run, to:
 
-- create the feature branch, commit, and push it (never with `--force`);
-- open the PR, rerun failed CI jobs, and merge it once every check is green and the repo's review rules are met (section 4R);
-- request an AI review (the host's *Request an AI review*), and everything `verify-and-fix`'s review comments ([review-comments.md](../verify-and-fix/review-comments.md)) allow on the PR: commit and push fixes for review comments, reply in review threads, resolve bot reviewers' threads, as the host names them, and re-request a reviewer whose requested changes were addressed or whose approval a push dismissed;
-- open, push and merge follow-up branches that fix a red base branch caused by this run, including a revert PR;
-- in the Slack channel recorded in `## Slack` only, and never in any other channel: post a review request for each PR it opens (section 4R, step 2), reply in that post's thread to ask for a re-review (section 4R, step 3), and add the `pr-merged` reaction to that post (section 5);
-- read and write the run's issue — the one found or chosen in pre-flight (section 0, step 5): create it where the user chose, link it to the related issue the user chose, assign it, set its status, append to its description, add comments;
-- for each issue the plan's `Tickets:` line lists (section 0, step 5): read it, assign it, set its status as section 1 and section 7, step 1 say, and add comments. Nothing else: no description edit, no link, no other issue;
-- open, push and merge the docs branch that a `Docs PR:` line names (section 7, step 2): the spec `ship-issue` kept out of the code PR, and the docs changes the spec lists;
-- open, push and merge the docs-only lessons branch (section 8).
+- create the feature branch, commit, push it (never `--force`);
+- open the PR, rerun failed CI jobs, merge once every check is green and the repo's review rules are met (section 4R);
+- request an AI review (the host's *Request an AI review*) and do all that `verify-and-fix`'s [review-comments.md](../verify-and-fix/review-comments.md) allows on the PR: push fixes for review comments, reply in review threads, resolve bot reviewers' threads (as the host names them), re-request a reviewer whose requested changes were addressed or whose approval a push dismissed;
+- open, push, merge follow-up branches fixing a red base branch this run caused, including a revert PR;
+- in the `## Slack` channel only, never another: post a review request per PR it opens (section 4R, step 2), reply in that post's thread asking for a re-review (section 4R, step 3), add the `pr-merged` reaction to it (section 5);
+- read and write the run's issue (found or chosen in section 0, step 5): create it where the user chose, link it to the related issue the user chose, assign, set status, append to its description, comment;
+- each issue the plan's `Tickets:` line lists (section 0, step 5): read, assign, set status as section 1 and section 7, step 1 say, comment. Nothing else: no description edit, no link, no other issue;
+- open, push, merge the docs branch a `Docs PR:` line names (section 7, step 2): the spec `ship-issue` kept out of the code PR, and the docs changes the spec lists;
+- open, push, merge the docs-only lessons branch (section 8).
 
-It does **not** authorize the following. Each goes into the question batch (section 3), never done on your own:
+Not authorized; each goes into the question batch (section 3), never done on your own:
 
 - a push to the base branch, `--force`, `--admin`, `--no-verify`, disabling a hook or a check;
-- approving the PR, dismissing a review, resolving a human reviewer's thread, or requesting a reviewer other than the AI reviewer (code owners are requested by the host);
+- approving the PR, dismissing a review, resolving a human reviewer's thread, requesting a reviewer other than the AI reviewer (the host requests code owners);
 - everything under the host's *Never*;
-- any deploy or production write, except a merge whose base-branch deploy goes only to environments that `## Allowed` `Merge that deploys to:` covers ([config-format.md](config-format.md#-allowed));
+- any deploy or production write, except a merge whose base-branch deploy goes only to environments `## Allowed` `Merge that deploys to:` covers ([config-format.md](config-format.md#-allowed));
 - a write to a shared environment's data;
 - deleting a branch, file or row you did not create;
 - spending money (paid APIs, a paid service);
@@ -178,102 +176,92 @@ It does **not** authorize the following. Each goes into the question batch (sect
 - everything under the config's `## Never do`.
 
 Apart from `## Allowed`, the config can add to this list, never remove from it.
+Where `superpowers:subagent-driven-development` or `verify-and-fix` say a push,
+PR or merge needs the user, these lists replace that rule.
 
-`superpowers:subagent-driven-development` and `verify-and-fix` both say that a push, a
-PR or a merge needs the user. Under this skill, the lists above replace that
-rule.
+**The frontmatter's `allowed-tools` pre-approves commands** for the invoking
+turn, only when written exactly as this skill and the host file write them:
 
-**The frontmatter's `allowed-tools` pre-approves these commands** for the turn
-that invoked the skill. They only match when written exactly as this skill
-and the host file write them:
-
-- **every push names its branch:** `git push origin <branch>`. A bare `git push` is not pre-approved, and on the base branch it would push to it;
+- **every push names its branch:** `git push origin <branch>`. A bare `git push` is not pre-approved, and on the base branch pushes to it;
 - merges: the host's *Merge the PR*, in the form the config's `Merge:` picks;
-- reruns: the host's *Rerun a failed PR check*, and the host's *Rerun a base-branch run* where the host pre-approves it;
+- reruns: the host's *Rerun a failed PR check*, and its *Rerun a base-branch run* where the host pre-approves it;
 - reverts: `git revert --no-edit <sha>`;
-- fetch, stage and commit (`git fetch origin <ref>`, `git add <files>`, `git commit`) are local and pre-approved. Run a fetch and a merge as two separate commands, never joined with `&&`.
+- local: `git fetch origin <ref>`, `git add <files>`, `git commit`. A fetch and a merge are two commands, never joined with `&&`.
 
-Gate and prerequisite commands from the config are not pre-approved. In a
-permission mode that prompts, list them in the pre-flight batch with the exact
-allow lines (`Bash(<command>)`) for the user to add, so the run does not stall
-on its first gate. Add the allow line the host's *Rerun a base-branch run*
-gives, when it gives one.
+The config's gate and prerequisite commands are not pre-approved. In a
+permission mode that prompts, list them in the pre-flight batch with exact allow
+lines (`Bash(<command>)`) for the user to add, plus the allow line the host's
+*Rerun a base-branch run* gives, if any.
 
-The pre-approval clears when the user sends a message. So every question you
-ask ends with: **"Answer with `/ship-plan <your answers>`,"** which starts the
-skill again, renews the pre-approval, and resumes from the ledger. With
-`## Runner` `Mode: runner` and this run in session mode, `--session` given, or
-not given because the run has no plan file ("Runner or session"), the line is **"Answer with
-`/ship-plan <your answers> --session`,"** so the answers resume this run, not a
-new runner. A command
-still refused after that goes into the batch (section 5, step 5).
+The pre-approval clears when the user sends a message, so every question ends
+with **"Answer with `/ship-plan <your answers>`,"**: it restarts the skill,
+renews the pre-approval, and resumes from the ledger. With `## Runner`
+`Mode: runner` and this run in session mode (`--session` given, or not given
+because the run has no plan file: "Runner or session"), the line is **"Answer
+with `/ship-plan <your answers> --session`,"** so the answers resume this run,
+not a new runner. A command still refused then goes into the batch (section 5, step 5).
 
 ## The run
 
 ```dot
 digraph ship {
-  "0 Pre-flight" [shape=box];
-  "1 Tracker (issue if any) and branch" [shape=box];
-  "2 Implement: subagent-driven-development" [shape=box];
-  "2b Simplify: the whole diff, own commit" [shape=box];
-  "3 Verify: verify until clean" [shape=box];
-  "4 Push, PR, link PR" [shape=box];
-  "PR checks green?" [shape=diamond];
-  "4R Review: request, poll, triage, fix, reply" [shape=box];
-  "Review rules met?" [shape=diamond];
-  "5 Merge, comment" [shape=box];
-  "base-branch CI green?" [shape=diamond];
-  "Transient failure in blockers.md?" [shape=diamond];
-  "Rerun the failed jobs" [shape=box];
-  "Fix-forward branch: debug, test, fix" [shape=box];
-  "6b Validate the deploy" [shape=box];
-  "7 Close out: tracker or PR comment, docs PR, lessons, report, one question batch" [shape=doublecircle];
+  pre [label="0 Pre-flight" shape=box];
+  branch [label="1 Tracker (issue if any) and branch" shape=box];
+  impl [label="2 Implement: subagent-driven-development" shape=box];
+  simp [label="2b Simplify: the whole diff, own commit" shape=box];
+  verify [label="3 Verify: verify until clean" shape=box];
+  pr [label="4 Push, PR, link PR" shape=box];
+  checks [label="PR checks green?" shape=diamond];
+  review [label="4R Review: request, poll, triage, fix, reply" shape=box];
+  rules [label="Review rules met?" shape=diamond];
+  merge [label="5 Merge, comment" shape=box];
+  baseci [label="base-branch CI green?" shape=diamond];
+  transient [label="Transient failure in blockers.md?" shape=diamond];
+  rerun [label="Rerun the failed jobs" shape=box];
+  wait [label="Wait 10 min, rerun once"];
+  fix [label="Fix-forward branch: debug, test, fix" shape=box];
+  deploy [label="6b Validate the deploy" shape=box];
+  close [label="7 Close out: tracker or PR comment, docs PR, lessons, report, one question batch" shape=doublecircle];
 
-  "0 Pre-flight" -> "1 Tracker (issue if any) and branch";
-  "1 Tracker (issue if any) and branch" -> "2 Implement: subagent-driven-development";
-  "2 Implement: subagent-driven-development" -> "2b Simplify: the whole diff, own commit";
-  "2b Simplify: the whole diff, own commit" -> "3 Verify: verify until clean";
-  "3 Verify: verify until clean" -> "4 Push, PR, link PR" [label="clean"];
-  "3 Verify: verify until clean" -> "7 Close out: tracker or PR comment, docs PR, lessons, report, one question batch" [label="not clean: park, no PR"];
-  "4 Push, PR, link PR" -> "PR checks green?";
-  "PR checks green?" -> "3 Verify: verify until clean" [label="no: red job is a gate failure"];
-  "PR checks green?" -> "4R Review: request, poll, triage, fix, reply" [label="yes, or CI None"];
-  "4R Review: request, poll, triage, fix, reply" -> "PR checks green?" [label="fixes pushed"];
-  "4R Review: request, poll, triage, fix, reply" -> "Review rules met?";
-  "Review rules met?" -> "5 Merge, comment" [label="yes"];
-  "Review rules met?" -> "7 Close out: tracker or PR comment, docs PR, lessons, report, one question batch" [label="not within Review wait: hand off"];
-  "5 Merge, comment" -> "base-branch CI green?";
-  "5 Merge, comment" -> "7 Close out: tracker or PR comment, docs PR, lessons, report, one question batch" [label="deploy not covered: not merged"];
-  "base-branch CI green?" -> "6b Validate the deploy" [label="yes, or CI None"];
-  "6b Validate the deploy" -> "7 Close out: tracker or PR comment, docs PR, lessons, report, one question batch" [label="passed, or could not run"];
-  "6b Validate the deploy" -> "Fix-forward branch: debug, test, fix" [label="failed: this run's diff"];
-  "6b Validate the deploy" -> "7 Close out: tracker or PR comment, docs PR, lessons, report, one question batch" [label="After merge check failed, not this diff: reported"];
-  "base-branch CI green?" -> "Transient failure in blockers.md?" [label="no"];
-  "Transient failure in blockers.md?" -> "Rerun the failed jobs" [label="yes, no Merge deploys to"];
-  "Transient failure in blockers.md?" -> "7 Close out: tracker or PR comment, docs PR, lessons, report, one question batch" [label="yes, Merge deploys to set: park the rerun"];
-  "Transient failure in blockers.md?" -> "Wait 10 min, rerun once" [label="runner or network, Rerun a transient deploy failure on covers it"];
-  "Transient failure in blockers.md?" -> "7 Close out: tracker or PR comment, docs PR, lessons, report, one question batch" [label="billing: escalate at once"];
-  "Wait 10 min, rerun once" -> "6b Validate the deploy" [label="green"];
-  "Wait 10 min, rerun once" -> "7 Close out: tracker or PR comment, docs PR, lessons, report, one question batch" [label="red again: escalate"];
-  "Rerun the failed jobs" -> "base-branch CI green?";
-  "Transient failure in blockers.md?" -> "Fix-forward branch: debug, test, fix" [label="no"];
-  "Fix-forward branch: debug, test, fix" -> "3 Verify: verify until clean";
+  pre -> branch -> impl -> simp -> verify;
+  verify -> pr [label="clean"];
+  verify -> close [label="not clean: park, no PR"];
+  pr -> checks;
+  checks -> verify [label="no: red job is a gate failure"];
+  checks -> review [label="yes, or CI None"];
+  review -> checks [label="fixes pushed"];
+  review -> rules;
+  rules -> merge [label="yes"];
+  rules -> close [label="not within Review wait: hand off"];
+  merge -> baseci;
+  merge -> close [label="deploy not covered: not merged"];
+  baseci -> deploy [label="yes, or CI None"];
+  deploy -> close [label="passed, or could not run"];
+  deploy -> fix [label="failed: this run's diff"];
+  deploy -> close [label="After merge check failed, not this diff: reported"];
+  baseci -> transient [label="no"];
+  transient -> rerun [label="yes, no Merge deploys to"];
+  transient -> close [label="yes, Merge deploys to set: park the rerun"];
+  transient -> wait [label="runner or network, Rerun a transient deploy failure on covers it"];
+  transient -> close [label="billing: escalate at once"];
+  wait -> deploy [label="green"];
+  wait -> close [label="red again: escalate"];
+  rerun -> baseci;
+  transient -> fix [label="no"];
+  fix -> verify;
 }
 ```
 
-The run ends at section 7 and nowhere else. Waiting on CI is not an end, and
-neither is a pending question when other work remains.
+The run ends at section 7 and nowhere else. Waiting on CI is not an end, nor
+is a pending question while other work remains.
 
-**This session reads little itself.** Every turn re-reads its whole context,
-so what it reads stays expensive until the next compaction: one session ran
-about 360 `grep`, `sed` and `cat` calls of its own at a median context of
-300k tokens. It reads the ledgers, the config, `questions.md`, the plan text of
-the task it dispatches, `git status`, `git log`, `git diff --stat`, and the
-last 60 lines of a gate or CI log. Anything wider (a source file, `grep` or
-`git grep` over the code, a full CI log, any file over 300 lines) goes to an
-`Explore` agent at the `## Models` `Research` row (default `sonnet`,
-`medium`), whose prompt asks for at most 30 lines with file:line quotes.
-The logs are read by index, not in full: see below.
+**This session reads little itself** (every turn re-reads its context): the
+ledgers, the config, `questions.md`, the plan text of the task it dispatches,
+`git status`, `git log`, `git diff --stat`, the last 60 lines of a gate or CI
+log. Anything wider (a source file, `grep` or `git grep` over the code, a full
+CI log, any file over 300 lines) goes to an `Explore` agent at the `## Models`
+`Research` row (default `sonnet`, `medium`), prompted for at most 30 lines with
+file:line quotes.
 
 ### Reading the logs
 
@@ -281,24 +269,21 @@ The logs are read by index, not in full: see below.
 (the default), or the local store under `Location: local`
 ([`## Logs`](config-format.md#-logs)). While the store holds no log, read the tracked copies
 under `.claude/`: only section 0 (or ship-issue's I0, when it runs first; or `verify-and-fix` run on
-its own) copies them in.
-Every log path below and in the other skills is under `<logs>`.
+its own) copies them in. Every log path below and in the other skills is under `<logs>`.
 
-`blockers.md` and the `interruptions.md` files are kept under a size budget
-(section 8), and every turn re-reads whatever they put in context. So read them by index:
+`blockers.md` and the `interruptions.md` files have a size budget (section 8);
+read them by index:
 
 1. **List the headings:** `grep -n '^##' <log>`. Each `###` heading is one entry's
-   symptom (blockers) or question (interruptions). A log under 8 KB is read in full.
+   symptom (blockers) or question (interruptions). Read a log under 8 KB in full.
 2. **Read the entries that match,** each from its heading to the next `###`
    (`sed -n '<from>,<to>p'`): every entry whose heading names the tool, gate, host,
    tracker, error or question at hand, and every entry the config or an override file
    names (`## Gates` notes, [repo override files](config-format.md#repo-override-files)).
-   When unsure whether a heading matches, read the entry: a heading costs one line,
-   a missed entry costs a rediscovery.
+   Unsure whether a heading matches: read the entry.
 3. **Read again when the work changes:** before each question you are about to ask
-   (a matching standing answer settles it), before each gate or tool you have not
-   used yet this run, and after a compaction. The headings are the index to keep,
-   not the entries.
+   (a matching standing answer settles it), before each gate or tool not yet
+   used this run, and after a compaction. Keep the headings as the index, not the entries.
 4. **A heading list that matches nothing** is an answer, not a reason to read the
    whole log. A new blocker or question that will recur goes into the log at close-out.
 5. **Record each entry you apply** as a ledger line `Used: <log path> <heading>`, the path under `<logs>`,
@@ -307,32 +292,37 @@ Every log path below and in the other skills is under `<logs>`.
 
 ### The ledger
 
-`.superpowers/ship-plan/<branch>/ledger.md`, with every `/` in the branch name written as `-` (`feature/x` → `feature-x`), so section 0, step 2's `*/ledger.md` listing finds it (`.superpowers/` goes in
-`.git/info/exclude`, never `.gitignore`). Its first line is always
+`.superpowers/ship-plan/<branch>/ledger.md`, every `/` in the branch name written
+as `-` (`feature/x` → `feature-x`), so section 0, step 2's `*/ledger.md` listing
+finds it (`.superpowers/` goes in `.git/info/exclude`, never `.gitignore`). First
+line, always:
 `Phase: <n> | Plan: <path> | Issue: <id or none> | PR: #<n> | merge: <sha> | base run: <id>`,
-rewritten as each value becomes known; a finished run ends with `Phase: done`. Below it, one line per event, one fact in at most about 300 characters (detail belongs in the plan, a commit or the PR): phase
-changes, `Ruling:` lines, `Asked:` lines (every question put to the user, with
-its answer), questions parked, CI results, `Lesson:` lines (each names something a skill, prompt or repo file should change; a re-check that found nothing changed is not one), `Used:` and `Removed:` lines, and a `Branch: <name>` line
-once the branch exists (section 1), which a resume switches to.
-**After a context compaction, resume from this line and `git log`, not from
-memory.** `questions.md` sits next to it (section 3). `verify-and-fix` keeps its own
-ledger in `.superpowers/verify-and-fix/<branch>/`; link to it rather than copying from it.
+rewritten as each value becomes known; a finished run ends with `Phase: done`.
+Below it, one line per event, one fact in at most about 300 characters (detail
+goes in the plan, a commit or the PR): phase changes, `Ruling:` lines, `Asked:`
+lines (every question put to the user, with its answer), questions parked, CI
+results, `Lesson:` lines (each names something a skill, prompt or repo file
+should change; a re-check that found nothing changed is not one), `Used:` and
+`Removed:` lines, and a `Branch: <name>` line once the branch exists (section 1),
+which a resume switches to.
+**After a context compaction, resume from the ledger and `git log`, not from
+memory.** `questions.md` sits next to it (section 3). `verify-and-fix` keeps its
+own ledger in `.superpowers/verify-and-fix/<branch>/`; link to it, don't copy from it.
 
-**When the session ends before the run does** (a usage limit, the context
-running out, a batch the user will answer later): bring the ledger up to date,
-then write a handoff: the `handoff` skill when it is available, otherwise a
-`HANDOFF.md` next to the ledger. Its resume line is `/ship-plan`, with no
-argument: the ledger says where the run stands. With `## Runner` `Mode: runner`
-and this run in session mode, it is `/ship-plan --session`.
+**When the session ends before the run does** (usage limit, context running
+out, a batch the user will answer later): update the ledger, then write a
+handoff (the `handoff` skill if available, else `HANDOFF.md` next to the
+ledger). Its resume line is `/ship-plan`, no argument (the ledger says where
+the run stands); with `## Runner` `Mode: runner` and this run in session mode,
+`/ship-plan --session`.
 
-**The sections live in phase files,** named in the index below. Read a file
-when its first section starts, and on a resume the file of the ledger's
-`Phase:`. A step anywhere in this skill that sends the run to a section in
-another phase file, or names one it needs (section 0, step 8 naming section 5,
-step 3; section 0, step 2 naming section 7, step 7 and section 8; section 4,
-step 4 sending the run to section 4R, steps 1–2; section 4R or 5 going back to
-section 4, step 6), reads that section there, for that step. This holds in
-every mode.
+**The sections live in phase files** (index below). Read a file when its first
+section starts, and on a resume the file of the ledger's `Phase:`. A step that
+sends the run to a section in another phase file, or names one it needs
+(section 0, step 8 naming section 5, step 3; section 0, step 2 naming section 7,
+step 7 and section 8; section 4, step 4 sending the run to section 4R,
+steps 1–2; section 4R or 5 going back to section 4, step 6), reads that section
+there, for that step, in every mode.
 
 ## 0. Pre-flight — see [phase-implement.md](phase-implement.md); read it when this phase starts
 
@@ -360,87 +350,84 @@ every mode.
 
 ## Queued mode (ship-queue)
 
-**A run is queued** when it was started by ship-queue as its child session
+**A run is queued** when ship-queue started it as a child session
 (`printenv SHIP_QUEUE_PARENT` prints a parent key; the child ran ship-issue,
-which invoked this skill, or ran this skill directly with answers) and that
-parent's ship-queue ledger in this checkout
-(`.superpowers/ship-queue/<parent>/ledger.md`) has a `Current: <KEY> started …` line
-naming this run's issue (its ledger's first-line `Issue:`, or the plan's
-`From ship-issue` block before the ledger exists), with no `Result: <KEY>` line
-after it. A leftover queue ledger alone does not make a run the user started
-queued. Nobody is watching the run. Everything above applies, with these
-changes:
+which invoked this skill, or ran this skill directly with answers) and the
+parent's ledger here (`.superpowers/ship-queue/<parent>/ledger.md`) has a
+`Current: <KEY> started …` line naming this run's issue (its ledger's
+first-line `Issue:`, or before the ledger exists the plan's `From ship-issue`
+block) with no `Result: <KEY>` line after it. A leftover queue ledger alone
+does not make a run the user started queued. Nobody is watching. All above
+applies, except:
 
-- **Several open runs** (section 0, step 2): the queue's other sub-issues can each hold one. Resume the one whose `Issue:` is the `Current:` key; never ask which. When ship-queue passes answers for a run already `Phase: done` with an `Asked: … — pending` line, that done ledger is the one: apply the answers as section 0, step 2 says for a done ledger, even though other runs are open.
-- **Outcome line:** at close-out (section 7, step 1), write `Outcome: <Done|Base branch red|Awaiting review|Not merged>`, the outcome whose template the closing comment used, under the first line. A ledger that already has an `Outcome:` line (a resumed close-out) gets that line replaced, never a second one. ship-queue reads it; `Base branch red` stops the queue.
-- **Ask nothing: never `AskUserQuestion`, and never wait for a reply** (section 0, step 10; section 3, step 5; section 7, step 7). The batch goes into `questions.md` and the ledger as unqueued (`Asked: … — pending`), and as one comment: the tracker's *Comment*, or with no issue the host's *PR comment* (no PR either: the ledger only). Number the questions, each with its options and the recommendation first, and end with the answer line **"Answer with `/ship-queue <parent> <KEY>: <your answers>`."** (`<parent>` is the queue ledger's `Parent:`). The queue resumes this run with them in the form `/ship-queue <parent> <KEY>: <answers>`. Carry on with everything the answers do not block, as unqueued; the run then ends at section 7 as it would.
-- **Review wait** (section 4R): when the PR's checks are green and only a person's approval, or a person's unresolved thread, is missing, hand off at once (step 5) instead of waiting the `Review wait:` window. The wait for an AI review (at most 20 minutes) and every CI wait stay. The queue polls once more after its last sub-issue.
-- **No handoffs of this run's own:** neither the session-end handoff (the ledger section) nor a next part's (section 7, step 3). The queue writes one for the whole queue, and the queue is the next part.
-- **Lessons** (section 8): the branch is `docs/ship-plan-lessons-<yyyy-mm-dd>-<KEY-n>`, so a queue's runs on one day do not collide on one branch name (none under `## Logs` `Location: local`). Write `Lessons branch: <name>` when you create it, and `Docs branch: <name>` when docs-pr.md creates the docs branch; the queue reads them to know the branch is its own. The `Lessons PR:` line is written as unqueued. Everything else in section 8 is unchanged.
+- **Several open runs** (section 0, step 2): the queue's other sub-issues can each hold one. Resume the one whose `Issue:` is the `Current:` key; never ask which. Answers from ship-queue for a `Phase: done` run with an `Asked: … — pending` line go to that done ledger, even with other runs open, applied as section 0, step 2 says for a done ledger.
+- **Outcome line:** at close-out (section 7, step 1), write `Outcome: <Done|Base branch red|Awaiting review|Not merged>` under the first line, the outcome whose template the closing comment used; a resumed close-out replaces an existing `Outcome:` line, never adds a second. ship-queue reads it; `Base branch red` stops the queue.
+- **Ask nothing: never `AskUserQuestion`, never wait for a reply** (section 0, step 10; section 3, step 5; section 7, step 7). The batch goes into `questions.md` and the ledger as unqueued (`Asked: … — pending`), and as one comment: the tracker's *Comment*; no issue, the host's *PR comment*; no PR either, the ledger only. Number the questions, each with its options, recommendation first, ending with **"Answer with `/ship-queue <parent> <KEY>: <your answers>`."** (`<parent>` is the queue ledger's `Parent:`); the queue resumes this run with `/ship-queue <parent> <KEY>: <answers>`. Carry on with all the answers do not block, as unqueued; the run then ends at section 7 as it would.
+- **Review wait** (section 4R): checks green and only a person's approval or unresolved thread missing: hand off at once (step 5), not after `Review wait:`. The AI-review wait (at most 20 minutes) and every CI wait stay. The queue polls once more after its last sub-issue.
+- **No handoffs of this run's own:** neither the session-end one (the ledger section) nor a next part's (section 7, step 3). The queue writes one for the whole queue and is the next part.
+- **Lessons** (section 8): branch `docs/ship-plan-lessons-<yyyy-mm-dd>-<KEY-n>`, so a queue's runs on one day do not collide (none under `## Logs` `Location: local`). Write `Lessons branch: <name>` on creating it and `Docs branch: <name>` when docs-pr.md creates the docs branch; the queue reads them to know the branch is its own. Write `Lessons PR:` as unqueued. The rest of section 8 is unchanged.
 
 ## Runner mode (ship-runner)
 
 **A run is in Runner mode** when the ship runner started it as a child:
 `printenv SHIP_RUNNER` prints the runner's folder, `printenv SHIP_RUNNER_KEY`
-prints the item key the runner gave this child (an issue key, a no-issue
-ship-issue slug, or the key of a run on a plan alone), and that folder's
-`state.json` has a `current` field equal to that key. Take the key from
-`SHIP_RUNNER_KEY`; never derive it from a ledger, a plan's file name or a
-branch. A `SHIP_RUNNER` with no `SHIP_RUNNER_KEY`, or whose `state.json` names
-another item, or none, does not make a run a runner child. The runner's prompt names
-the phase (`implement`, `verify`, `merge` or `close`) and, for `implement`, a
-range of plan tasks. Nobody is watching. Everything in Queued mode above
-applies, with these changes:
+the item key it gave this child (an issue key, a no-issue ship-issue slug, or
+the key of a run on a plan alone), and that folder's `state.json` has `current`
+equal to that key. Take the key from `SHIP_RUNNER_KEY`, never from a ledger, a
+plan's file name or a branch. `SHIP_RUNNER` without `SHIP_RUNNER_KEY`, or with a
+`state.json` naming another item or none, is no runner child. The runner's
+prompt names the phase (`implement`, `verify`, `merge` or `close`) and, for
+`implement`, a range of plan tasks. Nobody is watching. Queued mode applies, except:
 
-- **The answer line** of the comment that carries the batch is **"Answer in the session that started the run."**, in place of the `/ship-queue` one. The answers come back in a later runner prompt, after "The user's answers, copied exactly:". Rewrite each answered `Asked: … — pending` line in place with its answer, never as a second line: the runner counts every line that still ends in `— pending`.
-- **`Asked:` lines** hold the question, then its options with the recommendation first, as verify-and-fix's Runner mode writes them: `Asked: <the question, its options, the recommendation first> — pending`. The runner's `status` prints them as they are, and the watching session asks from them.
-- **Which run** (section 0, steps 2 and 3): the open run whose `Issue:` is the `current` key, or whose `Plan:` is this run's plan, whatever the argument. Never ask which, and never start a second run for a plan that has an open ledger.
-- **The run's branch, in every phase, before anything else in it:** when the checkout is on `<base>` and clean and the ship-plan ledger has a `Branch:` line, `git switch <branch>` first (a rerun or the next queue item can leave the checkout on base). If the branch is gone because its PR merged, stay on `<base>`, as section 0, step 2 says.
-- **Only the named phase, reading only its phase file:** `implement` is sections 0, 1, 2 and 2b ([phase-implement.md](phase-implement.md)); `verify` is sections 3 and 4 ([phase-verify.md](phase-verify.md)); `merge` is sections 4R, 5, 6 and 6b ([phase-merge.md](phase-merge.md)); `close` is sections 7 and 8 ([phase-close.md](phase-close.md)). Every phase also reads what this skill's opening reads before anything else: `.claude/ship-plan.md`, `<logs>/ship-plan/interruptions.md`, `<logs>/ship-plan/blockers.md` ([Reading the logs](#reading-the-logs)), `hosts/<host>.md`, `trackers/<tracker>.md`, `notifiers/slack.md` when `## Slack` names a channel, and the override counterparts of each; a later `implement` child reads them only as the `implement` bullet below says. Section 3 also applies whenever a question comes up, as its index line says. A step that sends the run to a section in another phase file reads that section there, for that step, as the index says. When the phase's own text sends the run to section 7 early (verify not clean, awaiting review, awaiting merge, not merged), read phase-close.md then and close out as written.
-- **A phase ends where the next one begins:** rewrite the `Phase:` field of the ledger's first line to it, keeping its other fields (`Phase: 3` after section 2b, `Phase: 4R` once section 4 reaches section 4R, `Phase: 7` after section 6b), then end. The close phase ends as section 7 says (`Phase: done` when the outcome is Done).
-- **`implement` with a task range:** do only those tasks. After each task's review passes, write `Progress: task <n> done`, `<n>` as its `### Task <n>` heading numbers it; a task parked instead (its question goes in the batch and the run goes on without it) gets `Progress: task <n> parked`. The runner counts both lines as handled to pick the next range. The first child runs sections 0 and 1 first. A later child (the ledger is at `Phase: 2`) re-reads exactly: the plan's header and `## Global Constraints`, its own task range, the ship-plan ledger, and `git log <base>..HEAD --oneline` — nothing else before its first task. What section 2 puts in a dispatch (config sections, `## Models` rows, `## Prerequisites`) is read when that dispatch is built. **`implement` with no range** (every task has its `Progress:` line): section 2's steps after the last task, then section 2b. **`implement`, the whole plan** (the plan has no `### Task` headings): sections 0 and 1, all of the plan's work as section 2 does it, section 2's steps after the last task, then section 2b, in this one child.
+- **The answer line** of the batch comment is **"Answer in the session that started the run."**, not the `/ship-queue` one. Answers return in a later runner prompt, after "The user's answers, copied exactly:". Rewrite each answered `Asked: … — pending` line in place with its answer, never as a second line: the runner counts every line still ending in `— pending`.
+- **`Asked:` lines** as verify-and-fix's Runner mode writes them: `Asked: <the question, its options, the recommendation first> — pending`. The runner's `status` prints them as they are; the watching session asks from them.
+- **Which run** (section 0, steps 2 and 3): the open run whose `Issue:` is the `current` key, or whose `Plan:` is this run's plan, whatever the argument. Never ask which; never start a second run for a plan with an open ledger.
+- **The run's branch, first in every phase:** on `<base>`, clean, and the ship-plan ledger has a `Branch:` line: `git switch <branch>` (a rerun or the next queue item can leave the checkout on base). Branch gone because its PR merged: stay on `<base>`, as section 0, step 2 says.
+- **Only the named phase, reading only its phase file:** `implement` is sections 0, 1, 2 and 2b ([phase-implement.md](phase-implement.md)); `verify`, 3 and 4 ([phase-verify.md](phase-verify.md)); `merge`, 4R, 5, 6 and 6b ([phase-merge.md](phase-merge.md)); `close`, 7 and 8 ([phase-close.md](phase-close.md)). Every phase first reads what this skill's opening reads (`.claude/ship-plan.md`, both logs by index, `hosts/<host>.md`, `trackers/<tracker>.md`), `notifiers/slack.md` when `## Slack` names a channel, and each one's override counterpart; a later `implement` child, only as the `implement` bullet below says. The index's rules for section 3 and for steps naming another phase file's section still apply. When the phase's text sends the run to section 7 early (verify not clean, awaiting review, awaiting merge, not merged), read phase-close.md then and close out as written.
+- **A phase ends where the next begins:** rewrite the ledger's first-line `Phase:` to it, keeping the other fields (`Phase: 3` after section 2b, `Phase: 4R` once section 4 reaches section 4R, `Phase: 7` after section 6b), then end. The close phase ends as section 7 says (`Phase: done` when the outcome is Done).
+- **`implement` with a task range:** only those tasks. After each task's review passes, write `Progress: task <n> done`, `<n>` as its `### Task <n>` heading numbers it; a task parked instead (its question in the batch, the run going on without it), `Progress: task <n> parked`. The runner counts both as handled to pick the next range. The first child runs sections 0 and 1 first. A later child (ledger at `Phase: 2`) re-reads exactly the plan's header and `## Global Constraints`, its task range, the ship-plan ledger and `git log <base>..HEAD --oneline`, nothing else before its first task; what section 2 puts in a dispatch (config sections, `## Models` rows, `## Prerequisites`) is read when the dispatch is built. **`implement` with no range** (every task has its `Progress:` line): section 2's steps after the last task, then section 2b. **`implement`, the whole plan** (no `### Task` headings): sections 0 and 1, all the plan's work as section 2 does it, section 2's steps after the last task, then section 2b, in this one child.
 - **Progress lines:** at each milestone write `Progress: <text>` to the ledger: `task <n> done` (or `parked`), `review round <n>` (each `verify-and-fix` call in section 4, each section 4R round), `PR #<n> opened`, `CI <green|red>` (each time the PR's checks or the base-branch run settle), `merged <sha>`.
-- **Waiting** for a background agent, gate or CI watch: as verify-and-fix's section 2 says, one loop that checks every 15 seconds, never a fixed `sleep` of more than 30 seconds before the first check. A pause a skill or host file names on purpose keeps its length: the review wait (section 4R, it waits for a person), a host's poll interval, red-base.md's waits before a rerun.
-- **Blocked:** when nothing in the phase can go on and no question waits for the user (awaiting review or merge after the close-out, a tool that fails on every route), write `Blocked: <reason>` to the ledger.
-- **A question before the ledger's folder is known** (section 0, steps 5 and 6): there is no ledger to write it to. End at once, with the question in the `RUNNER:` line as `blocked`, naming where its answer goes (`## Slack` in `.claude/ship-plan.local.md` or the config; `Tracker:` in the config's `## Repo`; an issue key in the plan's `Source:` line). The watching session asks the user, who adds it there, and reruns (runner-session.md).
-- **Never touch what the runner guards:** never write an `answers-*` file (answers come only from the user, through the watching session), and never change `.claude/settings.json`, `.claude/settings.local.json`, `.mcp.json`, anything under `.claude/hooks/`, `.claude/agents/`, `.claude/commands/` or `.claude/skills/`, a `CLAUDE.md` or `CLAUDE.local.md`, or a script a settings hook names: the runner compares them before and after every child, and a change sends the user a warning to review it (the run goes on, and later children load the change). When the work itself needs one of them changed, write `Blocked: <the change needed>` instead, for the user to make and review.
-- **The final reply ends with exactly one line** `RUNNER: <phase-done|waiting|blocked|done> <text>`, and nothing after it: `phase-done` when the ledger's first line has moved to the next phase or the range's tasks are done; `waiting` when an `Asked: … — pending` line waits for the user; `blocked` with the reason of the `Blocked:` line; `done` when the ledger says `Phase: done`.
+- **Waiting** for a background agent, gate or CI watch: as verify-and-fix's section 2 says (one loop checking every 15 seconds, never a fixed `sleep` over 30 seconds before the first check). Pauses a skill or host file names on purpose keep their length: the review wait (section 4R, it waits for a person), a host's poll interval, red-base.md's waits before a rerun.
+- **Blocked:** nothing in the phase can go on and no question waits for the user (awaiting review or merge after close-out, a tool failing on every route): write `Blocked: <reason>` to the ledger.
+- **A question before the ledger's folder is known** (section 0, steps 5 and 6): end at once, the question in the `RUNNER:` line as `blocked`, naming where its answer goes (`## Slack` in `.claude/ship-plan.local.md` or the config; `Tracker:` in the config's `## Repo`; an issue key in the plan's `Source:` line). The watching session asks the user, who adds it there and reruns (runner-session.md).
+- **Never touch what the runner guards:** never write an `answers-*` file (answers come only from the user, through the watching session); never change `.claude/settings.json`, `.claude/settings.local.json`, `.mcp.json`, anything under `.claude/hooks/`, `.claude/agents/`, `.claude/commands/` or `.claude/skills/`, a `CLAUDE.md` or `CLAUDE.local.md`, or a script a settings hook names. The runner compares them around every child and warns the user of a change (the run goes on; later children load it). Work that needs one changed: write `Blocked: <the change needed>` for the user to make and review.
+- **The final reply ends with exactly one line** `RUNNER: <phase-done|waiting|blocked|done> <text>`, nothing after it: `phase-done` when the ledger's first line moved to the next phase or the range's tasks are done; `waiting` when an `Asked: … — pending` line waits for the user; `blocked` with the `Blocked:` line's reason; `done` when the ledger says `Phase: done`.
 
 ## Runner or session
 
-With `## Runner` `Mode: runner`, or a `--runner` flag (below), unless `printenv SHIP_RUNNER` prints a folder (a runner child) or a `--session` flag was given, the ship runner runs the phases and this session only watches and relays: read [runner-session.md](runner-session.md) and follow it with `start plan <path>`. `<path>` is the plan file: the argument when it is a path; with an issue key or no argument, the `Plan:` of the open ledger the run resumes (section 0, step 2). An issue key with no open ledger names no plan file (its description is the plan, section 0, step 3), and `start plan` needs one: that run stays in session mode, as above, and says so in one line. So does a resume (answers or no argument) whose open ledger's `Plan:` names no plan file. Otherwise ignore this section; the skill runs as above.
+With `## Runner` `Mode: runner` or a `--runner` flag, unless `printenv SHIP_RUNNER` prints a folder (a runner child) or `--session` was given, the ship runner runs the phases and this session only watches and relays: follow [runner-session.md](runner-session.md) with `start plan <path>`. `<path>` is the plan file: the argument when it is a path; with an issue key or no argument, the `Plan:` of the open ledger the run resumes (section 0, step 2). `start plan` needs a plan file, so an issue key with no open ledger (its description is the plan, section 0, step 3), or a resume (answers or no argument) whose open ledger's `Plan:` names no plan file, stays in session mode and says so in one line. Otherwise ignore this section.
 
-- **`--session`:** another ship skill invoked this one from its own run (ship-issue's I6 and its I0 resume row pass it), or the user answered with a session-mode run's answer line: run in session mode, as above, whatever `Mode:` says. It changes nothing else, and a runner child's Runner mode is still decided by `SHIP_RUNNER`.
-- **`--runner` and `--session` are flags only as whole words at the start or the end of the argument** (`docs/plan.md --runner`, `--session 1A, 2B`, `1A, 2B --session`): read the argument without them. Anywhere else, or inside a word, they are part of the text (answers): they stay in it and select nothing. With neither flag the argument is read exactly as if this section did not exist. Neither is ever the plan path, the issue key or answers.
-- **Every nested ship skill from here** always gets `--session` among its arguments: verify-and-fix in sections 4 and 4R and in [red-base.md](red-base.md)'s fix-forward, and any other ship skill this run invokes. It runs inside this run, never as a runner of its own.
+- **`--session`:** another ship skill invoked this one from its run (ship-issue's I6 and its I0 resume row pass it), or the user answered with a session-mode answer line: run in session mode whatever `Mode:` says. Nothing else changes; `SHIP_RUNNER` still decides a runner child's Runner mode.
+- **`--runner` and `--session` are flags only as whole words at the start or end of the argument** (`docs/plan.md --runner`, `--session 1A, 2B`, `1A, 2B --session`): read the argument without them. Elsewhere, or inside a word, they are text (answers) and select nothing. With neither flag, read the argument as if this section did not exist. Neither is ever the plan path, the issue key or answers.
+- **Every nested ship skill from here** gets `--session` in its arguments: verify-and-fix in sections 4 and 4R and in [red-base.md](red-base.md)'s fix-forward, and any other ship skill this run invokes. It runs inside this run, never as its own runner.
 
 ## Red flags
 
 | Thought | Reality |
 |---|---|
-| "I'll ask about the merge / the rerun / the follow-up PR" | The authorization section covers these. Do them, except a merge that deploys where `## Allowed` does not cover it (section 5, step 3), and a rerun of a deploying base-branch run (red-base.md). |
-| "Quick question, then I'll carry on" | Park it. Ask the batch when nothing unblocked is left. |
-| "I'm fairly sure, but I'll check with the user" | Run the confidence test. If it passes, rule and record. |
-| "I'll post the PR to the team channel, it's obviously the right one" | Only the channel in `## Slack` (config or local file). Neither: ask in pre-flight, and `none` means no post. |
-| "Move it to In Review" | Use only the statuses the config names. |
-| "Checks are green, merge" | Section 4R first: the review rules, the AI review, and every comment handled. |
-| "No approval yet, I'll keep waiting" | Wait for `Review wait:`, then hand off. The run must end. |
-| "One background loop over the whole review window is simpler" | One `sleep 300` at a time, with a status line after each poll (section 4R, step 3). Through a two-hour loop the user sees nothing and cannot ask. |
-| "I'll approve it / resolve their thread so it can merge" | Never. Approval and a person's thread belong to the reviewer. |
+| "Ask about the merge / rerun / follow-up PR" | Authorized: do them, except a merge deploying where `## Allowed` does not cover (section 5, step 3) and a rerun of a deploying base-branch run (red-base.md). |
+| "Quick question, then carry on" | Park it; ask the batch when nothing unblocked is left. |
+| "Fairly sure, but I'll check with the user" | Run the confidence test. Passes: rule and record. |
+| "Post the PR to the obvious team channel" | Only the `## Slack` channel (config or local file). Neither: ask in pre-flight; `none` means no post. |
+| "Move it to In Review" | Only statuses the config names. |
+| "Checks are green, merge" | Section 4R first: review rules, AI review, every comment handled. |
+| "No approval yet, keep waiting" | Wait `Review wait:`, then hand off. The run must end. |
+| "One background loop over the review window" | One `sleep 300` at a time, a status line after each poll (section 4R, step 3); in one long loop the user sees nothing and cannot ask. |
+| "Approve it / resolve their thread so it can merge" | Never. Approval and a person's thread belong to the reviewer. |
 | "The AI reviewer is a bot, its comments don't matter" | Grade every comment by what a user would get. A bot can be right. |
-| "The reviewer is wrong, I'll ignore it" | Reply with the quoted evidence. Every thread gets an answer. |
-| "Approved, and the AI reviewer has one more suggestion: I'll push it" | If stale reviews are dismissed, that push throws the approval away. Reply "follow-up" instead. |
-| "The run issue is done, so I'll close its sibling sub-tasks too" | Only the issues the plan's `Tickets:` line lists, each only when its own tasks are committed and a commit carries its key. |
-| "The tracker already says done, fine" | Done means the config's `Done means:`. Check the base-branch run first. |
-| "The PR is merged, so I'm done" | The run ends when the base branch is green, the closing comment is written, the docs PR is open (when the ledger has a `Docs PR:` line), and lessons are recorded. |
-| "The spec can go in with some later docs change" | A held spec reaches the repository only through section 7, step 2. Open the docs PR at close-out. |
-| "The base branch failed, probably flaky, rerun until it passes" | Only a failure listed as transient gets a rerun, and at most 3; with `Merge deploys to:`, none, since a rerun redeploys, unless `Rerun a transient deploy failure on:` covers a runner or network failure: then one, after a 10-minute wait, and a second failure escalates. A billing refusal is escalated at once. Anything else gets a root cause. |
-| "Push the fix straight to the base branch, it's one line" | Never push to the base branch. A fix branch goes through the same loop. |
-| "The ruling is obvious, no need to write it down" | An unrecorded ruling is a decision made in secret. Write the ledger line. |
-| "I'll update interruptions.md next time" | Next time is when it would have saved the question. Do it at close-out. |
-| "Use a worktree for isolation" | A fresh worktree lacks the repo's untracked files. Use the current checkout; put a busy checkout in the batch. |
-| "No issue key, so I'll create one in the config's project" | Ask the "Issue question" first. Where a new issue goes and the related issue are the user's choice. |
-| "No tracker here, so I'll just note it in chat" | The PR is the record. Plan, rulings and verification go in its body. |
-| "No checks reported, I'll keep waiting" | When the host's *Has CI* finds none, it is CI None. Otherwise 10 minutes, then park. |
-| "No checks is not the same as checks passing, so I can't merge" | With CI None, `verify-and-fix` clean is the gate. The repo has no CI to pass; merge and report "base branch has no CI". |
-| "The tracker failed, I'll work around it some other way" | Park it as the tracker's *Auth* says, continue without it, and say so in the report. |
+| "The reviewer is wrong, ignore it" | Reply with quoted evidence. Every thread gets an answer. |
+| "Approved, and one more AI suggestion: push it" | If stale reviews are dismissed, that push loses the approval. Reply "follow-up". |
+| "Run issue done, close its sibling sub-tasks too" | Only `Tickets:` issues, each once its own tasks are committed and a commit carries its key. |
+| "The tracker already says done" | Done means the config's `Done means:`. Check the base-branch run first. |
+| "The PR is merged, so I'm done" | Done when the base branch is green, the closing comment written, the docs PR open (when the ledger has a `Docs PR:` line), and lessons recorded. |
+| "The spec can go in with a later docs change" | A held spec lands only through section 7, step 2: open the docs PR at close-out. |
+| "Base branch failed, probably flaky, rerun until green" | Only a failure listed as transient gets a rerun, at most 3. With `Merge deploys to:`, none (a rerun redeploys), unless `Rerun a transient deploy failure on:` covers a runner or network failure: one, after a 10-minute wait; a second failure escalates. A billing refusal escalates at once. Anything else gets a root cause. |
+| "Push the one-line fix straight to the base branch" | Never. A fix branch goes through the same loop. |
+| "The ruling is obvious, no need to write it down" | An unrecorded ruling is a secret decision. Write the ledger line. |
+| "Update interruptions.md next time" | At close-out: next time is when it would have saved the question. |
+| "Use a worktree for isolation" | A fresh worktree lacks the repo's untracked files. Use the current checkout; a busy checkout goes in the batch. |
+| "No issue key, create one in the config's project" | Ask the "Issue question" first: where a new issue goes and the related issue are the user's choice. |
+| "No tracker, just note it in chat" | The PR is the record: plan, rulings and verification go in its body. |
+| "No checks reported, keep waiting" | Host's *Has CI* finds none: CI None. Otherwise 10 minutes, then park. |
+| "No checks is not checks passing, can't merge" | With CI None, `verify-and-fix` clean is the gate: merge, report "base branch has no CI". |
+| "The tracker failed, work around it" | Park it as the tracker's *Auth* says, continue without it, say so in the report. |
