@@ -29,6 +29,7 @@ export const MODEL_DEFAULTS = {
   'Plan stage': { model: 'opus', effort: 'high' },
   'Phase: implement': { model: 'sonnet', effort: 'high' },
   'Phase: verify': { model: 'opus', effort: 'high' },
+  'Phase: verify (small)': { model: 'sonnet', effort: 'high' },
   'Phase: merge': { model: 'sonnet', effort: 'high' },
   'Phase: close': { model: 'sonnet', effort: 'medium' },
 };

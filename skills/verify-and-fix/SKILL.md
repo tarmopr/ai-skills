@@ -158,7 +158,8 @@ Launch the round's reviews in parallel. Every agent gets the `model` and
 `effort` of its `## Models` row ([format](../ship-plan/config-format.md))
 passed explicitly: round 1's `code-reviewer` the `Final review` row (default
 `opus`, `xhigh`), as it is the run's whole-branch review (not in `--comments`
-mode: [review-comments.md](review-comments.md)); `comment-analyzer` and
+mode: [review-comments.md](review-comments.md); a **small diff**, as round 1
+defines it below, takes the `Review round` row); `comment-analyzer` and
 `type-design-analyzer`, every round, the `Wording review` row (default
 `sonnet`, `high`); every other agent, every round, the `Review round` row
 (default `opus`, `high`). Agents whose

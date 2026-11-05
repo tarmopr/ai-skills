@@ -227,11 +227,13 @@ test('rerun after kill with dead child pid: resumes the same item and phase, no 
   assert.match(events(dir), / K-1 verify start verify$/m);
 });
 
-test('start issue <KEY> --small: every child gets "<KEY> --small" as ship-issue\'s arguments; anything else after the key is refused', () => {
+test('start issue <KEY> --small: the ship-issue child gets "<KEY> --small" as its arguments; anything else after the key is refused', () => {
   const root = repo();
-  atVerify(root, 'S-1');
+  put(root, issueLedger('S-1'), [issueFirst('S-1').replace('Phase: I6', 'Phase: I2')]);
   const log = join(root, 's.json');
-  const r = cli(root, ['start', 'issue', 'S-1', '--small'], { ...ships('S-1'), FAKE_CLAUDE_LOG: log });
+  const spec = { FAKE_CLAUDE: 'ok:RUNNER: done', FAKE_CLAUDE_LEDGER_APPEND: ops([{ when: '"S-1 --small"', file: issueLedger('S-1'), firstLine: issueFirst('S-1') },
+    { when: '"S-1 --small"', file: planLedger('S-1'), firstLine: planFirst('S-1', 'done') }]) };
+  const r = cli(root, ['start', 'issue', 'S-1', '--small'], { ...spec, FAKE_CLAUDE_LOG: log });
   assert.equal(r.status, 0, r.stderr);
   assert.match(JSON.parse(readFileSync(log, 'utf8')).stdin, /with the arguments "S-1 --small"/);
   const bad = cli(root, ['start', 'issue', 'S-1', '--big']);

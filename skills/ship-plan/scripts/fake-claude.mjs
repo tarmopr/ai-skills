@@ -40,7 +40,7 @@
 // FAKE_CLAUDE_NETFAILS: "<n>:<counter file>": the first n runs (counted in the file) write only a
 //   result line with is_error: true and an ECONNREFUSED API error, before any ledger op; with
 //   "<i>,<j>,…:<file>" (a comma in it), only those runs, numbered from 1.
-// FAKE_CLAUDE_BY_KEY: JSON {<key>: {<env var>: <value>}}; the key is the prompt's
+// FAKE_CLAUDE_BY_KEY: JSON {<key>: {<env var>: <value>}}; the key is SHIP_RUNNER_KEY, else the prompt's
 //   `with the arguments "<key>"`; its values override the env vars above for that child.
 // The log's `head` is cwd's .git/HEAD (the branch the child started on), or null.
 import { execFileSync, spawn } from 'node:child_process';
@@ -51,7 +51,8 @@ const chunks = [];
 for await (const c of process.stdin) chunks.push(c);
 const stdin = Buffer.concat(chunks).toString('utf8');
 const argv = process.argv.slice(2);
-const promptKey = /with the arguments "([^"]*)"/.exec(stdin)?.[1];
+// the item's key: SHIP_RUNNER_KEY (set for every runner child), else the prompt's arguments
+const promptKey = process.env.SHIP_RUNNER_KEY || /with the arguments "([^"]*)"/.exec(stdin)?.[1];
 Object.assign(process.env, JSON.parse(process.env.FAKE_CLAUDE_BY_KEY || '{}')[promptKey] ?? {});
 const head = existsSync('.git/HEAD') ? readFileSync('.git/HEAD', 'utf8').trim() : null;
 const stateCurrent = () => {
