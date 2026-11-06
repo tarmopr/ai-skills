@@ -262,6 +262,8 @@ log. Anything wider (a source file, `grep` or `git grep` over the code, a full
 CI log, any file over 300 lines) goes to an `Explore` agent at the `## Models`
 `Research` row (default `sonnet`, `medium`), prompted for at most 30 lines with
 file:line quotes.
+**Every Agent dispatch passes both `model` and `effort`** from its role's
+`## Models` row; the hook refuses a dispatch missing either.
 
 ### Reading the logs
 
