@@ -200,3 +200,20 @@ test('SKILLS_REQUIRE_PRIVATE=1 with no patterns fails; without it, the run says 
   assert.equal(open.status, 0, open.stdout);
   assert.match(open.stdout, /C4: no private patterns loaded/);
 });
+
+test('round 4: anchored and wrapped names never reach any message; untracked files and file names are scanned', () => {
+  const dir = tree({ patterns: '^zqxsecret\nacmeco zqxcorp\n' });
+  appendFileSync(join(dir, 'skills', 'ship-queue', 'SKILL.md'), '\nzqxsecret uses npm here\nrun npm for acmeco\nzqxcorp here\n');
+  writeFileSync(join(dir, '.gitignore'), '.claude/check-skills-private.txt\n');
+  git(dir, 'init', '-q', '-b', 'main');
+  git(dir, 'add', '.');
+  git(dir, 'commit', '-q', '-m', 'init');
+  mkdirSync(join(dir, 'hooks'));
+  writeFileSync(join(dir, 'hooks', 'new.mjs'), 'zqxsecret\n');
+  writeFileSync(join(dir, 'skills', 'retro', 'zqxsecret-notes.txt'), 'x\n');
+  const r = run(dir);
+  assert.equal(r.status, 1);
+  assert.doesNotMatch(r.stdout, /zqxsecret|acmeco|zqxcorp/i, r.stdout);
+  assert.match(r.stdout, /^hooks\/new\.mjs: C13 private: line 1 \(private text not shown\)/m);
+  assert.match(r.stdout, /C13 private: file name \(private text not shown\)/);
+});

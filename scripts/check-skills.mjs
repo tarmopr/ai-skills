@@ -417,6 +417,8 @@ privateText.split(/\r?\n/).forEach((raw, i) => {
   privatePatterns.push(re);
 });
 const isPrivate = (l) => privatePatterns.some((re) => re.test(l));
+// A path is private when any of its parts is (an anchored pattern still matches a file's own name).
+const privatePath = (p) => isPrivate(p) || p.split('/').some(isPrivate);
 // Line indexes holding private text, a name wrapped onto the next line included (reported at its first line).
 function privateHits(text) {
   const lines = text.split('\n');
@@ -472,10 +474,15 @@ const READ_LINE = /\b[Ww]hen ((?:[^.]|\.(?!\s))*?), read \[[^\]]+\]\(([^)\s]+)\)
 const READ_TAIL = /^(?:[^.]|\.(?!\s))*?\.\*\*/;
 
 const failures = [];
-// Every failure goes through here: a detail holding private text keeps only its `line <n>`.
+// Every failure goes through here. A detail that holds private text, or names a line that does
+// (an anchored pattern, a name wrapped onto the next line), keeps only its `line <n>`; a path that
+// holds private text is hidden. `fileHits` holds each read file's private line indexes.
+const fileHits = new Map();
 const fail = (file, check, detail) => {
-  const shown = isPrivate(detail) ? `${/^line \d+/.exec(detail)?.[0] ?? ''} (private text not shown)`.trim() : detail;
-  failures.push(`${file}: ${check}: ${shown}`);
+  const n = /^line (\d+)/.exec(detail);
+  const hidden = isPrivate(detail) || (n && fileHits.get(file)?.has(Number(n[1]) - 1));
+  const shown = hidden ? `${n?.[0] ?? ''} (private text not shown)`.trim() : detail;
+  failures.push(`${privatePath(file) ? '(path hidden)' : file}: ${check}: ${shown}`);
 };
 
 // Text with fenced blocks blanked out, line count preserved.
@@ -514,6 +521,7 @@ for (const file of targets) {
   if (!(file in FILES)) { fail(file, 'C0 exists', 'not a known skill file'); continue; }
   if (!existsSync(path)) { fail(file, 'C0 exists', 'file missing'); continue; }
   const text = readFileSync(path, 'utf8');
+  fileHits.set(file, privateHits(text));
   const isSkill = file.endsWith('SKILL.md');
   if (isSkill) frontmatter(file, text);
   const fm = text.match(FRONTMATTER);
@@ -589,6 +597,8 @@ for (const path of privateTargets) {
   const text = readFileSync(path, 'utf8');
   const prose = unfenced(text).split('\n');
   const hits = privateHits(text);
+  fileHits.set(file, hits);
+  if (privatePath(file)) fail(file, 'C13 private', 'file name (private text not shown)');
   text.split('\n').forEach((l, i) => {
     const bad = [...l.matchAll(ISSUE_KEY)].map((m) => m[0]).some((k) => !keyAllowed(k))
       || (inSkills && [...prose[i].matchAll(LOWER_KEY)].some((m) => !keyAllowed(m[0].toUpperCase())))
@@ -599,14 +609,16 @@ for (const path of privateTargets) {
   });
 }
 
-// C13, full run: every other tracked text file (scripts, tests, manifests) gets the private-pattern
-// check only; their fixtures hold fictional keys and paths the .md checks above would refuse.
+// C13, full run: every other tracked or untracked-but-not-ignored text file (scripts, tests,
+// manifests) gets the private-pattern check only, on its name and content; their fixtures hold
+// fictional keys and paths the .md checks above would refuse.
 const scanned = new Set(privateTargets);
 const tracked = process.argv.length > 2 || !privatePatterns.length ? null
-  : spawnSync('git', ['ls-files', '-z'], { cwd: REPO_ROOT, encoding: 'utf8' });
+  : spawnSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], { cwd: REPO_ROOT, encoding: 'utf8' });
 for (const f of tracked?.status === 0 ? tracked.stdout.split('\0').filter(Boolean) : []) {
   const path = join(REPO_ROOT, f);
   if (scanned.has(path) || !existsSync(path)) continue;
+  if (privatePath(f)) fail(f, 'C13 private', 'file name (private text not shown)');
   const text = readFileSync(path, 'utf8');
   if (text.includes('\0')) continue;
   scanned.add(path);
