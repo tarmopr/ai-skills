@@ -102,3 +102,51 @@ test('an unparseable version: fails', () => {
   assert.equal(r.status, 2);
   assert.match(r.stderr, /not a version: "next"/);
 });
+
+test('a minor or major bump that resets the lower parts: passes', () => {
+  for (const version of ['1.3.0', '2.0.0']) {
+    const dir = repo();
+    commit(dir, { 'skills/a/SKILL.md': 'b\n', '.claude-plugin/plugin.json': manifest(version) });
+    const r = run(dir);
+    assert.equal(r.status, 0, `${version}: ${r.stderr}`);
+  }
+});
+
+test('the base changed skills/ but this branch did not: passes (three-dot diff)', () => {
+  const dir = repo();
+  commit(dir, { 'docs/x.md': 'y\n' });
+  git(dir, 'switch', '-q', 'main');
+  commit(dir, { 'skills/a/SKILL.md': 'main\n', '.claude-plugin/plugin.json': manifest('1.2.4') });
+  git(dir, 'switch', '-q', 'b');
+  const r = run(dir);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /no bump needed/);
+});
+
+test('only plugin.json changed and the version lowered: fails; same version, other field: passes', () => {
+  let dir = repo();
+  commit(dir, { '.claude-plugin/plugin.json': manifest('1.2.2') });
+  let r = run(dir);
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /1\.2\.2 is lower than main's 1\.2\.3/);
+  dir = repo();
+  commit(dir, { '.claude-plugin/plugin.json': manifest('1.2.3', '\n  "description": "d",') });
+  r = run(dir);
+  assert.equal(r.status, 0, r.stderr);
+});
+
+test('plugin.json that is not JSON, or deleted: could not check (exit 2)', () => {
+  let dir = repo();
+  commit(dir, { 'skills/a/SKILL.md': 'b\n', '.claude-plugin/plugin.json': '{ nope' });
+  let r = run(dir);
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /plugin\.json at HEAD is not valid JSON/);
+  dir = repo();
+  write(dir, 'skills/a/SKILL.md', 'c\n');
+  git(dir, 'rm', '-q', '.claude-plugin/plugin.json');
+  git(dir, 'add', '.');
+  git(dir, 'commit', '-q', '-m', 'rm');
+  r = run(dir);
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /cannot read \.claude-plugin\/plugin\.json at HEAD/);
+});

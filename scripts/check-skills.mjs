@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // Structural checks for the tool-neutral ship-queue, ship-issue, ship-plan and verify-and-fix skills,
-// and a private-data scan of every published .md file.
+// and, in a full run, a private-data scan of the published .md files (C13).
 // Behaviour is tested by the paper scenarios in docs/superpowers/scenarios/; this pins shape only.
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
-import { join, dirname, resolve, relative } from 'node:path';
+import { basename, join, dirname, resolve, relative } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -378,8 +378,9 @@ const TECH_LINE_EXEMPT = {
 // C4: names from the repos these skills were first written for may appear nowhere. This repo is
 // public, so those names are not in it: they are read from the SKILLS_PRIVATE_PATTERNS env var
 // when it is non-empty, else from the gitignored `.claude/check-skills-private.txt` of this
-// checkout or, from a worktree, of the main checkout. One regular expression per line; `#`
-// starts a comment. They apply to every published .md file (C13). With none loaded, C4 checks
+// checkout or, from a worktree, of the main checkout. One regular expression per line; a line
+// starting with `#`, or ` # ` and what follows, is a comment. C4 applies them to the FILES files,
+// C13 to every scanned file; a hit names the line, never its text. With none loaded, C4 checks
 // only for a staging host name, and SKILLS_REQUIRE_PRIVATE=1 turns that into a failure.
 // `staging\.[a-z]` catches a staging host name; a sentence that ends in "staging." is not one.
 const STAGING = /staging\.[a-z]/;
@@ -388,7 +389,9 @@ function privateSource() {
   const repo = resolve(ROOT, '..');
   const common = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: repo, encoding: 'utf8' });
   const roots = [repo];
-  if (common.status === 0) roots.push(dirname(common.stdout.trim()));
+  // The main checkout holds the common git dir as `.git` (as handoff's lib.mjs repoRoot assumes).
+  const dir = common.status === 0 ? common.stdout.trim() : '';
+  if (dir && basename(dir) === '.git') roots.push(dirname(dir));
   for (const root of roots) {
     const file = join(root, '.claude', 'check-skills-private.txt');
     if (existsSync(file)) return [file, readFileSync(file, 'utf8')];
@@ -398,26 +401,27 @@ function privateSource() {
 const [PRIVATE_FROM, privateText] = privateSource();
 const privatePatterns = [];
 privateText.split(/\r?\n/).forEach((raw, i) => {
-  const line = raw.replace(/(^|\s)#.*$/, '').trim();
+  if (raw.trimStart().startsWith('#')) return;
+  const line = raw.replace(/\s#\s.*$/, '').trim();
   if (!line) return;
   let re = null;
-  try { if (!line.endsWith('\\')) re = new RegExp(line); } catch {}
+  try { re = new RegExp(line); } catch {}
   // Never echo the pattern: it is the private text this check keeps out of logs.
-  if (!re) { process.stderr.write(`${PRIVATE_FROM.replace(/^.*\//, '')} line ${i + 1}: invalid pattern\n`); process.exit(2); }
+  if (!re) { process.stderr.write(`${basename(PRIVATE_FROM)} line ${i + 1}: invalid pattern\n`); process.exit(2); }
   privatePatterns.push(re);
 });
 const isPrivate = (l) => privatePatterns.some((re) => re.test(l));
-const REPO = { test: (l) => STAGING.test(l) || isPrivate(l) };
 const C4_PRIVATE = privatePatterns.length > 0;
 if (!C4_PRIVATE && process.env.SKILLS_REQUIRE_PRIVATE === '1') {
   process.stderr.write('SKILLS_REQUIRE_PRIVATE=1: no private patterns loaded (.claude/check-skills-private.txt or SKILLS_PRIVATE_PATTERNS)\n');
   process.exit(2);
 }
 const MAIN = /(origin\/main\b|\bmain CI\b|green main\b)/;
-// C13: no private information in skills/, docs/superpowers/scenarios/ or docs/rationale/ (all
-// published). Both folders sit beside skills/: <SKILLS_ROOT>/../docs/….
-const SCENARIOS = resolve(ROOT, '..', 'docs/superpowers/scenarios');
-const RATIONALE = resolve(ROOT, '..', 'docs/rationale');
+// C13: no private information in the published .md files: skills/, docs/superpowers/scenarios/,
+// docs/rationale/, the repo root's .md files and .claude/ship-plan.md. All sit beside skills/.
+const REPO_ROOT = resolve(ROOT, '..');
+const SCENARIOS = resolve(REPO_ROOT, 'docs/superpowers/scenarios');
+const RATIONALE = resolve(REPO_ROOT, 'docs/rationale');
 const ISSUE_KEY = /\b[A-Z][A-Z0-9]+-\d+\b/g;
 // Tokens shaped like an issue key that are allowed: generic placeholders the skills use,
 // the fictional keys the scenarios use, and standard names that are not issue keys.
@@ -506,7 +510,8 @@ for (const file of targets) {
   text.split('\n').forEach((l, i) => {
     if (!TECH_EXEMPT.has(file) && TECH.test(l) && !(TECH_LINE_EXEMPT[file] || []).some((x) => l.includes(x))) fail(file, 'C3 tech command', `line ${i + 1}: ${l.trim()}`);
     // ship-plan/config-drafting.md: its example config is illustrative (a `staging.` host), not a repo reference.
-    if (file !== 'ship-plan/config-drafting.md' && REPO.test(l)) fail(file, 'C4 repo specific', `line ${i + 1}: ${l.trim()}`);
+    if (isPrivate(l)) fail(file, 'C4 repo specific', `line ${i + 1} (private text not shown)`);
+    else if (file !== 'ship-plan/config-drafting.md' && STAGING.test(l)) fail(file, 'C4 repo specific', `line ${i + 1}: ${l.trim()}`);
     if (MAIN.test(l)) fail(file, 'C5 literal main', `line ${i + 1}: ${l.trim()}`);
     if (isSkill && i >= bodyStart && TOOL_CALL.some((re) => re.test(l))) fail(file, 'C9 tool call in SKILL body', `line ${i + 1}: ${l.trim()}`);
   });
@@ -545,31 +550,37 @@ for (const kind of KINDS) {
   });
 }
 
-// C13: no private information. With no arguments: every .md under skills/, the scenarios and
-// docs/rationale/. With arguments: the named skill files only.
+// C13: no private information. With no arguments: the published .md files listed above.
+// With arguments: the named skill files only.
 const mdUnder = (dir) => (existsSync(dir)
   ? readdirSync(dir, { recursive: true }).filter((f) => f.endsWith('.md')).sort().map((f) => join(dir, f))
   : []);
 const privateTargets = process.argv.length > 2
   ? targets.map((f) => join(ROOT, f)).filter(existsSync)
-  : [...mdUnder(ROOT), ...mdUnder(SCENARIOS), ...mdUnder(RATIONALE)];
+  : [...mdUnder(ROOT), ...mdUnder(SCENARIOS), ...mdUnder(RATIONALE),
+    ...readdirSync(REPO_ROOT).filter((f) => f.endsWith('.md')).sort().map((f) => join(REPO_ROOT, f)),
+    ...[join(REPO_ROOT, '.claude', 'ship-plan.md')].filter(existsSync)];
 for (const path of privateTargets) {
   const inSkills = !relative(ROOT, path).startsWith('..');
   const inScenarios = !relative(SCENARIOS, path).startsWith('..');
+  const inRationale = !relative(RATIONALE, path).startsWith('..');
   const file = inSkills ? relative(ROOT, path)
-    : inScenarios ? `scenarios/${relative(SCENARIOS, path)}` : `rationale/${relative(RATIONALE, path)}`;
+    : inScenarios ? `scenarios/${relative(SCENARIOS, path)}`
+    : inRationale ? `rationale/${relative(RATIONALE, path)}` : relative(REPO_ROOT, path);
   const text = readFileSync(path, 'utf8');
   const prose = unfenced(text).split('\n');
   text.split('\n').forEach((l, i) => {
     const bad = [...l.matchAll(ISSUE_KEY)].map((m) => m[0]).some((k) => !keyAllowed(k))
       || (inSkills && [...prose[i].matchAll(LOWER_KEY)].some((m) => !keyAllowed(m[0].toUpperCase())))
       || (inSkills && PR_NUMBER.test(prose[i]))
-      || HOME_PATH.test(l)
-      || isPrivate(l);
-    if (bad) fail(file, 'C13 private', `line ${i + 1}: ${l.trim()}`);
+      || HOME_PATH.test(l);
+    if (isPrivate(l)) fail(file, 'C13 private', `line ${i + 1} (private text not shown)`);
+    else if (bad) fail(file, 'C13 private', `line ${i + 1}: ${l.trim()}`);
   });
 }
 
 const checked = new Set([...targets.map((f) => join(ROOT, f)), ...privateTargets]);
 if (failures.length) { console.log(failures.join('\n')); process.exit(1); }
-console.log(`ok: ${checked.size} file(s)${C4_PRIVATE ? '' : ' (C4: no private patterns loaded, staging host names only)'}`);
+console.log(`ok: ${checked.size} file(s) (C4: ${C4_PRIVATE
+  ? `${privatePatterns.length} private pattern(s) from ${basename(PRIVATE_FROM)}`
+  : 'no private patterns loaded, staging host names only'})`);

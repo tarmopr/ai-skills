@@ -11,6 +11,8 @@ import { fileURLToPath } from 'node:url';
 import { age, handoffDir, list, parse, repoRoot, setMeta, slug } from './lib.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+// In-process lib.mjs calls run git with process.env: drop any GIT_* a calling hook set.
+for (const k of Object.keys(process.env)) if (k.startsWith('GIT_')) delete process.env[k];
 const scratch = (p) => realpathSync(mkdtempSync(join(tmpdir(), `handoff-${p}-`)));
 
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -304,8 +306,13 @@ test('gather: branch, HEAD, no upstream, dirty paths, recent ledgers, pending ha
   writeFileSync(old, 'x\n');
   const t = (Date.now() - 4 * 86400000) / 1000;
   utimesSync(old, t, t);
+  const recent = join(dir, '.superpowers', 'ship-plan', 'f', 'recent.md');
+  writeFileSync(recent, 'x\n');
+  const t2 = (Date.now() - 2 * 86400000) / 1000;
+  utimesSync(recent, t2, t2);
   const hd = withHome(home, () => handoffDir(dir));
   writeHandoff(hd, 'earlier', { meta: { title: 'Earlier one' } });
+  writeHandoff(hd, 'used', { meta: { status: 'consumed', title: 'Used one' } });
 
   const r = script('gather.mjs', ['my topic!'], { cwd: dir, home });
   assert.equal(r.status, 0, r.stderr);
@@ -317,6 +324,8 @@ test('gather: branch, HEAD, no upstream, dirty paths, recent ledgers, pending ha
   assert.match(o, /^uncommitted: 2 path\(s\)$/m);
   assert.match(o, /^ {2}\.superpowers\/ship-plan\/f\/ledger\.md {2}\(\d+ min ago\)$/m);
   assert.doesNotMatch(o, /old\.md/, 'a ledger older than 3 days is left out');
+  assert.match(o, /ledger\.md .*\n {2}\.superpowers\/ship-plan\/f\/recent\.md {2}\(2 days ago\)$/m, 'newest first; 2 days old is kept');
+  assert.doesNotMatch(o, /Used one/, 'a consumed handoff is not listed as pending');
   assert.doesNotMatch(o, /^PR for this branch/m, 'gh is the failing stub: no gh calls, no network');
   assert.match(o, /^ {2}earlier .*Earlier one$/m);
   assert.match(o, new RegExp(`^suggested file: ${esc(hd)}/\\d{8}-\\d{4}-my-topic\\.md$`, 'm'));
@@ -352,4 +361,5 @@ test('gather: ahead and behind the upstream, counted the right way round', () =>
   const r = script('gather.mjs', [], { cwd: dir, home: scratch('home') });
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /^upstream: origin\/main \(ahead 2, behind 1\)$/m);
+  assert.match(r.stdout, /^origin\/main: [0-9a-f]+ remote 1 \(as of the last fetch\)$/m);
 });
