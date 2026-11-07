@@ -105,8 +105,8 @@ A fix goes back through the gates **and** a fresh review round: fixes cause regr
 - **Could not run** (no prerequisite, timeout, missing tool): continue the other gates and review rounds, but the loop cannot end clean. The report names the gate, why, and what the user must do.
 - **No gates configured:** the loop cannot end clean; say so in the question batch.
 
-**CI, read-only.** With an open PR, its checks are a gate too: the host's *Wait
-for the PR's checks* (read once, without waiting), then *Read a failed run* for
+**CI, read-only.** With an open PR, its checks are a gate too: the host's
+*Wait for the PR's checks* (read once, without waiting), then *Read a failed run* for
 any red job. A red job is a gate failure: fix it locally, test first; propose
 its check as a config gate if missing. Pushing the fix to the PR's branch is
 authorized (review-comments.md).
@@ -349,8 +349,8 @@ the phases and this session only watches and relays, unless `printenv
 SHIP_RUNNER` prints a folder (a runner child) or `--session` was given
 (ship-plan passes it: this loop then runs inside ship-plan's run, in session
 mode, whatever `Mode:` says). Either flag may stand anywhere among the
-arguments (only a branch and flags); `--session` is never the base branch. When
-the runner runs the phases, read [../ship-plan/runner-session.md](../ship-plan/runner-session.md) and follow
+arguments (only a branch and flags); `--session` is never the base branch. **When
+the runner runs the phases, read [../ship-plan/runner-session.md](../ship-plan/runner-session.md).** Follow
 it with `start verify <the checked-out branch>`; when this skill got arguments (its
 base branch, `--comments`; not `--runner` or `--session`), add
 `-- <those arguments>`, each single-quoted: the runner passes them to its verify-and-fix

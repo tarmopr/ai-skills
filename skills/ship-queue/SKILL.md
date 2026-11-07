@@ -99,7 +99,7 @@ Then one line per event:
 - `Result: <KEY> <outcome> — <reason quoted> — next: <action>` when it ends;
 - `Lesson: <what> — <the step that would have caught it>`.
 
-**Never write a ship-issue or ship-plan ledger,** only read them (ship-plan
+**The queue never writes a ship-issue or ship-plan ledger,** only reads them (ship-plan
 would take the line as its own run's).
 
 **After a compaction, resume from the first line and last `Current:` /

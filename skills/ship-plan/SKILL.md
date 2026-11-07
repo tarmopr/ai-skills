@@ -352,7 +352,7 @@ there, for that step, in every mode.
 
 ## Queued mode (ship-queue)
 
-**A run is queued** when ship-queue started it as a child session
+**A run is queued** when it was started by ship-queue as its child session
 (`printenv SHIP_QUEUE_PARENT` prints a parent key; the child ran ship-issue,
 which invoked this skill, or ran this skill directly with answers) and the
 parent's ledger here (`.superpowers/ship-queue/<parent>/ledger.md`) has a
