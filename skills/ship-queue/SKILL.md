@@ -99,7 +99,7 @@ Then one line per event:
 - `Result: <KEY> <outcome> — <reason quoted> — next: <action>` when it ends;
 - `Lesson: <what> — <the step that would have caught it>`.
 
-**Never write a ship-issue or ship-plan ledger,** only read them (ship-plan
+**The queue never writes a ship-issue or ship-plan ledger,** only reads them (ship-plan
 would take the line as its own run's).
 
 **After a compaction, resume from the first line and last `Current:` /
@@ -247,6 +247,7 @@ writes a handoff.
 - **`/ship-queue <parent>` with this parent's ledger present** is a resume. Read the first line.
   - **`Current: <KEY>` with no `Result:` after it:** cut off. Rerun `ship-issue <KEY>` in a child, no argument; it resumes from its ledger (the queued exemption in ship-issue's "Queued mode (ship-queue)" covers its I0 live-run check). Continue the loop.
   - **Re-read the sub-issues.** Worked-out order: kept; new ones join at the end in analysis order. Argument order: nothing added.
+  - **Work out the dependencies again** (Q1's *Hard dependencies only*) from the parent and sub-issues as they read now: a new `Depends:` line each, and a `Ruling:` naming each earlier `Depends:` that no longer holds. An earlier `Ruling:`, `Stopped:` line or start command is never evidence for one. Runner mode: `start queue` takes this full set (*Runner or session*), never the earlier command's.
   - **Rerun the loop** over every sub-issue whose last `Result:` is not `done` or `already done`:
     - `waiting for answers`: with answers here, `ship-issue <KEY> <answers>`; none: not invoked.
     - `done, questions pending` with answers: write `Current: <KEY> started <time>`, run **ship-plan** in a child (`ship-plan <answers>`; ship-issue would stop at I0 for a Done issue); its queued mode takes this done ledger, its section 0, step 2 applies the answers. Read the outcome again (Q2 steps 5–7). None: stays.

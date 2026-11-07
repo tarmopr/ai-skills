@@ -95,8 +95,8 @@ Config sections read: `## Repo` (`<base>`, branch pattern, `Host:`, `Tracker:`),
 the tracker's (`## Jira`, `## Linear` or `## GitHub Issues`), `## CI`,
 `## Prerequisites`, `## UI testing`, `## Slack` (or `.claude/ship-plan.local.md`),
 `## Evidence`, `## Worktree`, `## Models`. **When `.claude/ship-plan.md` is
-missing or a section must be drafted, read [config-drafting.md](../ship-plan/config-drafting.md),**
-draft as it says, and put the draft first in the I3 batch. Research, spec and
+missing or a section must be drafted, read [config-drafting.md](../ship-plan/config-drafting.md).**
+Draft as it says, and put the draft first in the I3 batch. Research, spec and
 plan go on meanwhile; no gate runs until it is confirmed; then commit it on the
 feature branch with a `Ruling:`.
 
@@ -229,7 +229,7 @@ main checkout or a worktree): stay. **When the current checkout is dirty or on a
 
 ## Queued mode (ship-queue)
 
-**A run is queued** when ship-queue started it as a child session
+**A run is queued** when it was started by ship-queue as its child session
 (`printenv SHIP_QUEUE_PARENT` prints a parent key; ship-queue's *Child sessions*
 sets it) and that parent's ledger in this checkout
 (`.superpowers/ship-queue/<parent>/ledger.md`) has a `Current: <KEY> started …`
@@ -237,7 +237,7 @@ line naming this run's issue, with no `Result: <KEY>` line after it. A leftover
 queue ledger alone does not make a user-started run queued: it asks as unqueued.
 Nobody watches. Everything above applies, except:
 
-- **Ask nothing: never `AskUserQuestion`, never wait for a reply,** wherever this skill would ask (I1, the I3 batch, a later question). Ledger lines as unqueued (`Asked: … — pending`, `Parked:`, for I3 the `Waiting: batch …` line). Post the batch as one issue comment (the tracker's *Comment*): questions numbered, each with options, recommendation first, ending **"Answer with `/ship-queue <parent> <KEY>: <your answers>`."** (`<parent>`: the queue ledger's `Parent:`). Do everything the answers do not block (the Spec stage and its commit), then end the run.
+- **Ask nothing: never `AskUserQuestion`, never wait for a reply,** wherever this skill would ask (I1, the I3 batch, a later question). Ledger lines as unqueued (`Asked: … — pending`, `Parked:`, for I3 the `Waiting: batch …` line). Post the batch as one issue comment (the tracker's *Comment*): questions numbered, each with options, recommendation first, ending **"Answer with `/ship-queue <parent> <KEY>: <your answers>`."** (`<parent>`: the queue ledger's `Parent:`); the queue's resume form is `/ship-queue <parent> <KEY>: <answers>`. Do everything the answers do not block (the Spec stage and its commit), then end the run.
 - **A question before the issue is read** (a tracker call failing at I1): write it to the ledger with the exact error; end the run.
 - **I0's live-run row** skips this issue's ledgers in the queue ledger's `Checkout:` (the parent queue's). One in any other checkout still counts.
 - **No session-end handoff** of its own: the queue writes one for the whole queue.
