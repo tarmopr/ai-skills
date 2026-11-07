@@ -2,7 +2,7 @@
 // Structural checks for the tool-neutral ship-queue, ship-issue, ship-plan and verify-and-fix skills,
 // and, in a full run, a private-data scan of the published .md files (C13).
 // Behaviour is tested by the paper scenarios in docs/superpowers/scenarios/; this pins shape only.
-import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { basename, join, dirname, resolve, relative } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -474,13 +474,14 @@ const READ_LINE = /\b[Ww]hen ((?:[^.]|\.(?!\s))*?), read \[[^\]]+\]\(([^)\s]+)\)
 const READ_TAIL = /^(?:[^.]|\.(?!\s))*?\.\*\*/;
 
 const failures = [];
-// Every failure goes through here. A detail that holds private text, or names a line that does
-// (an anchored pattern, a name wrapped onto the next line), keeps only its `line <n>`; a path that
-// holds private text is hidden. `fileHits` holds each read file's private line indexes.
+// Every failure goes through here. A detail that holds private text, or any detail for a file
+// that holds private text anywhere (an anchored pattern, a wrapped name, a multi-line match), keeps
+// only its line number; a path that holds private text is hidden. `fileHits` holds each read
+// file's private line indexes.
 const fileHits = new Map();
 const fail = (file, check, detail) => {
-  const n = /^line (\d+)/.exec(detail);
-  const hidden = isPrivate(detail) || (n && fileHits.get(file)?.has(Number(n[1]) - 1));
+  const n = /\bline (\d+)/.exec(detail);
+  const hidden = isPrivate(detail) || fileHits.get(file)?.size > 0;
   const shown = hidden ? `${n?.[0] ?? ''} (private text not shown)`.trim() : detail;
   failures.push(`${privatePath(file) ? '(path hidden)' : file}: ${check}: ${shown}`);
 };
@@ -617,7 +618,7 @@ const tracked = process.argv.length > 2 || !privatePatterns.length ? null
   : spawnSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], { cwd: REPO_ROOT, encoding: 'utf8' });
 for (const f of tracked?.status === 0 ? tracked.stdout.split('\0').filter(Boolean) : []) {
   const path = join(REPO_ROOT, f);
-  if (scanned.has(path) || !existsSync(path)) continue;
+  if (scanned.has(path) || !existsSync(path) || !statSync(path).isFile()) continue;
   if (privatePath(f)) fail(f, 'C13 private', 'file name (private text not shown)');
   const text = readFileSync(path, 'utf8');
   if (text.includes('\0')) continue;

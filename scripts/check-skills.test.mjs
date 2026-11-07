@@ -211,6 +211,8 @@ test('round 4: anchored and wrapped names never reach any message; untracked fil
   mkdirSync(join(dir, 'hooks'));
   writeFileSync(join(dir, 'hooks', 'new.mjs'), 'zqxsecret\n');
   writeFileSync(join(dir, 'skills', 'retro', 'zqxsecret-notes.txt'), 'x\n');
+  git(dir, 'init', '-q', join(dir, 'nested'));  // an untracked nested repo is listed as a directory
+  appendFileSync(join(dir, 'skills', 'ship-queue', 'SKILL.md'), 'When the run is on\nzqxsecret host, read [x](SKILL.md)\n');
   const r = run(dir);
   assert.equal(r.status, 1);
   assert.doesNotMatch(r.stdout, /zqxsecret|acmeco|zqxcorp/i, r.stdout);
