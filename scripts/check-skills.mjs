@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Structural checks for the tool-neutral ship-issue, ship-plan and verify-and-fix skills.
+// Structural checks for the tool-neutral ship-queue, ship-issue, ship-plan and verify-and-fix skills,
+// and a private-data scan of every published .md file.
 // Behaviour is tested by the paper scenarios in docs/superpowers/scenarios/; this pins shape only.
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join, dirname, resolve, relative } from 'node:path';
@@ -375,30 +376,58 @@ const TECH_LINE_EXEMPT = {
   'ship-issue/stage-prompts.md': ['run `dotnet build` on it', 'refuses a `docker exec … psql` joined to'],
 };
 // C4: names from the repos these skills were first written for may appear nowhere. This repo is
-// public, so those names are not in it: they are read from the gitignored file
-// `.claude/check-skills-private.txt` (one regular expression per line, `#` comments), or from the
-// SKILLS_PRIVATE_PATTERNS env var (the same, newline-separated). With neither, C4 checks only for
-// a staging host name. `staging\.[a-z]` catches one; a sentence that ends in "staging." is not one.
-const PRIVATE_FILE = resolve(ROOT, '..', '.claude', 'check-skills-private.txt');
-const privateLines = (process.env.SKILLS_PRIVATE_PATTERNS
-  ?? (existsSync(PRIVATE_FILE) ? readFileSync(PRIVATE_FILE, 'utf8') : ''))
-  .split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
-const REPO = new RegExp(`(${[...privateLines, 'staging\\.[a-z]'].join('|')})`);
-const C4_PRIVATE = privateLines.length > 0;
+// public, so those names are not in it: they are read from the SKILLS_PRIVATE_PATTERNS env var
+// when it is non-empty, else from the gitignored `.claude/check-skills-private.txt` of this
+// checkout or, from a worktree, of the main checkout. One regular expression per line; `#`
+// starts a comment. They apply to every published .md file (C13). With none loaded, C4 checks
+// only for a staging host name, and SKILLS_REQUIRE_PRIVATE=1 turns that into a failure.
+// `staging\.[a-z]` catches a staging host name; a sentence that ends in "staging." is not one.
+const STAGING = /staging\.[a-z]/;
+function privateSource() {
+  if (process.env.SKILLS_PRIVATE_PATTERNS) return ['SKILLS_PRIVATE_PATTERNS', process.env.SKILLS_PRIVATE_PATTERNS];
+  const repo = resolve(ROOT, '..');
+  const common = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: repo, encoding: 'utf8' });
+  const roots = [repo];
+  if (common.status === 0) roots.push(dirname(common.stdout.trim()));
+  for (const root of roots) {
+    const file = join(root, '.claude', 'check-skills-private.txt');
+    if (existsSync(file)) return [file, readFileSync(file, 'utf8')];
+  }
+  return ['', ''];
+}
+const [PRIVATE_FROM, privateText] = privateSource();
+const privatePatterns = [];
+privateText.split(/\r?\n/).forEach((raw, i) => {
+  const line = raw.replace(/(^|\s)#.*$/, '').trim();
+  if (!line) return;
+  let re = null;
+  try { if (!line.endsWith('\\')) re = new RegExp(line); } catch {}
+  // Never echo the pattern: it is the private text this check keeps out of logs.
+  if (!re) { process.stderr.write(`${PRIVATE_FROM.replace(/^.*\//, '')} line ${i + 1}: invalid pattern\n`); process.exit(2); }
+  privatePatterns.push(re);
+});
+const isPrivate = (l) => privatePatterns.some((re) => re.test(l));
+const REPO = { test: (l) => STAGING.test(l) || isPrivate(l) };
+const C4_PRIVATE = privatePatterns.length > 0;
+if (!C4_PRIVATE && process.env.SKILLS_REQUIRE_PRIVATE === '1') {
+  process.stderr.write('SKILLS_REQUIRE_PRIVATE=1: no private patterns loaded (.claude/check-skills-private.txt or SKILLS_PRIVATE_PATTERNS)\n');
+  process.exit(2);
+}
 const MAIN = /(origin\/main\b|\bmain CI\b|green main\b)/;
-// C13: no private information in skills/ or docs/superpowers/scenarios/ (both are published).
-// The scenarios folder sits beside skills/: <SKILLS_ROOT>/../docs/superpowers/scenarios.
+// C13: no private information in skills/, docs/superpowers/scenarios/ or docs/rationale/ (all
+// published). Both folders sit beside skills/: <SKILLS_ROOT>/../docs/….
 const SCENARIOS = resolve(ROOT, '..', 'docs/superpowers/scenarios');
+const RATIONALE = resolve(ROOT, '..', 'docs/rationale');
 const ISSUE_KEY = /\b[A-Z][A-Z0-9]+-\d+\b/g;
 // Tokens shaped like an issue key that are allowed: generic placeholders the skills use,
 // the fictional keys the scenarios use, and standard names that are not issue keys.
-// Anything else (a real key such as an `ORIG-<n>` one) fails.
+// Anything else (a real key such as an `ABC-<n>` one) fails.
 const KEY_ALLOW = new Set([
   // Placeholders in skills/.
   'ENG-123', 'PROJ-123', 'KEY-1',
   // Placeholders a scenario runner wrote in its saved answer.
   'PROJECT-2', 'PROJECT-3',
-  // Fictional keys in the scenarios (S1-S15) and their results.
+  // Fictional keys in the scenarios and their results (KEY_FICTIONAL covers the rest).
   'BILL-401', 'BILL-412', 'BILL-415', 'BILL-420', 'BILL-430', 'BILL-433', 'BILL-440', 'BILL-450',
   'BILL-461', 'BILL-462', 'BILL-463', 'BILL-464', 'BILL-470', 'PAY-301', 'RTE-88',
   // Standard names, not issue keys.
@@ -516,24 +545,27 @@ for (const kind of KINDS) {
   });
 }
 
-// C13: no private information. With no arguments: every .md under skills/ and the scenarios
-// folder. With arguments: the named skill files only.
+// C13: no private information. With no arguments: every .md under skills/, the scenarios and
+// docs/rationale/. With arguments: the named skill files only.
 const mdUnder = (dir) => (existsSync(dir)
   ? readdirSync(dir, { recursive: true }).filter((f) => f.endsWith('.md')).sort().map((f) => join(dir, f))
   : []);
 const privateTargets = process.argv.length > 2
   ? targets.map((f) => join(ROOT, f)).filter(existsSync)
-  : [...mdUnder(ROOT), ...mdUnder(SCENARIOS)];
+  : [...mdUnder(ROOT), ...mdUnder(SCENARIOS), ...mdUnder(RATIONALE)];
 for (const path of privateTargets) {
   const inSkills = !relative(ROOT, path).startsWith('..');
-  const file = inSkills ? relative(ROOT, path) : `scenarios/${relative(SCENARIOS, path)}`;
+  const inScenarios = !relative(SCENARIOS, path).startsWith('..');
+  const file = inSkills ? relative(ROOT, path)
+    : inScenarios ? `scenarios/${relative(SCENARIOS, path)}` : `rationale/${relative(RATIONALE, path)}`;
   const text = readFileSync(path, 'utf8');
   const prose = unfenced(text).split('\n');
   text.split('\n').forEach((l, i) => {
     const bad = [...l.matchAll(ISSUE_KEY)].map((m) => m[0]).some((k) => !keyAllowed(k))
       || (inSkills && [...prose[i].matchAll(LOWER_KEY)].some((m) => !keyAllowed(m[0].toUpperCase())))
       || (inSkills && PR_NUMBER.test(prose[i]))
-      || HOME_PATH.test(l);
+      || HOME_PATH.test(l)
+      || isPrivate(l);
     if (bad) fail(file, 'C13 private', `line ${i + 1}: ${l.trim()}`);
   });
 }

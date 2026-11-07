@@ -22,23 +22,19 @@ jobs:
         with:
           node-version: 22
 
+      # `ls` fails when a glob matches nothing; `node --test` alone would pass with 0 tests.
       - name: Unit tests
-        run: node --test 'hooks/*.test.mjs' 'skills/*/scripts/*.test.mjs'
+        run: |
+          ls hooks/*.test.mjs skills/*/scripts/*.test.mjs scripts/*.test.mjs > /dev/null
+          node --test 'hooks/*.test.mjs' 'skills/*/scripts/*.test.mjs' 'scripts/*.test.mjs'
 
       # C4's private patterns are not in this public repo, so CI checks staging host names only.
       - name: Skill shape check
         run: node scripts/check-skills.mjs
 
+      # The same check as the `Version bump` gate in .claude/ship-plan.md.
       - name: Version bump
         if: github.event_name == 'pull_request'
         env:
           BASE: origin/${{ github.base_ref }}
-        run: |
-          if git diff --quiet "$BASE"...HEAD -- skills hooks; then
-            echo "no change under skills/ or hooks/: no bump needed"
-          elif git diff --quiet "$BASE"...HEAD -- .claude-plugin/plugin.json; then
-            echo "::error file=.claude-plugin/plugin.json::skills/ or hooks/ changed: bump version in .claude-plugin/plugin.json"
-            exit 1
-          else
-            echo "version bumped"
-          fi
+        run: node scripts/check-version-bump.mjs "$BASE"

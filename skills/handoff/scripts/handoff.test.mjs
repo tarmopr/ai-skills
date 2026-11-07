@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, realpathSync, utimesSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,9 +13,19 @@ import { age, handoffDir, list, parse, repoRoot, setMeta, slug } from './lib.mjs
 const HERE = dirname(fileURLToPath(import.meta.url));
 const scratch = (p) => realpathSync(mkdtempSync(join(tmpdir(), `handoff-${p}-`)));
 
-const GIT_ID = ['-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false'];
+const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// No GIT_* from a calling hook, no global or system git config, and a `gh` that always fails,
+// so nothing reaches the real repo, the real config or the network.
+const FAKE_BIN = scratch('bin');
+writeFileSync(join(FAKE_BIN, 'gh'), '#!/bin/sh\nexit 1\n');
+chmodSync(join(FAKE_BIN, 'gh'), 0o755);
+const ENV = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_')));
+Object.assign(ENV, { GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', PATH: `${FAKE_BIN}:${process.env.PATH}` });
+
+const GIT_ID = ['-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null'];
 function git(cwd, ...args) {
-  const r = spawnSync('git', [...GIT_ID, ...args], { cwd, encoding: 'utf8' });
+  const r = spawnSync('git', [...GIT_ID, ...args], { cwd, encoding: 'utf8', env: ENV });
   assert.equal(r.status, 0, r.stderr);
   return r.stdout.trim();
 }
@@ -30,17 +40,20 @@ function repo() {
 
 // Runs a script with HOME pointed at a scratch dir; returns { status, stdout, stderr }.
 function script(name, args, { cwd, home, input } = {}) {
+  assert.ok(home, 'every script run needs a scratch HOME');
   return spawnSync('node', [join(HERE, name), ...args], {
     cwd, input, encoding: 'utf8',
-    env: { ...process.env, HOME: home, USERPROFILE: home },
+    env: { ...ENV, HOME: home, USERPROFILE: home },
   });
 }
 
-// In-process calls to lib.mjs read HOME through os.homedir().
+// In-process calls to lib.mjs read HOME (USERPROFILE on Windows) through os.homedir().
 function withHome(home, fn) {
-  const old = process.env.HOME;
-  process.env.HOME = home;
-  try { return fn(); } finally { process.env.HOME = old; }
+  const old = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
+  Object.assign(process.env, { HOME: home, USERPROFILE: home });
+  try { return fn(); } finally {
+    for (const [k, v] of Object.entries(old)) if (v === undefined) delete process.env[k]; else process.env[k] = v;
+  }
 }
 
 const SECTIONS = ['Resume', 'Goal', 'State', 'Next step', 'Decisions', 'Watch out', 'Pointers'];
@@ -164,10 +177,15 @@ test('check: backticked paths and commits are checked; placeholders and digit-on
   const home = scratch('home');
   mkdirSync(join(home, 'notes'));
   writeFileSync(join(home, 'notes', 'n.md'), '');
+  const abs = scratch('abs');
+  writeFileSync(join(abs, 'x.md'), '');
   const body = SECTIONS.map((s) => `## ${s}\nx\n`).join('\n') + [
-    '`src/a.ts:12-20`', '`src/`', '`~/notes/n.md`', `\`${head.slice(0, 7)}\``, // exist
-    '`src/missing.ts`', '`deadbeefcafe`', // do not exist
-    '`src/<name>.ts`', '`https://x.io/a.md`', '`12345678`', '`README.md`', // skipped (no slash, placeholder, URL, digits)
+    // exist: relative, folder, home, absolute, a commit (the full sha always has a letter)
+    '`src/a.ts:12-20`', '`src/`', '`~/notes/n.md`', `\`${abs}/x.md\``, `\`${head}\``,
+    // do not exist
+    '`src/missing.ts`', `\`${abs}/gone.md\``, '`deadbeefcafe`',
+    // skipped: a placeholder, a URL, digits only, no slash
+    '`src/<name>.ts`', '`https://x.io/a.md`', '`12345678`', '`missing.md`',
   ].join('\n');
   const file = writeHandoff(scratch('h'), 'h', { body });
   const r = script('check.mjs', [file], { cwd: dir, home });
@@ -175,6 +193,7 @@ test('check: backticked paths and commits are checked; placeholders and digit-on
   const problems = r.stdout.split('\n').filter((l) => l.startsWith('  - '));
   assert.deepEqual(problems, [
     '  - path not found: src/missing.ts',
+    `  - path not found: ${abs}/gone.md`,
     '  - commit not found locally: deadbeefcafe (fetch, or fix it)',
   ]);
 });
@@ -190,6 +209,7 @@ test('mark: consumed sets consumed_at; pending clears it', () => {
   assert.equal(meta.status, 'consumed');
   assert.ok(!Number.isNaN(Date.parse(meta.consumed_at)));
   r = script('mark.mjs', [file, 'pending'], { home });
+  assert.equal(r.status, 0, r.stderr);
   ({ meta } = parse(readFileSync(file, 'utf8')));
   assert.equal(meta.status, 'pending');
   assert.equal(meta.consumed_at, '');
@@ -198,8 +218,11 @@ test('mark: consumed sets consumed_at; pending clears it', () => {
 test('mark: an unknown status or a missing file is a usage error', () => {
   const file = writeHandoff(scratch('h'), 'h');
   const home = scratch('home');
-  assert.equal(script('mark.mjs', [file, 'done'], { home }).status, 1);
-  assert.equal(script('mark.mjs', [join(scratch('h'), 'none.md'), 'consumed'], { home }).status, 1);
+  for (const args of [[file, 'done'], [join(scratch('h'), 'none.md'), 'consumed']]) {
+    const r = script('mark.mjs', args, { home });
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /^usage: mark\.mjs/);
+  }
   assert.equal(parse(readFileSync(file, 'utf8')).meta.status, 'pending');
 });
 
@@ -226,7 +249,12 @@ test('session-start: on startup and clear, names pending handoffs; nothing other
   const dir = repo();
   const home = scratch('home');
   const hd = withHome(home, () => handoffDir(dir));
-  const run = (source) => script('session-start.mjs', [], { home, input: JSON.stringify({ source, cwd: dir }) });
+  const run = (source) => {
+    const r = script('session-start.mjs', [], { home, input: JSON.stringify({ source, cwd: dir }) });
+    assert.equal(r.status, 0);
+    assert.equal(r.stderr, '');
+    return r;
+  };
 
   assert.equal(run('startup').stdout, '', 'no handoffs yet');
   writeHandoff(hd, 'p', { meta: { title: 'Open one' } });
@@ -239,6 +267,15 @@ test('session-start: on startup and clear, names pending handoffs; nothing other
     assert.match(out.additionalContext, /\/continue-handoff/);
   }
   for (const source of ['compact', 'resume']) assert.equal(run(source).stdout, '');
+});
+
+test('session-start: input that is not JSON falls back to startup in the process cwd', () => {
+  const dir = repo();
+  const home = scratch('home');
+  writeHandoff(withHome(home, () => handoffDir(dir)), 'p', { meta: { title: 'Open one' } });
+  const r = script('session-start.mjs', [], { cwd: dir, home, input: 'not json' });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(JSON.parse(r.stdout).hookSpecificOutput.additionalContext, /- p \(.*\): Open one/);
 });
 
 test('session-start: at most three handoffs; bad input exits 0 silently', () => {
@@ -263,20 +300,26 @@ test('gather: branch, HEAD, no upstream, dirty paths, recent ledgers, pending ha
   writeFileSync(join(dir, 'new.txt'), '');
   mkdirSync(join(dir, '.superpowers', 'ship-plan', 'f'), { recursive: true });
   writeFileSync(join(dir, '.superpowers', 'ship-plan', 'f', 'ledger.md'), 'Phase: 2\n');
+  const old = join(dir, '.superpowers', 'ship-plan', 'f', 'old.md');
+  writeFileSync(old, 'x\n');
+  const t = (Date.now() - 4 * 86400000) / 1000;
+  utimesSync(old, t, t);
   const hd = withHome(home, () => handoffDir(dir));
   writeHandoff(hd, 'earlier', { meta: { title: 'Earlier one' } });
 
   const r = script('gather.mjs', ['my topic!'], { cwd: dir, home });
   assert.equal(r.status, 0, r.stderr);
   const o = r.stdout;
-  assert.match(o, new RegExp(`^repo root: ${dir}$`, 'm'));
+  assert.match(o, new RegExp(`^repo root: ${esc(dir)}$`, 'm'));
   assert.match(o, /^branch: feature\/x$/m);
   assert.match(o, /^HEAD: [0-9a-f]{40} init$/m);
   assert.match(o, /^upstream: none \(branch not pushed\)$/m);
   assert.match(o, /^uncommitted: 2 path\(s\)$/m);
-  assert.match(o, /^ {2}\.superpowers\/ship-plan\/f\/ledger\.md {2}\(0 min ago\)$/m);
+  assert.match(o, /^ {2}\.superpowers\/ship-plan\/f\/ledger\.md {2}\(\d+ min ago\)$/m);
+  assert.doesNotMatch(o, /old\.md/, 'a ledger older than 3 days is left out');
+  assert.doesNotMatch(o, /^PR for this branch/m, 'gh is the failing stub: no gh calls, no network');
   assert.match(o, /^ {2}earlier .*Earlier one$/m);
-  assert.match(o, new RegExp(`^suggested file: ${hd}/\\d{8}-\\d{4}-my-topic\\.md$`, 'm'));
+  assert.match(o, new RegExp(`^suggested file: ${esc(hd)}/\\d{8}-\\d{4}-my-topic\\.md$`, 'm'));
 });
 
 test('gather: from a subdirectory it reports the cwd; the name defaults to the branch', () => {
@@ -286,4 +329,27 @@ test('gather: from a subdirectory it reports the cwd; the name defaults to the b
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /^cwd: .*sub \(worktree or subdirectory\)$/m);
   assert.match(r.stdout, /^suggested file: .*-main\.md$/m);
+});
+
+test('gather: ahead and behind the upstream, counted the right way round', () => {
+  const remote = scratch('remote');
+  git(remote, 'init', '-q', '--bare', '-b', 'main');
+  const dir = repo();
+  git(dir, 'remote', 'add', 'origin', remote);
+  git(dir, 'push', '-q', '-u', 'origin', 'main');
+  const other = join(scratch('other'), 'c');
+  git(scratch('x'), 'clone', '-q', remote, other);
+  writeFileSync(join(other, 'r.txt'), 'r\n');
+  git(other, 'add', '.');
+  git(other, 'commit', '-q', '-m', 'remote 1');
+  git(other, 'push', '-q', 'origin', 'main');
+  git(dir, 'fetch', '-q', 'origin');
+  for (const n of [1, 2]) {
+    writeFileSync(join(dir, `l${n}.txt`), 'l\n');
+    git(dir, 'add', '.');
+    git(dir, 'commit', '-q', '-m', `local ${n}`);
+  }
+  const r = script('gather.mjs', [], { cwd: dir, home: scratch('home') });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /^upstream: origin\/main \(ahead 2, behind 1\)$/m);
 });

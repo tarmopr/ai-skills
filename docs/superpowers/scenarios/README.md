@@ -6,7 +6,7 @@ a fictional repo, and answers numbered questions with the exact commands and
 tool calls the skills would make. The answers are graded against each
 scenario's **Pass if** lines.
 
-The structural checker, `~/.claude/skills/_specs/check-skills.mjs`, pins the
+The structural checker, `scripts/check-skills.mjs`, pins the
 files' shape. These scenarios pin behaviour.
 
 | Id | File | What it pins |
