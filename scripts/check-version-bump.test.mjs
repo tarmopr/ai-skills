@@ -40,7 +40,7 @@ function commit(dir, files) {
   git(dir, 'add', '.');
   git(dir, 'commit', '-q', '-m', 'change');
 }
-const run = (dir, base = 'main') => spawnSync('node', [SCRIPT, base], { cwd: dir, encoding: 'utf8', env: ENV });
+const run = (dir, base = 'main', cwd = dir) => spawnSync('node', [SCRIPT, base], { cwd, encoding: 'utf8', env: ENV });
 
 test('no change under skills/ or hooks/: passes without a bump', () => {
   const dir = repo();
@@ -72,7 +72,7 @@ test('plugin.json edited but the version unchanged or lowered: fails', () => {
     commit(dir, { 'skills/a/SKILL.md': 'b\n', '.claude-plugin/plugin.json': manifest(version, '\n  "description": "d",') });
     const r = run(dir);
     assert.equal(r.status, 1, `${version}: ${r.stdout}`);
-    assert.match(r.stderr, /must be higher than main's 1\.2\.3/);
+    assert.match(r.stderr, /^\.claude-plugin\/plugin\.json: version .* must be higher than main's 1\.2\.3$/m);
   }
 });
 
@@ -84,13 +84,14 @@ test('the base moved on and already holds the branch version: fails', () => {
   git(dir, 'switch', '-q', 'b');
   const r = run(dir);
   assert.equal(r.status, 1);
-  assert.match(r.stderr, /must be higher than main's 1\.2\.4/);
+  assert.match(r.stderr, /^\.claude-plugin\/plugin\.json: version 1\.2\.4 must be higher than main's 1\.2\.4$/m);
 });
 
 test('a base ref that does not exist: fails, never passes', () => {
   const dir = repo();
   commit(dir, { 'skills/a/SKILL.md': 'b\n', '.claude-plugin/plugin.json': manifest('1.2.4') });
   const r = run(dir, 'origin/nope');
+  assert.doesNotMatch(r.stderr, /bump version/);
   assert.equal(r.status, 2);
   assert.match(r.stderr, /base ref origin\/nope not found/);
 });
@@ -149,4 +150,30 @@ test('plugin.json that is not JSON, or deleted: could not check (exit 2)', () =>
   r = run(dir);
   assert.equal(r.status, 2);
   assert.match(r.stderr, /cannot read \.claude-plugin\/plugin\.json at HEAD/);
+});
+
+test('run from a subdirectory: the paths are still the repo root\'s', () => {
+  const dir = repo();
+  commit(dir, { 'hooks/h.mjs': 'x\n' });
+  const r = run(dir, 'main', join(dir, 'docs'));
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stderr, /bump version/);
+});
+
+test('only plugin.json changed and the base bumped later: compared with where the branch started', () => {
+  const dir = repo();
+  commit(dir, { '.claude-plugin/plugin.json': manifest('1.2.3', '\n  "description": "d",') });
+  git(dir, 'switch', '-q', 'main');
+  commit(dir, { 'skills/a/SKILL.md': 'm\n', '.claude-plugin/plugin.json': manifest('1.2.4') });
+  git(dir, 'switch', '-q', 'b');
+  const r = run(dir);
+  assert.equal(r.status, 0, r.stderr);
+});
+
+test('plugin.json that is JSON but not an object: could not check (exit 2), named as such', () => {
+  const dir = repo();
+  commit(dir, { 'skills/a/SKILL.md': 'b\n', '.claude-plugin/plugin.json': 'null\n' });
+  const r = run(dir);
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /plugin\.json at HEAD: not a version: undefined/);
 });

@@ -57,7 +57,7 @@ function issueLedgerPath(root, key) {
 // ledger's plan; else the ship-plan ledger for this plan and issue (findPlanLedger); else the
 // field's path (no ledger yet). The field can be empty, `none`, a path ship-plan has not made or
 // a leftover folder's: a runner child's ship-plan can end its turn before ship-issue writes or
-// corrects it (FOR-528).
+// corrects it.
 function planLedgerPath(root, issueLines) {
   const fields = issueLines ? firstLineFields(issueLines[0]) : {};
   const p = fields['ship-plan ledger'];

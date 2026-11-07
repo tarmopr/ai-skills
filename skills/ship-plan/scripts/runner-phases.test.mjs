@@ -64,7 +64,7 @@ test('phaseFromLedgers: I2 -> spec; I5 -> plan; ship-plan 2b -> implement; 4R aw
   assert.match(odd.blocked, /unknown ship-plan phase "9z"/);
 });
 
-test('phaseFromLedgers: no file at the ship-plan ledger: field -> the ship-plan ledger whose Plan: names the plan (FOR-528)', () => {
+test('phaseFromLedgers: no file at the ship-plan ledger: field -> the ship-plan ledger whose Plan: names the plan', () => {
   const withField = (v) => `Phase: I6 | Issue: ${KEY} | Branch: feat/bill-7 | Spec: docs/spec.md | Plan: docs/plan.md | ship-plan ledger:${v}`;
   // empty, `none`, or a predicted path ship-plan never made: found by its Plan: field
   for (const v of ['', ' none', ' .superpowers/ship-plan/feat-predicted/ledger.md']) {
@@ -165,7 +165,7 @@ test('runIssue: a stale RUNNER: blocked (an earlier turn) -> its reason when the
   assert.equal(b.status, 'done', events(advanced));
 });
 
-test('runIssue: implement child writes only the ship-plan ledger (no field on the issue ledger) -> the run goes on (FOR-528)', async () => {
+test('runIssue: implement child writes only the ship-plan ledger (no field on the issue ledger) -> the run goes on', async () => {
   const noField = `Phase: I6 | Issue: ${KEY} | Branch: feat/bill-7 | Spec: docs/spec.md | Plan: docs/plan.md | ship-plan ledger:`;
   const root = repo({ issue: [noField], tasks: 1 });
   const ops = ledgerOps([

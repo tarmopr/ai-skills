@@ -378,10 +378,12 @@ const TECH_LINE_EXEMPT = {
 // C4: names from the repos these skills were first written for may appear nowhere. This repo is
 // public, so those names are not in it: they are read from the SKILLS_PRIVATE_PATTERNS env var
 // when it is non-empty, else from the gitignored `.claude/check-skills-private.txt` of this
-// checkout or, from a worktree, of the main checkout. One regular expression per line; a line
-// starting with `#`, or ` # ` and what follows, is a comment. C4 applies them to the FILES files,
-// C13 to every scanned file; a hit names the line, never its text. With none loaded, C4 checks
-// only for a staging host name, and SKILLS_REQUIRE_PRIVATE=1 turns that into a failure.
+// checkout or, from a worktree, of the main checkout. One regular expression per line, matched
+// case-insensitively, also across a line break; a line starting with `#` is a comment, and a `#`
+// after a space elsewhere is refused (it would silently become part of the pattern). C13 applies
+// them to every scanned file and, in a full run, to every other tracked file. No failure message
+// ever shows text a pattern matches (see `fail`). With none loaded, C4 checks only for a staging
+// host name, and SKILLS_REQUIRE_PRIVATE=1 turns that into a failure.
 // `staging\.[a-z]` catches a staging host name; a sentence that ends in "staging." is not one.
 const STAGING = /staging\.[a-z]/;
 function privateSource() {
@@ -392,25 +394,39 @@ function privateSource() {
   // The main checkout holds the common git dir as `.git` (as handoff's lib.mjs repoRoot assumes).
   const dir = common.status === 0 ? common.stdout.trim() : '';
   if (dir && basename(dir) === '.git') roots.push(dirname(dir));
-  for (const root of roots) {
+  for (const [n, root] of roots.entries()) {
     const file = join(root, '.claude', 'check-skills-private.txt');
-    if (existsSync(file)) return [file, readFileSync(file, 'utf8')];
+    if (existsSync(file)) return [`${basename(file)}${n ? ' (main checkout)' : ''}`, readFileSync(file, 'utf8')];
   }
   return ['', ''];
 }
 const [PRIVATE_FROM, privateText] = privateSource();
+const invalid = (i, why) => {
+  // Never echo the pattern: it is the private text this check keeps out of logs.
+  process.stderr.write(`${PRIVATE_FROM.replace(/ \(main checkout\)$/, '')} line ${i + 1}: invalid pattern${why ? ` (${why})` : ''}\n`);
+  process.exit(2);
+};
 const privatePatterns = [];
 privateText.split(/\r?\n/).forEach((raw, i) => {
-  if (raw.trimStart().startsWith('#')) return;
-  const line = raw.replace(/\s#\s.*$/, '').trim();
-  if (!line) return;
+  const line = raw.trim();
+  if (!line || line.startsWith('#')) return;
+  if (/\s#/.test(line)) invalid(i, 'a comment goes on its own line');
   let re = null;
-  try { re = new RegExp(line); } catch {}
-  // Never echo the pattern: it is the private text this check keeps out of logs.
-  if (!re) { process.stderr.write(`${basename(PRIVATE_FROM)} line ${i + 1}: invalid pattern\n`); process.exit(2); }
+  try { re = new RegExp(line, 'i'); } catch {}
+  if (!re) invalid(i);
   privatePatterns.push(re);
 });
 const isPrivate = (l) => privatePatterns.some((re) => re.test(l));
+// Line indexes holding private text, a name wrapped onto the next line included (reported at its first line).
+function privateHits(text) {
+  const lines = text.split('\n');
+  const hits = new Set();
+  lines.forEach((l, i) => {
+    if (isPrivate(l)) hits.add(i);
+    else if (i + 1 < lines.length && !isPrivate(lines[i + 1]) && isPrivate(`${l.trimEnd()} ${lines[i + 1].trimStart()}`)) hits.add(i);
+  });
+  return hits;
+}
 const C4_PRIVATE = privatePatterns.length > 0;
 if (!C4_PRIVATE && process.env.SKILLS_REQUIRE_PRIVATE === '1') {
   process.stderr.write('SKILLS_REQUIRE_PRIVATE=1: no private patterns loaded (.claude/check-skills-private.txt or SKILLS_PRIVATE_PATTERNS)\n');
@@ -456,7 +472,11 @@ const READ_LINE = /\b[Ww]hen ((?:[^.]|\.(?!\s))*?), read \[[^\]]+\]\(([^)\s]+)\)
 const READ_TAIL = /^(?:[^.]|\.(?!\s))*?\.\*\*/;
 
 const failures = [];
-const fail = (file, check, detail) => failures.push(`${file}: ${check}: ${detail}`);
+// Every failure goes through here: a detail holding private text keeps only its `line <n>`.
+const fail = (file, check, detail) => {
+  const shown = isPrivate(detail) ? `${/^line \d+/.exec(detail)?.[0] ?? ''} (private text not shown)`.trim() : detail;
+  failures.push(`${file}: ${check}: ${shown}`);
+};
 
 // Text with fenced blocks blanked out, line count preserved.
 const FENCE = /^(`{3,})[^\n]*\n[\s\S]*?^\1\s*$/gm;
@@ -510,8 +530,7 @@ for (const file of targets) {
   text.split('\n').forEach((l, i) => {
     if (!TECH_EXEMPT.has(file) && TECH.test(l) && !(TECH_LINE_EXEMPT[file] || []).some((x) => l.includes(x))) fail(file, 'C3 tech command', `line ${i + 1}: ${l.trim()}`);
     // ship-plan/config-drafting.md: its example config is illustrative (a `staging.` host), not a repo reference.
-    if (isPrivate(l)) fail(file, 'C4 repo specific', `line ${i + 1} (private text not shown)`);
-    else if (file !== 'ship-plan/config-drafting.md' && STAGING.test(l)) fail(file, 'C4 repo specific', `line ${i + 1}: ${l.trim()}`);
+    if (file !== 'ship-plan/config-drafting.md' && STAGING.test(l)) fail(file, 'C4 repo specific', `line ${i + 1}: ${l.trim()}`);
     if (MAIN.test(l)) fail(file, 'C5 literal main', `line ${i + 1}: ${l.trim()}`);
     if (isSkill && i >= bodyStart && TOOL_CALL.some((re) => re.test(l))) fail(file, 'C9 tool call in SKILL body', `line ${i + 1}: ${l.trim()}`);
   });
@@ -569,18 +588,32 @@ for (const path of privateTargets) {
     : inRationale ? `rationale/${relative(RATIONALE, path)}` : relative(REPO_ROOT, path);
   const text = readFileSync(path, 'utf8');
   const prose = unfenced(text).split('\n');
+  const hits = privateHits(text);
   text.split('\n').forEach((l, i) => {
     const bad = [...l.matchAll(ISSUE_KEY)].map((m) => m[0]).some((k) => !keyAllowed(k))
       || (inSkills && [...prose[i].matchAll(LOWER_KEY)].some((m) => !keyAllowed(m[0].toUpperCase())))
       || (inSkills && PR_NUMBER.test(prose[i]))
       || HOME_PATH.test(l);
-    if (isPrivate(l)) fail(file, 'C13 private', `line ${i + 1} (private text not shown)`);
+    if (hits.has(i)) fail(file, 'C13 private', `line ${i + 1} (private text not shown)`);
     else if (bad) fail(file, 'C13 private', `line ${i + 1}: ${l.trim()}`);
   });
 }
 
-const checked = new Set([...targets.map((f) => join(ROOT, f)), ...privateTargets]);
+// C13, full run: every other tracked text file (scripts, tests, manifests) gets the private-pattern
+// check only; their fixtures hold fictional keys and paths the .md checks above would refuse.
+const scanned = new Set(privateTargets);
+const tracked = process.argv.length > 2 || !privatePatterns.length ? null
+  : spawnSync('git', ['ls-files', '-z'], { cwd: REPO_ROOT, encoding: 'utf8' });
+for (const f of tracked?.status === 0 ? tracked.stdout.split('\0').filter(Boolean) : []) {
+  const path = join(REPO_ROOT, f);
+  if (scanned.has(path) || !existsSync(path)) continue;
+  const text = readFileSync(path, 'utf8');
+  if (text.includes('\0')) continue;
+  scanned.add(path);
+  for (const i of privateHits(text)) fail(f, 'C13 private', `line ${i + 1} (private text not shown)`);
+}
+const checked = new Set([...targets.map((f) => join(ROOT, f)), ...scanned]);
 if (failures.length) { console.log(failures.join('\n')); process.exit(1); }
 console.log(`ok: ${checked.size} file(s) (C4: ${C4_PRIVATE
-  ? `${privatePatterns.length} private pattern(s) from ${basename(PRIVATE_FROM)}`
+  ? `${privatePatterns.length} private pattern(s) from ${PRIVATE_FROM}`
   : 'no private patterns loaded, staging host names only'})`);
