@@ -37,7 +37,10 @@
 //   (the runner's) pid.
 // FAKE_CLAUDE_LINK: JSON [[target, link, 'hard'|'sym'], …]: each link made, its folder first.
 // FAKE_CLAUDE_GIT: JSON [[<git arg>, …], …], each run as `git <args>` in cwd after the ledger ops.
-// FAKE_CLAUDE_BY_KEY: JSON {<key>: {<env var>: <value>}}; the key is the prompt's
+// FAKE_CLAUDE_NETFAILS: "<n>:<counter file>": the first n runs (counted in the file) write only a
+//   result line with is_error: true and an ECONNREFUSED API error, before any ledger op; with
+//   "<i>,<j>,…:<file>" (a comma in it), only those runs, numbered from 1.
+// FAKE_CLAUDE_BY_KEY: JSON {<key>: {<env var>: <value>}}; the key is SHIP_RUNNER_KEY, else the prompt's
 //   `with the arguments "<key>"`; its values override the env vars above for that child.
 // The log's `head` is cwd's .git/HEAD (the branch the child started on), or null.
 import { execFileSync, spawn } from 'node:child_process';
@@ -48,7 +51,8 @@ const chunks = [];
 for await (const c of process.stdin) chunks.push(c);
 const stdin = Buffer.concat(chunks).toString('utf8');
 const argv = process.argv.slice(2);
-const promptKey = /with the arguments "([^"]*)"/.exec(stdin)?.[1];
+// the item's key: SHIP_RUNNER_KEY (set for every runner child), else the prompt's arguments
+const promptKey = process.env.SHIP_RUNNER_KEY || /with the arguments "([^"]*)"/.exec(stdin)?.[1];
 Object.assign(process.env, JSON.parse(process.env.FAKE_CLAUDE_BY_KEY || '{}')[promptKey] ?? {});
 const head = existsSync('.git/HEAD') ? readFileSync('.git/HEAD', 'utf8').trim() : null;
 const stateCurrent = () => {
@@ -60,6 +64,15 @@ const stateCurrent = () => {
 };
 if (process.env.FAKE_CLAUDE_LOG) writeFileSync(process.env.FAKE_CLAUDE_LOG, JSON.stringify({ argv, stdin, head, shipRunner: process.env.SHIP_RUNNER, shipRunnerKey: process.env.SHIP_RUNNER_KEY ?? null, allowBypass: process.env.SHIP_RUNNER_ALLOW_BYPASS ?? null, stateCurrent: stateCurrent() }));
 
+if (process.env.FAKE_CLAUDE_NETFAILS) {
+  const [n, file] = process.env.FAKE_CLAUDE_NETFAILS.split(/:(.*)/s);
+  const seen = existsSync(file) ? Number(readFileSync(file, 'utf8')) : 0;
+  writeFileSync(file, String(seen + 1));
+  if (n.includes(',') ? n.split(',').map(Number).includes(seen + 1) : seen < Number(n)) {
+    process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_error: true, num_turns: 0, total_cost_usd: 0, duration_ms: 100, result: 'API Error: Connection refused — a firewall or proxy may be blocking it (ECONNREFUSED)' }) + '\n');
+    process.exit(0);
+  }
+}
 for (const op of JSON.parse(process.env.FAKE_CLAUDE_LEDGER_APPEND || '[]')) {
   if (op.when && !stdin.includes(op.when)) continue;
   const lines = existsSync(op.file) ? readFileSync(op.file, 'utf8').replace(/\n$/, '').split('\n') : [];

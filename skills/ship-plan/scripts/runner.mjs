@@ -2,7 +2,7 @@
 // The ship runner's CLI. Run from the checkout:
 //   node runner.mjs start [--permission-mode auto|acceptEdits|dontAsk|bypassPermissions] <run>, <run> one of:
 //   (bypassPermissions only with SHIP_RUNNER_ALLOW_BYPASS=1 in the runner's env; never passed to children)
-//   node runner.mjs start issue <KEY>
+//   node runner.mjs start issue <KEY> [--small]   (--small reaches each child's ship-issue arguments)
 //   node runner.mjs start queue <PARENT> <KEY>,<KEY>… [--deps <KEY>:<DEP>,…]   (<KEY> waits for <DEP>)
 //   node runner.mjs start plan <path>          ship-plan from implement
 //   node runner.mjs start verify <branch> [-- <args>]   verify-and-fix alone, on the checked-out
@@ -29,6 +29,7 @@ export const MODEL_DEFAULTS = {
   'Plan stage': { model: 'opus', effort: 'high' },
   'Phase: implement': { model: 'sonnet', effort: 'high' },
   'Phase: verify': { model: 'opus', effort: 'high' },
+  'Phase: verify (small)': { model: 'sonnet', effort: 'high' },
   'Phase: merge': { model: 'sonnet', effort: 'high' },
   'Phase: close': { model: 'sonnet', effort: 'medium' },
 };
@@ -311,12 +312,26 @@ const ORDER = ['done', 'waiting', 'blocked', 'cut off', 'not started', 'queued',
 const costOf = (item) => item.sessions.reduce((sum, s) => sum + (s.costUsd ?? 0), 0);
 const minutesOf = (item) => item.sessions.reduce((sum, s) => sum + (s.minutes ?? 0), 0);
 
+// Cost and minutes per phase over every item's sessions, in phase order: `spec $1.20/14m, …`.
+export function byPhase(items) {
+  const sums = new Map(PHASES.map((p) => [p, null]));
+  for (const s of items.flatMap((i) => i.sessions)) {
+    const t = sums.get(s.phase) ?? { cost: 0, minutes: 0 };
+    if (!sums.has(s.phase)) continue;
+    t.cost += s.costUsd ?? 0;
+    t.minutes += s.minutes ?? 0;
+    sums.set(s.phase, t);
+  }
+  return [...sums].filter(([, t]) => t).map(([p, t]) => `${p} $${t.cost.toFixed(2)}/${t.minutes}m`).join(', ');
+}
+
 function summaryText(state) {
   const counts = ORDER.map((st) => [st, state.items.filter((i) => i.status === st).length]).filter(([, n]) => n);
   const cost = state.items.reduce((sum, i) => sum + costOf(i), 0);
   // the guard's warnings of this start, each item's changed files (runIssue's item.guardedChanged)
   const guarded = state.items.filter((i) => Array.isArray(i.guardedChanged) && i.guardedChanged.length).map((i) => `${i.key} (${listed(i.guardedChanged)})`);
-  return `${counts.map(([st, n]) => `${n} ${st}`).join(', ')}; cost $${cost.toFixed(2)}${guarded.length ? `; guarded files changed: ${guarded.join(', ')}` : ''}`;
+  const phases = byPhase(state.items);
+  return `${counts.map(([st, n]) => `${n} ${st}`).join(', ')}; cost $${cost.toFixed(2)}${phases ? ` (${phases})` : ''}${guarded.length ? `; guarded files changed: ${guarded.join(', ')}` : ''}`;
 }
 
 function usage(msg) {
@@ -338,8 +353,9 @@ function parseStart(root, [what, ...a]) {
   const extra = (from) => (a.length > from ? `start ${what}: unexpected argument "${a[from]}"` : null);
   if (what === 'issue') {
     if (!KEY.test(a[0])) return notKey(a[0]);
-    if (extra(1)) return extra(1);
-    return { kind: 'issue', id: a[0], items: [newItem(a[0])], skill: 'ship-issue' };
+    const small = a[1] === '--small';
+    if (extra(small ? 2 : 1)) return extra(small ? 2 : 1);
+    return { kind: 'issue', id: a[0], items: [newItem(a[0])], skill: 'ship-issue', ...(small ? { args: `${a[0]} --small` } : {}) };
   }
   const notId = (id) => `start ${what}: "${id}" holds a character other than letters, digits, . _ / # -`;
   if (what === 'queue') {
@@ -693,7 +709,16 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
     let ran = false; // a queue item has run in this start
     for (;;) {
       syncAnswers(state, dir, store);
-      const item = nextItem(state);
+      // an item's phase before it first runs comes from its ledgers (a resumed queue's items may be past their spec)
+      const phaseOf = (i) => {
+        if (i.phase != null) return i.phase;
+        try {
+          return phaseFromLedgers(root, i.key, ledgerOpts(root, state, i)).phase;
+        } catch {
+          return null;
+        }
+      };
+      const item = nextItem(state, { phaseOf });
       save();
       if (item && ran && state.kind === 'queue' && !restoreCheckout(root, baseInfo.name, state, item, dir)) break;
       if (!item) {
@@ -738,6 +763,15 @@ async function runLocked({ root, dir, run, cfg, base: baseInfo, mode, modeFrom, 
       // closed once the item's outcome is known, before its event (runIssue's end): an `answer`
       // right after a `waiting` event finds no open window
       const ctx = { ...base, ledgers, beforeEnd: () => { window[1] ??= Date.now(); } };
+      // a queue asks every item's questions before it builds any, then builds in queue order: after
+      // this item's spec it gives way to a ready item still at its spec, or to one earlier in the
+      // queue (nextItem picks which)
+      if (state.kind === 'queue') {
+        const at = (k) => state.items.findIndex((x) => x.key === k);
+        ctx.yieldAfterSpec = (it) => state.items.some((i) => i !== it && i.status === 'queued'
+          && ([null, 'spec'].includes(phaseOf(i)) || at(i.key) < at(it.key))
+          && (i.deps ?? []).every((d) => state.items.find((x) => x.key === d)?.status === 'done'));
+      }
       current = item;
       try {
         await runIssue(ctx, item);
@@ -870,6 +904,8 @@ function status([dirArg]) {
   }
   const widths = rows[0].map((_, c) => Math.max(...rows.map((r) => r[c].length)));
   for (const r of rows) console.log(r.map((cell, c) => (c === r.length - 1 ? cell : cell.padEnd(widths[c]))).join('  '));
+  const phases = byPhase(state.items);
+  if (phases) console.log(`\nBy phase: ${phases}`);
   const questions = state.items.flatMap((i) => pendingQuestions(root, i.key, ledgerOpts(root, state, i)).map((q) => clean(`${i.key}: ${q}`)));
   console.log(questions.length ? `\nPending questions:\n${questions.join('\n')}` : '\nNo pending questions.');
   return 0;

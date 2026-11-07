@@ -99,7 +99,7 @@ Source: `<plan path>` · Spec: `<spec path, or "none">`
 
 GitHub has no append: `gh issue edit` replaces the whole body. Read it with `gh issue view <n> -R <Repo> --json body`, add the sections at the end, and write the full body back with `gh issue edit <n> -R <Repo> --body-file <file>`. Never change or reflow the user's text.
 
-**What is appended.** ship-plan appends the `## Plan` section from "Create an issue" only. ship-issue appends `## Plan`, then `## Done when`, then `## Full plan` with the plan text.
+**What is appended.** ship-plan appends the `## Plan` section from "Create an issue" only. ship-issue appends `## Plan`, then `## Done when`, then one line `Full plan: <plan path> on branch <branch>; the local file is authoritative.`; only when the plan is git-ignored (it never leaves the checkout) does `## Full plan` carry the plan text instead.
 
 **Too big for GitHub.** A body or a comment holds at most 65,536 characters. When the existing body plus the sections would exceed it (count the text you would write; leave 2,000 characters of headroom), the fallback is fixed:
 

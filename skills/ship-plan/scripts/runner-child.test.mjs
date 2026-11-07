@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { acquireLock, alive } from './runner-lib.mjs';
-import { childArgs, endChildren, isEnvError, isLimitError, logStore, parseMarker, redact, resumeOrFresh, runChild } from './runner-child.mjs';
+import { childArgs, endChildren, isEnvError, isLimitError, isNetworkError, logStore, parseMarker, redact, resumeOrFresh, runChild } from './runner-child.mjs';
 
 process.env.CLAUDE_BIN = join(dirname(fileURLToPath(import.meta.url)), 'fake-claude.mjs');
 
@@ -317,6 +317,14 @@ test('isEnvError: no claude, API or auth errors, a bad model; not a crash, a lim
     'is_error: Credit balance is too low']) assert.equal(isEnvError(e), true, e);
   for (const e of ['exit 1; no result line', 'killed by SIGKILL; no result line', 'child idle 60 min', 'no RUNNER: line',
     'exit 1; no result line; stderr: API Error: 401']) assert.equal(isEnvError(e), false, e);
+});
+
+test('isNetworkError: refused, unresolved, reset or timed-out connections and an overloaded API; not auth, a crash or stderr', () => {
+  for (const e of ['exit 1; is_error: API Error: Connection refused — a firewall or proxy may be blocking it (ECONNREFUSED)',
+    "exit 1; is_error: API Error: Can't reach the API server — check your internet or DNS (ENOTFOUND)",
+    'is_error: API Error: read ECONNRESET', 'is_error: API Error: 529 {"type":"overloaded_error"}', 'is_error: fetch failed']) assert.equal(isNetworkError(e), true, e);
+  for (const e of ['is_error: API Error: 401 {"type":"authentication_error"}', 'exit 1; no result line', 'spawn failed: ENOENT',
+    'exit 1; no result line; stderr: ECONNREFUSED', null]) assert.equal(isNetworkError(e), false, String(e));
 });
 
 // C10 (review round 1, security follow-up): a child's window ends only once its whole process group

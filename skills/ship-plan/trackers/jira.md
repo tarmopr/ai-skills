@@ -125,7 +125,7 @@ and `contentFormat: "html"`. Never write it back as markdown: that drops media,
 mentions and panels. If the HTML format is rejected, post the Plan section as a
 comment instead. Never replace the user's text.
 
-**What is appended.** ship-plan appends the `## Plan` section from "Create an issue" only. ship-issue appends `## Plan`, then `## Done when`, then `## Full plan` with the plan text.
+**What is appended.** ship-plan appends the `## Plan` section from "Create an issue" only. ship-issue appends `## Plan`, then `## Done when`, then one line `Full plan: <plan path> on branch <branch>; the local file is authoritative.`; only when the plan is git-ignored (it never leaves the checkout) does `## Full plan` carry the plan text instead.
 
 **Too big for Jira.** A description or a comment holds at most 32,767 characters. When the existing description plus the three sections would exceed it (count the text you would write; leave 2,000 characters of headroom for Jira's own markup), the fallback is fixed:
 

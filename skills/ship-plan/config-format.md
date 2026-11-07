@@ -77,8 +77,8 @@ Default: none.
 ### `## Gates`
 
 ```markdown
-| Gate | Command | Only when changed | Timeout | Allowed skips | Notes |
-|---|---|---|---|---|---|
+| Gate | Command | Only when changed | Timeout | Allowed skips | Notes | Fix rounds |
+|---|---|---|---|---|---|---|
 ```
 
 - `Only when changed`: comma-separated globs matched against `git diff --name-only origin/<base>...HEAD`. Empty means always.
@@ -87,7 +87,8 @@ Default: none.
   - A number: the skipped tests this gate always reports (standing `skip` / `xfail` markers). Up to that many skips is a pass, noted in the gate table; one more is "skipped".
   - `files: <globs>`: skips inside matching files are allowed, whatever their count. A skip in any other file makes the gate "skipped".
 - `Notes`: how to run or judge this gate: a precondition, a second run under another setup, a known local-only failure. `verify-and-fix` follows it as part of the gate. Empty means none.
-- The last three columns may be left out.
+- `Fix rounds`: a faster command `verify-and-fix` runs in place of `Command` when it reruns the gate after a round's fixes on a branch with no open PR, for example the test project the fixes touch, or the suite without coverage. `{changed}` in it is replaced by the files changed since the last gated sha, space-separated. The full `Command` still runs on the first run, after a merge of the base branch, before every push, and before the loop ends as clean. Empty means `Command` every time.
+- The last four columns may be left out.
 - Every command runs with `CI=true` in its environment and must be one-shot. A watch-mode or prompting command is a config error to fix, not something to wait on.
 
 Default: none, and then `verify-and-fix` cannot end clean.
@@ -301,16 +302,16 @@ start runs on Opus at high effort.
 
 | Role | Used by | Default |
 |---|---|---|
-| `Spec stage (small)` | `ship-issue` I2: research, design, spec of an issue sized `small` | `sonnet`, `high` |
+| `Spec stage (small)` | `ship-issue` I2: research, design, spec and plan of an issue sized `small`, in one light dispatch | `sonnet`, `high` |
 | `Spec stage` | `ship-issue` I2: research, design, spec of an issue sized `standard` | `opus`, `high` |
 | `Spec check` | `ship-issue` I2: the Spec stage's builder-check subagent | `sonnet`, `high` |
-| `Plan stage` | `ship-issue` I4: the plan, from the spec alone | `opus`, `high` |
+| `Plan stage` | `ship-issue` I4: the plan, from the spec alone, for an issue sized `standard` | `opus`, `high` |
 | `Implementer (mechanical)` | `ship-plan` section 2: a task tagged `Tier: mechanical` | `haiku`, `high` |
 | `Implementer` | `ship-plan` section 2: a task tagged `Tier: standard`, or untagged | `sonnet`, `high` |
 | `Implementer (complex)` | `ship-plan` section 2: a task tagged `Tier: complex` | `opus`, `high` |
 | `Escalation` | `ship-plan` section 2: fix rounds 4–5, a stuck implementer | `opus`, `high` |
 | `Task review` | `ship-plan` section 2: each task's spec and quality reviewers | `sonnet`, `high` |
-| `Final review` | `verify-and-fix` section 4: review round 1's `code-reviewer`, the run's whole-branch review | `opus`, `xhigh` |
+| `Final review` | `verify-and-fix` section 4: review round 1's `code-reviewer`, the run's whole-branch review; a small diff's takes `Review round` | `opus`, `xhigh` |
 | `Simplify` | `ship-plan` section 2b: the simplify pass over the whole diff | `sonnet`, `high` |
 | `Review round` | `verify-and-fix` section 4: every other review agent, every round | `opus`, `high` |
 | `Wording review` | `verify-and-fix` section 4: `comment-analyzer` and `type-design-analyzer`, every round | `sonnet`, `high` |
@@ -318,12 +319,13 @@ start runs on Opus at high effort.
 | `Queue run` | `ship-queue` Q2: each sub-issue's child session | `opus`, `high` |
 | `Phase: implement` | Runner: the implement child (plan tasks, in chunks) | `sonnet`, `high` |
 | `Phase: verify` | Runner: the verify child | `opus`, `high` |
+| `Phase: verify (small)` | Runner: the verify child of an issue whose ship-issue ledger's last `Size:` line is `small` | `sonnet`, `high` |
 | `Phase: merge` | Runner: the merge child | `sonnet`, `high` |
 | `Phase: close` | Runner: the close child | `sonnet`, `medium` |
 
 The runner's spec and plan children use the `Spec stage` and `Plan stage` rows.
-It does not use `Spec stage (small)`: its spec child always takes `Spec stage`.
-It matches these six roles case-insensitively, and ignores a row whose model
+It does not use `Spec stage (small)`: its spec child always takes `Spec stage`. From implement on, a ship-issue run whose ship-plan ledger names the issue gets a ship-plan child directly (`--session`), without loading ship-issue.
+It matches these seven roles case-insensitively, and ignores a row whose model
 is not a model name or whose effort is not one of the five below.
 
 **The hook.** While a ship run's ledger is live (changed in the last 6 hours

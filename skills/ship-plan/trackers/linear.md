@@ -84,7 +84,7 @@ Source: `<plan path>` · Spec: `<spec path, or "none">`
 ## Append the plan
 
 `save_issue` with `patch: [{op: "append", text: "\n\n## Plan\n\n…"}]`. Use
-the same Plan section as above (ship-plan appends `## Plan` only; ship-issue also appends `## Done when` and `## Full plan`). Never replace the user's text.
+the same Plan section as above (ship-plan appends `## Plan` only; ship-issue also appends `## Done when` and the `Full plan:` line, or `## Full plan` for a git-ignored plan, as in [github.md](github.md)). Never replace the user's text.
 
 ## Assign
 

@@ -94,6 +94,14 @@ export function isEnvError(error) {
   return ENV.test(String(error ?? '').split('; stderr: ')[0]);
 }
 
+// A child error from the network or an overloaded API: the next child may well get through. The
+// runner retries the same phase after a pause (runIssue, NET_RETRY_MINUTES) before it stops the run
+// as for isEnvError. Checked before isEnvError, whose "API Error" these messages also carry.
+const NET = /ECONNREFUSED|ENOTFOUND|ETIMEDOUT|ECONNRESET|EAI_AGAIN|socket hang up|connection refused|can't reach the api server|fetch failed|overloaded_error|\b529\b/i;
+export function isNetworkError(error) {
+  return NET.test(String(error ?? '').split('; stderr: ')[0]);
+}
+
 // Secrets a child's error text or stderr may print, each whole token as [redacted]: GitHub
 // tokens and fine-grained PATs, OpenAI/Anthropic-style keys, Slack tokens, AWS access key ids,
 // bearer headers (the word Bearer included).

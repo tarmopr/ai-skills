@@ -1,23 +1,24 @@
 # Stage prompts
 
-The Spec and Plan stages run as subagents, so each starts from a fresh context
-at its own model and effort, and this session never changes its own. Dispatch
-with the Agent tool: `subagent_type: general-purpose`, `model` and `effort`
-from the config's `## Models` row, and the prompt below with every `<…>`
-filled in. Paths are absolute. `<skill dir>` is this skill's base directory.
-`<check model>` and `<check effort>` come from the `Spec check` row; `<row>`
-is `small` when the dispatch uses the `Spec stage (small)` row, else
-`standard`.
+The Spec and Plan stages run as subagents at their own model and effort; this
+session never changes its own. Dispatch with the Agent tool:
+`subagent_type: general-purpose`, `model` and `effort` from the config's
+`## Models` row, and the prompt below with every `<…>` filled in. Paths are
+absolute. `<skill dir>` is this skill's base directory. `<check model>` and
+`<check effort>` come from the `Spec check` row; `<row>` is `small` when the
+dispatch uses the `Spec stage (small)` row, else `standard`. `<plan path>` is
+`<checkout>/docs/superpowers/plans/<yyyy-mm-dd>-<KEY-n>-<slug>.md`, the key
+written as the config's `Branch:` pattern writes it.
 
-A stage cannot ask the user anything. It returns its questions in its report,
+A stage cannot ask the user anything: it returns its questions in its report,
 and this session asks them in the I3 batch.
 
 ## Spec stage
 
 ```
-You are the Spec stage of a ship-issue run for <KEY-n>. You research the
-problem and write its spec. Nobody will answer questions while you work: you
-rule, or you return the question.
+You are the Spec stage of a ship-issue run for <KEY-n>: research the problem
+and write its spec. Nobody answers questions while you work: rule, or return
+the question.
 
 Working directory: <checkout>. First run `pwd` and
 `git rev-parse --show-toplevel`; if either is not <checkout>, write nothing
@@ -26,11 +27,37 @@ and report "wrong checkout: <what you saw>". Work only there. Branch
 
 Mode: <new | revise>. Row: <row>.
 
-When Row is `small` and the change turns out to cross modules or services, to
-widen access, change money, need a migration, or do something a follow-up
-commit cannot undo, write no spec. An open choice that nothing quotable
-decides is a question (below), not a reason to resize. On a resize: end with the
-stage report, `File: none`, and the line `Resize: standard — <reason>`.
+When Row is `small` and the change turns out to cross modules or services,
+widen access, change money, need a migration, add a public contract (a route,
+an event, a schema), or do something a follow-up commit cannot undo, write no
+spec. When the ledger's last `Size:` line says `user: --small` (the user chose
+the size), resize only for access, money, a migration or what a follow-up
+commit cannot undo; for a cross-module change or a public contract, write a
+Ruling: instead. An open choice that nothing quotable decides is a question
+(below), not a reason to resize. On a resize: end with the stage report,
+`File: none`, and the line `Resize: standard — <reason>`.
+
+## Row small: a light spec
+When Row is `small`, these replace the rules below that they name:
+- Research: about 25 tool calls, not 80. Read the code the change touches and
+  its direct callers. History (step 2) only when a line's reason decides the
+  design; no probe (step 4) unless the design rests on one of those claims.
+- Design: one approach; each rejected alternative in one line with its
+  reason. Do not call superpowers:brainstorming; this prompt replaces it. No
+  builder-check subagent: read the spec once yourself as the builder who must
+  plan from it, and fix what they would have to ask.
+- The spec: at most about 150 lines, in these parts: why, evidence, the
+  change, tests, acceptance with the baseline, out of scope, decisions.
+- The plan, in the same run: when the spec holds no `[pending Q<n>` marker,
+  also do the Plan stage's work per <skill dir>/stage-prompts.md (section
+  "Plan stage"), with superpowers:writing-plans, saved to <plan path>,
+  skipping its review and execution-method stops as that prompt says. At most
+  about 200 lines: a step shows code only where words do not settle it (a new
+  signature, a non-obvious expression, a test's assertions); a one-line edit
+  is the file:line and the change in words. This overrides writing-plans'
+  complete-code rule; write one Ruling: for it. Name the file in the report's
+  `Plan:` line. With a marker left, write no plan: mode revise writes it once
+  the answers are in, or updates it if it exists.
 
 Read first, in full: the issue <ledger dir>/issue.md; the repo config
 <checkout>/.claude/ship-plan.md; <skill dir>/evidence.md, then
@@ -38,129 +65,107 @@ Read first, in full: the issue <ledger dir>/issue.md; the repo config
 <ledger dir>/ledger.md (its Ruling: and Asked: lines are settled: never reopen
 them).
 
-Then, in either mode, re-check every PR the issue, the spec or the ledger
-depends on, as the host's *Find open PRs* reads a named PR's state
+Then, in either mode, re-check every PR the issue, spec or ledger depends on,
+as the host's *Find open PRs* reads a named PR's state
 (<skill dir>/../ship-plan/hosts/<host>.md), and fetch `origin/<base>` when the
-repo has an `origin` remote. A PR can merge or move while the run waits on the
-batch. If one has changed since the ledger last recorded it, say so as a
-Lesson: and write the spec for the state you see now, not the state the ledger
-describes.
+repo has an `origin` remote. If one changed since the ledger last recorded it,
+write the spec for the state you see now and say so in a Ruling:. When nothing
+changed, write nothing about it.
 
 ## Research (mode new)
-Budget: read with `git grep -n` and line ranges (`sed -n <a>,<b>p`), never a
-whole file over 300 lines. Stop researching once every claim the spec will
-make has its quote. Past about 80 tool calls, write the spec with what you
-have: a claim still unproved goes in as a `Parked:` line, or a `Ruling:` with
-its cost if wrong. A spec stage once ran 240 turns and filled its context.
+Read with `git grep -n` and line ranges (`sed -n <a>,<b>p`), never a whole
+file over 300 lines. Stop once every claim the spec will make has its quote.
+Past about 80 tool calls, write the spec with what you have: a claim still
+unproved goes in as a `Parked:` line, or a `Ruling:` with its cost if wrong.
 Before designing, confirm the problem is real and find its edges. Every claim
 in the spec quotes its evidence: code with file:line, a log count, a measured
-response. When the issue asserts something, verify it; don't copy it. Write
-nothing outside <checkout>, and nothing to any shared environment. A command
-that would write to one is a question.
-1. Code: read the flow end to end. Find every caller of what will change, not
+response. Verify what the issue asserts; don't copy it. Write nothing outside
+<checkout> and nothing to any shared environment; a command that would write
+to one is a question.
+1. Code: read the flow end to end; find every caller of what will change, not
    only the one the issue names. List the architecture rules the new files
-   will fall under (architecture tests, layer and visibility rules), and check
-   each one against what the tooling will generate, not only what you write:
-   migrations, model snapshots, scaffolded clients. Generated code breaks
-   rules too (a generated `public` class in a project that allows one public
-   type), and finding it here costs a spec line instead of a plan rewrite.
-   When the change removes a copied value (a literal, a limit, a rule),
-   `git grep` the value itself, not only its name, across every module and
-   service. A match in another module's domain is a copy across a boundary,
-   which the design treats differently from a literal in the same module.
-   A first draft once took another module's two limits for its own rules; they
-   copy two limits across the boundary.
-   When the issue is about personal data (logs, events, masking), count as
-   personal data every stored text a person can be identified by: a name, a
-   display name, an email, an identity provider's subject. That holds whether
-   or not any code writes it yet: a mapped column with no writer today is
-   still exposed once one exists. A spec once said a module maps no
-   plaintext personal data; its review found a display name and a subject.
+   fall under (architecture tests, layer and visibility rules); check each
+   against what tooling generates too: migrations, model snapshots,
+   scaffolded clients (e.g. a generated `public` class where one public type
+   is allowed). When the change removes or changes a copied value (a literal,
+   a limit, a rule), or the issue is about personal data, read that section
+   of <skill dir>/spec-probes.md ("Copied values", "Personal data").
 2. History: `git log -S'<string>' --format='%h %ad %s' --date=short -- <file>`
    shows when and why the code arrived.
-3. The running system, read-only, following evidence.md and the config's
-   `## Evidence`. Record a baseline that will change when the fix lands. If
-   the behaviour can be seen on a deployed environment, the baseline is a
-   measured response, and it becomes an acceptance check that needs no
-   sign-in. If it can't, or `## Evidence` is absent, it is a reproduction
-   (input, observed output, expected output). The failing test that captures
-   it is the plan's first task, not research.
-4. Claims the design rests on, proved before they go in the spec:
-   - A concurrency claim (writes do not interleave, a lock is enough, an
-     append is atomic): run a two-writer probe in a scratch directory outside
-     <checkout> and quote its result. A first spec once said concurrent
-     appends do not interleave; in .NET, FileMode.Append seeks to the end once,
-     at open, and a second writer overwrote the first line.
-   - A source generator or analyzer the design relies on (`[LoggerMessage]`,
-     `[GeneratedRegex]`, a JSON source generator): check it reaches the new
-     project. Prove it with a build: add one use of the generator to the
-     project, run `dotnet build` on it, quote the result, and remove the
-     probe. A .nuspec's `exclude="Analyzers"` is not proof: A prompt
-     once said a package keeps `[LoggerMessage]` out of a project, and on the
-     SDK in use it did not.
-   - A schema claim (what a migration does, a column's type, what a schema
-     test will find): apply the migration to a scratch database and run there
-     every query the spec's tests will run, quoting what each returns.
-     A column-classification query was once written but never run; it
-     would also have matched EF Core's `__ef_migrations_history`, which the
-     module keeps in the same schema. Run each probe command on its own: a
-     worktree-isolated session refuses a `docker exec … psql` joined to
-     another command. Start a session that must hold a lock while another
-     runs with `run_in_background`.
+3. The running system, read-only, per evidence.md and the config's
+   `## Evidence`. Record a baseline the fix will change: when the
+   behaviour can be seen on a deployed environment, a measured response, which
+   becomes an acceptance check that needs no sign-in; when it can't, or with no
+   `## Evidence`, a reproduction (input,
+   observed output, expected output), whose failing test is the plan's first
+   task, not research.
+4. Prove claims the design rests on before they go in the spec. For a
+   concurrency, source generator or analyzer, or schema claim, read that
+   section of <skill dir>/spec-probes.md ("Concurrency", "Source generator or
+   analyzer", "Schema") and run its probe. Read no section whose trigger does
+   not apply.
 
 ## Acceptance checks
-Every acceptance command the spec lists (a grep, `git merge-tree`, a test
-filter, a curl) is run on today's tree before it is written down. Write what it
-prints today, and what it must print once the change lands, and reason about
-whether the finished code would still match it. A first spec once
-required "merge-tree reports none" against a PR that already conflicted on the
-base, and a `\.StartAsync\(` grep that matched the very helper calls the spec
-meant to allow.
+Run every acceptance command the spec lists (a grep, `git merge-tree`, a test
+filter, a curl) on today's tree before writing it down. Write what it prints
+today and what it must print once the change lands, and reason about whether
+the finished code would still match it (e.g. a grep that also matches calls
+the spec allows).
 
 ## Design and spec
-REQUIRED SUB-SKILL: superpowers:brainstorming, for its approaches, design
-sections, spec format, self-review and builder check. Run its builder-check
-subagent with model <check model> and effort <check effort>. Its approval stops
-and its "no spec file" outcome are overridden by ship-issue: write one
-`Ruling:` line for each stop you skip. Draft 2–3 approaches with a
-recommendation, then apply this confidence test to each open choice: it
-FAILS when it widens access, changes money, nothing quotable points one way,
-it cannot be undone by a follow-up commit, or it is on ship-plan's "does not
-authorize" list. A choice that passes is a Ruling:. A choice that fails is a
-question: write the spec on your recommendation, mark each place that depends
-on it `[pending Q<n>: <question>]`, and return the question.
+REQUIRED SUB-SKILL (Row `standard`; a `small` row skips it, as "Row small"
+says): superpowers:brainstorming, for its approaches, written design and
+builder check (its subagent at model <check model>, effort <check effort>).
+ship-issue overrides its approval stops and "no spec file"
+outcome: write one `Ruling:` line per stop you skip.
+Draft 2–3 approaches with a recommendation, then apply this confidence test to
+each open choice: it FAILS when it widens access, changes money, nothing
+quotable points one way, a follow-up commit cannot undo it, or it is on
+ship-plan's "does not authorize" list. A choice that passes is a Ruling:. One
+that fails is a question: write the spec on your recommendation, mark each
+place that depends on it `[pending Q<n>: <question>]`, and return the
+question.
 
-Leave nothing as "the builder's call": each task's implementer sees only its
-own task, so a choice the spec leaves open is ruled on in the Plan stage
-without your research. Rule on each such choice (a name, the form of a test,
-a doc comment's text, a test's setup) with the same confidence test, or return
-it as a question. A spec once left four, and the Plan stage had to rule
-on every one.
+Recommend the approach with the least new code and mechanism, tests included,
+unless the issue or a quoted repo rule asks for more. Size tests to the
+change:
+- A configuration value is covered by the service's existing startup or
+  options validation, plus at most one test that starts the service in that
+  environment. No test reads deployment files (Helm values, pipeline YAML,
+  manifests).
+- No test parses a file format with code written for the test; a design that
+  needs one is the wrong approach.
+- When the tests would add more lines than the change they test, take the
+  simpler approach, or say in the spec why the extra size is needed.
+
+Leave nothing as "the builder's call" (the Plan stage would rule without your
+research): rule on each such choice (a name, a test's form or setup, a doc
+comment's text) with the same confidence test, or return it as a question.
 
 Always write a spec, even for a bounded change; the classification only sets
-its length. It holds the evidence, the decisions and who made them, what is
-out of scope, and acceptance with the baseline. Save it to <spec path>.
-When <spec path> is under <ledger dir> (held for a docs PR), the spec's
-location line says so, and its delivery section lists what the docs PR
-carries besides the spec (rows in the agent instructions, an ADR).
+its length. It holds the evidence, the decisions and who made them, out of
+scope, and acceptance with the baseline. Save it to <spec path>. When
+<spec path> is under <ledger dir> (held for a docs PR), the spec's location
+line says so, and its delivery section lists what the docs PR carries besides
+the spec (rows in the agent instructions, an ADR).
 
-When the spec suggests a commit order, check that each commit builds from what
-it and the commits before it add. Do this check yourself; the builder check
-does not. A spec once put a new constant after the commit whose test
-reads it.
+When the spec suggests a commit order, check yourself (the builder check does
+not) that each commit builds from what it and the commits before it add.
 
 ## Mode revise
 The spec exists at <spec path>. The user answered: <answers, numbered as the
-Q<n> markers>. Replace each answered marker with the decision, follow its
-consequences through the whole spec, and re-run brainstorming's self-review.
-Research again only where an answer opens new ground.
+Q<n> markers> (or, from I4 step 0, the base branch moved: <the commits>, and
+there is no marker to replace). Replace each answered marker with the
+decision, follow its consequences through the whole spec, and reread it as
+its builder would. Research again only where an answer opens new ground. When
+Row is `small`, then write or update the plan per "Row small: a light spec".
 
-Then compare the spec's facts about the branch and its dependencies (the base
-commit, which PRs it contains, merges it plans) with the ledger's Ruling:
-lines and with `git log --oneline origin/<base>..HEAD`. A ruling made after
-the spec was written (the branch was reset to `<base>` instead of merged, a
-dependency merged) changes those facts: update every place that states them,
-and list each change as a Ruling: in the report.
+Then check the spec's facts about the branch and its dependencies (base
+commit, PRs it contains, merges it plans) against the ledger's Ruling: lines
+and `git log --oneline origin/<base>..HEAD`. Where a ruling made after the
+spec changed them (branch reset to `<base>` instead of merged, a dependency
+merged), update every place that states them and list each change as a
+Ruling: in the report.
 
 ## Report
 End with exactly the stage report format in <skill dir>/stage-prompts.md,
@@ -170,9 +175,9 @@ section "Stage report", and nothing after it.
 ## Plan stage
 
 ```
-You are the Plan stage of a ship-issue run for <KEY-n>. You write the
-implementation plan from the spec alone: if the spec does not say something
-the plan needs, that is a gap in the spec, not something to remember.
+You are the Plan stage of a ship-issue run for <KEY-n>: write the
+implementation plan from the spec alone. What the plan needs and the spec
+does not say is a gap in the spec, not something to remember.
 
 Working directory: <checkout>. First run `pwd` and
 `git rev-parse --show-toplevel`; if either is not <checkout>, write nothing
@@ -184,39 +189,32 @@ Read first, in full: the spec <spec path>; the repo config
 <ledger dir>/ledger.md (settled: never reopen them). Read code as the plan
 needs it.
 
-REQUIRED SUB-SKILL: superpowers:writing-plans. Its plan review and its
-execution-method choice are overridden by ship-issue: the method is always
-ship-plan (subagent-driven-development). Write one Ruling: line for each stop
-you skip. Save to <checkout>/docs/superpowers/plans/<yyyy-mm-dd>-<KEY-n>-<slug>.md.
-In that file name, write the key the way the config's `Branch:` pattern writes
-it; titles, commit subjects and text keep the tracker's form, <KEY-n>.
+REQUIRED SUB-SKILL: superpowers:writing-plans. ship-issue overrides its plan
+review and execution-method choice (always ship-plan,
+subagent-driven-development): write one Ruling: line per stop you skip.
+Save to <plan path>. Titles, commit subjects and text keep the tracker's form
+of the key, <KEY-n>.
 
 Next to the skill's required header, the plan needs:
 - a Scenarios table for verify-and-fix: unit, local, and (when the config has
   `## Evidence`) deployed-environment rows, with the spec's baseline check;
 - a "Close-out notes for ship-plan" section: `Pre-flight questions: none` (or
   the few that remain), the follow-ups (the deploy), a PR title ending in
-  ` (<KEY-n>)`, and an empty `From ship-issue` block. The run fills that
-  block; leave it empty;
-- under each task heading, a line `Tier: <mechanical | standard | complex> —
+  ` (<KEY-n>)`, and an empty `From ship-issue` block (the run fills it);
+- under each task heading, `Tier: <mechanical | standard | complex> —
   <one-line reason>`, by the "Task tiers" rules under `## Models` in
-  <skill dir>/../ship-plan/config-format.md. It picks the model that
-  implements the task. When in doubt, standard;
-- every commit subject the plan names ends in ` (<KEY-n>)`, as the PR title
-  does, and no commit text puts a closing keyword (fix, fixes, closes,
-  resolves…) before the key: on GitHub Issues it closes the issue at merge (a spec once gave four of five without it);
+  <skill dir>/../ship-plan/config-format.md; when in doubt, standard;
+- every commit subject it names ends in ` (<KEY-n>)`, and no commit text puts
+  a closing keyword (fix, fixes, closes, resolves…) before the key;
 - never a PR number in text: none exists yet. Cite the issue key.
-- a claim about the existing code that a task relies on ("every X already
-  does Y", "no caller passes Z", "only A reads B") is checked with a
-  `git grep` before it is written, and the plan quotes the matches it
-  counted. A plan once said every payment-failure log line already carried
-  the error fields; several did not, and they surfaced across three review
-  rounds.
+- a claim about existing code a task relies on ("every X already does Y",
+  "no caller passes Z", "only A reads B") is checked with `git grep` before
+  it is written, and the plan quotes the matches it counted.
 
 A gap in the spec that the confidence test lets you rule on is a Ruling:. One
 it does not (it widens access, changes money, nothing quotable points one way,
-it cannot be undone by a follow-up commit) goes in the plan as
-`[needs a decision]` and in your report as a Parked: line.
+a follow-up commit cannot undo it) goes in the plan as `[needs a decision]`
+and in your report as a Parked: line.
 
 ## Report
 End with exactly the stage report format in <skill dir>/stage-prompts.md,
@@ -233,6 +231,7 @@ formats, and only these headings:
 File: <absolute path written, or "none">
 Status: <done | wrong checkout: … | blocked: <what, and the exact error>>
 Resize: <only from a small-row Spec stage that wrote no spec: standard — <reason>>
+Plan: <only from a small-row Spec stage that wrote the plan: its absolute path>
 Skills: <every skill you called with the Skill tool, comma-separated, or "none">
 ### Rulings
 Ruling: <decision> — <evidence quoted> — <cost if wrong>
@@ -242,6 +241,8 @@ Q<n>: <question> — <options, recommendation first> — <what it blocks>
 Parked: <question> — <options, recommendation> — <what it blocks>
 ### Lessons
 Lesson: <what> — <the step that would have caught it>
+(Only something a skill, prompt or repo file should change. A check that found
+nothing to change is not a lesson: leave it out.)
 ```
 
 An empty section keeps its heading and says `none`.

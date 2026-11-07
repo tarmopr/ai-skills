@@ -177,6 +177,38 @@ test('runIssue: implement child writes only the ship-plan ledger (no field on th
   assert.equal(it.status, 'done', events(root));
 });
 
+test('runIssue: once ship-plan\'s ledger names the issue, implement on starts ship-plan directly; before it, ship-issue', async () => {
+  const root = repo({ issue: [issueFirst(6)], tasks: 1 });
+  const log = join(root, 'child.json');
+  const ops = ledgerOps([
+    { file: PLAN_LEDGER, when: 'ship-issue skill', firstLine: planFirst('2') },
+    { file: PLAN_LEDGER, when: 'ship-plan skill', firstLine: planFirst('done') },
+  ]);
+  const it = await runIssue(ctxFor(root, { FAKE_CLAUDE: 'ok:RUNNER: phase-done', FAKE_CLAUDE_LEDGER_APPEND: ops, FAKE_CLAUDE_LOG: log }), item());
+  assert.equal(it.status, 'done', events(root));
+  assert.equal(it.sessions.length, 2);
+  const last = JSON.parse(readFileSync(log, 'utf8')).stdin;
+  assert.match(last, /^Invoke the ai-skills:ship-plan skill with the Skill tool, with the arguments "--session"\. .*phase implement/);
+  // a ship-plan ledger for another issue: ship-issue still
+  const other = repo({ issue: [issueFirst(6)], plan: [planFirst('2').replace(`Issue: ${KEY}`, 'Issue: BILL-8')], tasks: 1 });
+  const log2 = join(other, 'child.json');
+  await runIssue(ctxFor(other, { FAKE_CLAUDE: 'ok:RUNNER: blocked stop', FAKE_CLAUDE_LOG: log2 }), item());
+  assert.match(JSON.parse(readFileSync(log2, 'utf8')).stdin, /ai-skills:ship-issue skill/);
+});
+
+test('runIssue: a small issue\'s verify child takes the Phase: verify (small) row; a raised size the Phase: verify row', async () => {
+  const models = { ...MODELS, 'Phase: verify': { model: 'opus', effort: 'high' }, 'Phase: verify (small)': { model: 'sonnet', effort: 'medium' } };
+  const argvFor = async (sizes) => {
+    const root = repo({ issue: [issueFirst(6), ...sizes], plan: [planFirst('3')], tasks: 1 });
+    const log = join(root, 'child.json');
+    await runIssue(ctxFor(root, { FAKE_CLAUDE: 'ok:RUNNER: blocked stop', FAKE_CLAUDE_LOG: log }, { models }), item());
+    return JSON.parse(readFileSync(log, 'utf8')).argv.join(' ');
+  };
+  assert.match(await argvFor(['Size: small — "a typo"']), /--model sonnet --effort medium/);
+  assert.match(await argvFor(['Size: small — "a typo"', 'Size: standard — crosses modules']), /--model opus --effort high/);
+  assert.match(await argvFor([]), /--model opus --effort high/);
+});
+
 test('waiting: Waiting: batch line or Asked … — pending', () => {
   const batch = repo({ issue: [issueFirst(3), 'Asked: which db? — pending', 'Waiting: batch of 1, sent 2026-11-03; heads: none'] });
   assert.equal(phaseFromLedgers(batch, KEY).waiting, true);
@@ -548,6 +580,71 @@ test('runIssue: a child error that is not a usage limit -> blocked with the real
   const long = await runIssue(ctxFor(repo({ issue: [issueFirst(2)] }), { FAKE_CLAUDE: 'crash', FAKE_CLAUDE_STDERR: 'x'.repeat(900) }), item());
   assert.equal(long.status, 'blocked');
   assert.equal(long.reason.length, 300);
+});
+
+test('runIssue: a network error reruns the phase after each pause, then the run goes on', async () => {
+  const root = repo({ issue: [issueFirst(2)] });
+  const ops = ledgerOps([{ file: ISSUE, append: ['Asked: which db? — pending', 'Waiting: batch of 1, sent 2026-11-05; heads: none'] }]);
+  const waited = [];
+  const ctx = ctxFor(root, { FAKE_CLAUDE: 'ok:RUNNER: waiting', FAKE_CLAUDE_NETFAILS: `2:${join(root, 'netfails')}`, FAKE_CLAUDE_LEDGER_APPEND: ops },
+    { sleep: async (ms) => waited.push(ms) });
+  const it = await runIssue(ctx, item());
+  assert.equal(it.status, 'waiting', events(root));
+  assert.deepEqual(waited, [60000, 300000]);
+  assert.equal(it.sessions.length, 3);
+  assert.match(events(root), / BILL-7 spec progress network error, retry 1 of 3 in 1 min: .*ECONNREFUSED/);
+  assert.match(events(root), / BILL-7 spec progress network error, retry 2 of 3 in 5 min: /);
+  assert.equal(ctx.stop, undefined);
+});
+
+test('runIssue: a network error past the last retry -> blocked, run stopped', async () => {
+  const root = repo({ issue: [issueFirst(2)] });
+  const waited = [];
+  const ctx = ctxFor(root, { FAKE_CLAUDE: 'ok:RUNNER: phase-done', FAKE_CLAUDE_NETFAILS: `9:${join(root, 'netfails')}` },
+    { sleep: async (ms) => waited.push(ms), netRetryMinutes: [1, 2] });
+  const it = await runIssue(ctx, item());
+  assert.equal(it.status, 'blocked');
+  assert.match(it.reason, /ECONNREFUSED/);
+  assert.deepEqual(waited, [60000, 120000]);
+  assert.equal(it.sessions.length, 3);
+  assert.match(ctx.stop, /ECONNREFUSED/);
+  assert.match(events(root), / BILL-7 spec blocked .*ECONNREFUSED.*; run stopped/);
+});
+
+test('runIssue: the network retries count failures in a row; a child that gets through resets them', async () => {
+  const root = repo({ issue: [issueFirst(2)] });
+  // spec: one failure, then through to I4; plan: one failure, then through to waiting
+  const ops = ledgerOps([
+    { file: ISSUE, when: 'phase spec', firstLine: issueFirst(4) },
+    { file: ISSUE, when: 'phase plan', append: ['Asked: which db? — pending', 'Waiting: batch of 1, sent 2026-11-05; heads: none'] },
+  ]);
+  const waited = [];
+  // runs 1 (spec) and 3 (plan) fail; 2 and 4 get through
+  const ctx = ctxFor(root, { FAKE_CLAUDE: 'ok:RUNNER: phase-done', FAKE_CLAUDE_LEDGER_APPEND: ops, FAKE_CLAUDE_NETFAILS: `1,3:${join(root, 'netfails')}` },
+    { sleep: async (ms) => waited.push(ms), netRetryMinutes: [1] });
+  const it = await runIssue(ctx, item());
+  // with one retry allowed, the plan phase's failure is retried too: the spec's success reset the count
+  assert.equal(it.status, 'waiting', events(root));
+  assert.deepEqual(waited, [60000, 60000]);
+});
+
+test('runIssue: a spec child that moves the phase on but reports blocked stays blocked, never yields', async () => {
+  const root = repo({ issue: [issueFirst(2)] });
+  const ops = ledgerOps([{ file: ISSUE, firstLine: issueFirst(6) }]);
+  const it = await runIssue(ctxFor(root, { FAKE_CLAUDE: 'ok:RUNNER: blocked tracker write refused', FAKE_CLAUDE_LEDGER_APPEND: ops },
+    { yieldAfterSpec: () => true }), item());
+  assert.deepEqual([it.status, it.reason], ['blocked', 'tracker write refused']);
+});
+
+test('runIssue: yieldAfterSpec true after a spec -> queued at the next phase; false -> the item goes on', async () => {
+  const ops = ledgerOps([{ file: ISSUE, when: 'phase spec', firstLine: issueFirst(4) },
+    { file: ISSUE, when: 'phase plan', append: ['Asked: x? — pending', 'Waiting: batch of 1, sent 2026-11-05; heads: none'] }]);
+  const root = repo({ issue: [issueFirst(2)] });
+  const y = await runIssue(ctxFor(root, { FAKE_CLAUDE: 'ok:RUNNER: phase-done', FAKE_CLAUDE_LEDGER_APPEND: ops }, { yieldAfterSpec: () => true }), item());
+  assert.deepEqual([y.status, y.phase, y.sessions.length], ['queued', 'plan', 1]);
+  const root2 = repo({ issue: [issueFirst(2)] });
+  const n = await runIssue(ctxFor(root2, { FAKE_CLAUDE: 'ok:RUNNER: phase-done', FAKE_CLAUDE_LEDGER_APPEND: ops }, { yieldAfterSpec: () => false }), item());
+  assert.deepEqual([n.status, n.sessions.length], ['waiting', 2]);
 });
 
 test('runIssue: a child silent for the idle timeout -> blocked, child idle', async () => {

@@ -53,8 +53,9 @@ The permission mode does not prompt.
    description: "Open /plans, click Edit: the button reads 'Sumbit'.
    Expected: 'Save'. The label is in `src/pages/Plans.tsx`." What line does
    the ledger get about the issue's size? Then give the exact Agent call that
-   dispatches the Spec stage (`subagent_type`, `model`, `effort`), and the
-   `model` and `effort` the Spec stage's builder-check subagent gets.
+   dispatches the Spec stage (`subagent_type`, `model`, `effort`), whether
+   the Spec stage runs a builder-check subagent (and at which `model` and
+   `effort`), and whether I4 dispatches a Plan stage.
 2. The same for `/ship-issue BILL-611`, "Add a tenant-scoped CSV export of
    invoices", whose description asks for a new `GET /tenants/<id>/invoices.csv`
    endpoint for tenant admins.
@@ -182,7 +183,7 @@ No run of BILL-701 has started before.
 
 **S18a**
 
-- Q1: the ledger gets `Size: small — <reason>`. The Spec stage is an Agent call with `subagent_type: general-purpose`, `model: sonnet`, `effort: high`. The builder check gets `sonnet` and `high`.
+- Q1: the ledger gets `Size: small — <reason>`. The Spec stage is an Agent call with `subagent_type: general-purpose`, `model: sonnet`, `effort: high`, at `Row: small`: it calls no brainstorming skill and runs no builder-check subagent, and with no question pending its report names a `Plan:` file, so I4 dispatches no Plan stage.
 - Q2: `Size: standard — <reason>`. The Spec stage has `model: opus`, `effort: high`. The builder check gets `sonnet` and `high`.
 - Q3: the ledger gets `Size: standard — the label key is shared by billing, admin and onboarding` (or that reason, quoted). The next dispatch is the Spec stage again, mode `new`, `model: opus`, `effort: high`.
 
