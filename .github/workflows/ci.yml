@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # `ls` fails when a glob matches nothing; `node --test` alone would pass with 0 tests.
+      - name: Unit tests
+        run: |
+          ls hooks/*.test.mjs skills/*/scripts/*.test.mjs scripts/*.test.mjs > /dev/null
+          node --test 'hooks/*.test.mjs' 'skills/*/scripts/*.test.mjs' 'scripts/*.test.mjs'
+
+      # C4's private patterns are not in this public repo, so CI checks staging host names only.
+      - name: Skill shape check
+        run: node scripts/check-skills.mjs
+
+      # The same check as the `Version bump` gate in .claude/ship-plan.md.
+      - name: Version bump
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: origin/${{ github.base_ref }}
+        run: node scripts/check-version-bump.mjs "$BASE"

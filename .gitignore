@@ -4,3 +4,6 @@
 docs/superpowers/plans/
 docs/superpowers/specs/
 .superpowers/
+
+# Private C4 patterns for scripts/check-skills.mjs
+.claude/check-skills-private.txt

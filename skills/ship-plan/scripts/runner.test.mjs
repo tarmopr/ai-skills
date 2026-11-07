@@ -1135,7 +1135,7 @@ test('a runner error before the item starts: that item blocked, the queued ones 
   const root = repo();
   atVerify(root, 'A-1', 'A-2');
   // the issue ledger as a folder: reading it fails with EISDIR (a ship-plan ledger path that is a
-  // folder is skipped by the lookup since the FOR-528 fix, so it no longer serves here)
+  // folder is skipped by the lookup since the ledger-lookup fix, so it no longer serves here)
   const il = join(root, issueLedger('A-1'));
   execFileSync('rm', [il]);
   mkdirSync(il);
