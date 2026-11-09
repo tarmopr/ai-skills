@@ -162,7 +162,7 @@ None. The key in the branch name and the PR title links it on `github`; see Inte
 `executeWrite` with `createJiraIssueLink` and the inputs `{linkType, inwardIssue, outwardIssue}`; `type` is refused ("linkType: Required"). Both skills pre-approve `executeWrite` for this call. The pre-approval covers every operation `executeWrite` can run, so use it for `createJiraIssueLink` only; any other write operation is outside the skills' authorization. A refusal is recorded, not retried another way.
 
 - Related issue: `linkType: "Relates"`, `inwardIssue: <new key>`, `outwardIssue: <related key>`.
-- An answer that makes this issue wait for another issue or PR ("wait for #<n>", "after ENG-123 merges"): `linkType: "Blocks"`, the other issue as the blocker. A PR without its own issue: link the issue its branch or title names.
+- An answer that makes this issue wait for another issue or PR ("wait for #<n>", "after ENG-123 merges"): `linkType: "Blocks"`, `inwardIssue: <the blocker>`, `outwardIssue: <the issue that waits>`; it reads "inwardIssue blocks outwardIssue", the reverse of what the names suggest. Fetch the waiting issue afterwards: its link must say "is blocked by" the blocker. Wrong way round: record it in the report for the user to remove (no operation deletes a link) and create the right one. A PR without its own issue: link the issue its branch or title names.
 - A follow-up: link it to the run issue.
 
 ## Find an existing follow-up

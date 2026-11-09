@@ -31,3 +31,7 @@ Why the `Tier:` line: It picks the model that implements the task.
 Why no closing keyword before the key: on GitHub Issues it closes the issue at merge (a spec once gave four of five without it).
 
 Why existing-code claims are grepped: A plan once said every payment-failure log line already carried the error fields; several did not, and they surfaced across three review rounds.
+
+## Stage report
+
+Why the stage reads the tails of its files: a subagent once ended a written file with a stray `</content></invoke>`; nothing read the file's end, and the tag was committed.
