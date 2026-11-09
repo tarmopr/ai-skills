@@ -223,6 +223,10 @@ section "Stage report", and nothing after it.
 
 ## Stage report
 
+Before it, read the last 5 lines of every file you wrote (`tail -n 5 <file>`)
+and delete any tool-call markup that leaked into it (`</content>`,
+`</invoke>`): a stray tag ends up committed.
+
 The last thing a stage writes. One line per item, in ship-plan's ledger
 formats, and only these headings:
 

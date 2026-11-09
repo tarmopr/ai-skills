@@ -16,7 +16,7 @@ Your login: `gh api user --jq .login --hostname <host>` (see *Repo identity* for
 
 ## Repo identity
 
-`<o>/<r>` is `gh repo view --json nameWithOwner --jq .nameWithOwner`. `<host>` is the host of `gh repo view --json url --jq .url` (`github.com`, or a GitHub Enterprise host). Append `--hostname <host>` to every `gh api` call, after its other arguments: `gh api` does not read the host from the git remote the way `gh pr` does, so on GitHub Enterprise it asks `github.com` and answers 404, or another account's login.
+`<o>/<r>` is `gh repo view --json nameWithOwner --jq .nameWithOwner`. `<host>` is the host of `gh repo view --json url --jq .url` (`github.com`, or a GitHub Enterprise host). Append `--hostname <host>` to every `gh api` call, after its other arguments: `gh api` does not read the host from the git remote the way `gh pr` does, so on GitHub Enterprise it asks `github.com` and answers 404, or another account's login. `gh search` has no `--hostname` and asks `github.com` too: prefix it with `GH_HOST=<host>` (`GH_HOST=<host> gh search code <terms> --owner <o>`).
 
 Run each once.
 
