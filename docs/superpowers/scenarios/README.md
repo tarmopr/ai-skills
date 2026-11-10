@@ -34,18 +34,14 @@ files' shape. These scenarios pin behaviour.
 ## How to run one
 
 1. Pick `SKILLDIR`: the folder that holds the skill folders
-   (`ship-plan/`, `ship-issue/`, `verify-and-fix/`). For the new layout it is
-   `<this repo>/skills`. For the S1 baseline it
-   is a copy of the `skills/` folder as it was before the change, in a scratch
-   folder.
+   (`ship-plan/`, `ship-issue/`, `verify-and-fix/`): `<this repo>/skills`.
 2. Dispatch one fresh `general-purpose` subagent per prompt. Its prompt is
    the text of the scenario's `## Prompt` section (S7 has five, `## Prompt
    S7a` … `## Prompt S7e`, each its own run; S17 has four, and pastes its shared repo block where a prompt says **[The repo]**), with every `SKILLDIR` replaced by
    the path from step 1, followed by the whole **Answer format** section below.
    Never give it the **Pass if** lines, this README's table, or the spec and
    plan: a runner that knows what is being tested answers to the test.
-3. Save its answer verbatim to `results/<id>.md` (`baseline/<id>.md` for the
-   baseline), with one change: replace every occurrence of the step 1 path
+3. Save its answer verbatim to `results/<id>.md`, with one change: replace every occurrence of the step 1 path
    with the literal `SKILLDIR` first. Saved answers are published, and they
    must hold no home path.
 4. Grade the answer against the scenario's `## Pass if` lines. Every line must

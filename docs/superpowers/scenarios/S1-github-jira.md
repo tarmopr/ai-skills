@@ -1,9 +1,9 @@
 # S1: GitHub with Jira, no `Host:` or `Tracker:` (regression)
 
 A repo that uses `ship-plan` today, with a config written before `Host:` and
-`Tracker:` existed. One full `ship-plan` run, pre-flight to close-out. Its
-answers are compared with the answers the skills gave before the change
-(`baseline/S1-github-jira.md`), command for command.
+`Tracker:` existed. One full `ship-plan` run, pre-flight to close-out. Every
+host and tracker step must come out as the GitHub host and Jira tracker files
+give it.
 
 ## Prompt
 
@@ -119,10 +119,11 @@ Answer, in order, with the exact commands and tool calls:
 
 ## Pass if
 
-- Every command and tool call in answers 2–16 equals the one in
-  `baseline/S1-github-jira.md`, item for item: same command, same flags, same
-  tool, same parameters. Wording, order of explanation and placeholder names
-  may differ.
+- Every command and tool call in answers 2–16 is the form that
+  `ship-plan/hosts/github.md` (host operations) and `ship-plan/trackers/jira.md`
+  (tracker operations) give for that operation, with the flags they give: `gh`
+  commands for the host, Atlassian MCP tools for the tracker. No `az` command
+  and no Linear tool appears.
 - Answers 3 and 17: no question is asked (no tracker question, no issue
   question, no Slack question), and `.claude/ship-plan.md` is not changed (no
   `Host:` or `Tracker:` line is added).
