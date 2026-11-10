@@ -11,7 +11,7 @@ files' shape. These scenarios pin behaviour.
 
 | Id | File | What it pins |
 |---|---|---|
-| S1 | [S1-github-jira.md](S1-github-jira.md) | GitHub with Jira and no `Host:`/`Tracker:`: the same commands as before the change (regression) |
+| S1 | [S1-github-jira.md](S1-github-jira.md) | GitHub with Jira and no `Host:`/`Tracker:`: the GitHub host's and Jira tracker's commands, no question asked |
 | S2 | [S2-ghe-no-tracker.md](S2-ghe-no-tracker.md) | GitHub Enterprise with `Tracker: none` |
 | S3 | [S3-azure-linear.md](S3-azure-linear.md) | Azure DevOps with Linear, no `.github/` folder, a long PR body |
 | S4 | [S4-azure-jira.md](S4-azure-jira.md) | Azure DevOps with Jira: how the PR reaches the issue |
