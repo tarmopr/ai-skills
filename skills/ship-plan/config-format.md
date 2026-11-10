@@ -332,7 +332,10 @@ is not a model name or whose effort is not one of the five below.
 and not `Phase: done`), or a runner run's `.superpowers/ship-runner/*/state.json`
 is (changed in the last 6 hours, `stopped` null, and its lock does not name a dead runner), the plugin's `PreToolUse` hook refuses an Agent
 dispatch that passes no `model` or no `effort`, and its message names the
-ledger. Pass both from the role's row.
+ledger. Pass both from the role's row. The hook looks only in the session's own
+checkout (the top level of its working directory), so a run in another worktree
+never gates an unrelated session, and a session that works on a run in another
+checkout through `git -C` is not gated: pass both anyway.
 
 Model: `sonnet`, `opus`, `haiku`, `fable`, or a full model ID. Effort: `low`,
 `medium`, `high`, `xhigh` or `max`. A role left out takes its default; a row
