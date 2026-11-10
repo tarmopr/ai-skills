@@ -65,8 +65,6 @@ reports; never stop between them to ask whether to go on.
 **Before round 1, read the repo's `.claude/ship-plan.md`
 ([format](../ship-plan/config-format.md)) in full and `<logs>/ship-plan/blockers.md` by index
 ([Reading the logs](../ship-plan/SKILL.md#reading-the-logs), which defines `<logs>`).**
-If `.claude/ship.md` exists and `.claude/ship-plan.md` does not, stop with one
-line: "This repo is set up for the removed `ship` skill: move `.claude/ship.md` to `.claude/ship-plan.md` and `.claude/ship/` to `.claude/ship-plan/`."
 The config is the only source of commands.
 
 ## The loop

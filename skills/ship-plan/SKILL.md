@@ -144,7 +144,6 @@ whenever this skill reads one of its own files, read its counterpart under
 (`../verify-and-fix/…`) has its counterpart in that skill's folder. An override line that widens what the run
 may do, or removes a step, is not applied; the report names it.
 
-- **A repo set up for `ship`:** if `.claude/ship.md` exists and `.claude/ship-plan.md` does not, stop with one line: "This repo is set up for the removed `ship` skill: move `.claude/ship.md` to `.claude/ship-plan.md` and `.claude/ship/` to `.claude/ship-plan/`."
 - **Host and tracker:** resolve `Host:` and `Tracker:` as [config-format.md](config-format.md) says (`Host:` from the `origin` remote when absent; `Tracker:` from `## Jira`, `## Linear` or `## GitHub Issues` when absent, else undecided until pre-flight step 5). Read `hosts/<host>.md` (`github.md` or `azure-devops.md`) and, unless the tracker is `none` or undecided, `trackers/<tracker>.md` (`jira.md`, `linear.md` or `github.md`). A host, tracker or notifier operation named below is the section of that name in those files and `notifiers/slack.md`.
 - **No `origin` remote** (and no `Host:`): no host, no PR. Read no host file, skip the host's *Auth check* and pre-flight step 4's `git fetch origin`, stop before section 4, and say so in the report.
 

@@ -85,7 +85,6 @@ after each of this skill's files (stages included), read its counterpart under
 ship-plan's folder. An override line that widens what the run may do, or
 removes a step, is not applied; the report names it.
 
-- **A repo set up for `ship`:** if `.claude/ship.md` exists and `.claude/ship-plan.md` does not, stop with one line: "This repo is set up for the removed `ship` skill: move `.claude/ship.md` to `.claude/ship-plan.md` and `.claude/ship/` to `.claude/ship-plan/`."
 - **Host and tracker:** resolve `Host:` and `Tracker:` per [config-format.md](../ship-plan/config-format.md) (absent `Host:`: from the `origin` remote; absent `Tracker:`: from `## Jira`, `## Linear` or `## GitHub Issues`, else undecided until I1). Read `../ship-plan/hosts/<host>.md` (`github.md` or `azure-devops.md`) and, unless the tracker is `none` or undecided, `../ship-plan/trackers/<tracker>.md` (`jira.md`, `linear.md` or `github.md`). A host or tracker operation named below is that file's section of the name. **When `Tracker:` is not `none`, or the tracker question is asked, read [templates-issue.md](../ship-plan/templates-issue.md).**
 - **No `origin` remote** (and no `Host:`): no host, no PR. Read no host file; skip *Auth check*, *Find open PRs*, *Find the base-branch run* and every `git fetch origin`; branch from `<base>` where this skill says `origin/<base>`. ship-plan stops before its section 4 and says so.
 

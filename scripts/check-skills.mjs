@@ -152,7 +152,6 @@ const KINDS = [
   ['ship-plan/trackers/jira.md', 'ship-plan/trackers/linear.md', 'ship-plan/trackers/github.md'],
 ];
 
-const MOVE_LINE = 'move `.claude/ship.md` to `.claude/ship-plan.md`';
 
 // C8: phrases that pin decisions from the spec and plan.
 // Ship runner (2026-11-03): what skills/ship-plan/scripts/runner*.mjs parses from a child.
@@ -163,7 +162,7 @@ const RUNNER_PHRASES = ['printenv SHIP_RUNNER', 'printenv SHIP_RUNNER_KEY', 'sta
 const SKILL_RUNNER = ['## Runner mode (ship-runner)', 'printenv SHIP_RUNNER', 'runner-child.md)', '[modes.md](modes.md'];
 const PHRASES = {
   'ship-plan/SKILL.md': [
-    'not pre-approved', MOVE_LINE,
+    'not pre-approved',
     // Repo overrides and `## Allowed`: post-deploy validation, and this skill's override folder.
     '## 6b. Validate the deploy', '.claude/ship-plan/ship-plan/',
     // Ship runner (2026-11-03): the phrases of moved sections are pinned in their phase files below.
@@ -182,10 +181,10 @@ const PHRASES = {
   'ship-plan/phase-verify.md': ['no PR CI for this diff'],
   'ship-plan/phase-merge.md': ['read [red-base.md](red-base.md)', '## 6b. Validate the deploy'],
   'ship-plan/phase-close.md': ['read [docs-pr.md](docs-pr.md)'],
-  'verify-and-fix/SKILL.md': ['`jira.md`, `linear.md` or `github.md`', 'closing keyword', MOVE_LINE, 'read [review-comments.md](review-comments.md)', '.claude/ship-plan/verify-and-fix/',
+  'verify-and-fix/SKILL.md': ['`jira.md`, `linear.md` or `github.md`', 'closing keyword', 'read [review-comments.md](review-comments.md)', '.claude/ship-plan/verify-and-fix/',
     ...SKILL_RUNNER, 'Done: <HEAD sha>'],
   'ship-issue/phase-spec.md': ['jira, linear, github or none', 'as file names write it'],
-  'ship-issue/SKILL.md': [MOVE_LINE, ...SKILL_RUNNER, 'read [worktree.md](worktree.md)', '.claude/ship-plan/ship-issue/',
+  'ship-issue/SKILL.md': [...SKILL_RUNNER, 'read [worktree.md](worktree.md)', '.claude/ship-plan/ship-issue/',
     'started by ship-queue as its child session', 'printenv SHIP_QUEUE_PARENT'],
   'ship-plan/config-format.md': [
     'A missing `.github/` folder', 'Tracker:', 'Host:', 'read [config-drafting.md](config-drafting.md)',

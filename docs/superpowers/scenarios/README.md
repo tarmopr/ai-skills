@@ -19,7 +19,6 @@ files' shape. These scenarios pin behaviour.
 | S6 | [S6-jira-no-tracker-field.md](S6-jira-no-tracker-field.md) | `## Jira` without `Tracker:`: no new question |
 | S7 | [S7-loaded-on-demand.md](S7-loaded-on-demand.md) | Five runs, one per file read only on a condition |
 | S8 | [S8-slack-rereview.md](S8-slack-rereview.md) | Slack re-review reply and merged reaction, across a resume |
-| S9 | [S9-ship-repo.md](S9-ship-repo.md) | A repo still set up for the removed `ship` skill |
 | S10 | [S10-verify-standalone.md](S10-verify-standalone.md) | `verify-and-fix` on a branch with no PR |
 | S11 | [S11-override-files.md](S11-override-files.md) | A repo override file: read right after its shared file and followed; a line that widens is not applied |
 | S12 | [S12-allowed-merge-deploys.md](S12-allowed-merge-deploys.md) | Four runs: `Merge deploys to:` with and without `## Allowed` `Merge that deploys to:`, a production-like name, a fix-forward PR |
