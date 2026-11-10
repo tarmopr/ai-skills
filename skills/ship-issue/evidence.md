@@ -9,8 +9,7 @@ list.
 Only from the repo config's `## Evidence` section (format in ship-plan's
 [config-format.md](../ship-plan/config-format.md)). Each row names a source, the
 environment, and the exact read-only command or tool. **A source that is not
-in the config is not used**, even if a tool for it is connected: you do not
-know which environment it points at, or whether it is read-only.
+in the config is not used**, even if a tool for it is connected.
 
 `## Evidence` absent: the research is code and history only, and the baseline
 is a failing test or a local reproduction.

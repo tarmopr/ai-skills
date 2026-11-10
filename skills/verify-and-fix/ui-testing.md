@@ -1,8 +1,6 @@
 # UI scenario testing in Chrome
 
-Unit and integration tests prove the pieces. They do not prove that a person
-clicking through the app gets the right result: suites pass and flows still
-break in the UI. For any change a user can see or trigger, **you drive the
+For any change a user can see or trigger, **you drive the
 scenarios yourself** in Chrome, fix what breaks, and drive them again. Do not
 hand the testing to the user.
 
@@ -28,10 +26,10 @@ Follow its `Notes:` as part of every scenario: a preflight, test-mode values,
 what cannot run at `URL:`, the languages, extra failure paths.
 
 - **A local URL** (`localhost`, `127.0.0.1`): sign in yourself, only with test users from the config's `Sign-in:` source.
-- **A hosted URL** (anything else): the user signs in, not you. A browser holds one session per origin, so test one role at a time. Give the user the whole role list, in order, up front, and ask them to sign in as the next role when you finish one. Reuse each session. Under `ship-plan`'s section 6b, the run never waits for a sign-in.
+- **A hosted URL** (anything else): the user signs in, not you. Test one role at a time. Give the user the whole role list, in order, up front, and ask them to sign in as the next role when you finish one. Reuse each session. Under `ship-plan`'s section 6b, the run never waits for a sign-in.
   A hosted URL is a shared environment: only read-only scenarios run there, unless the config's `## UI testing` says `Writes allowed: yes`. Without it, a scenario that creates, edits or deletes anything is reported as pending, not run.
 - **`Hosted URL:`**, when set: a scenario that cannot run at `URL:` is **pending after merge**, and runs there after the merge under the hosted-URL rules above.
-  - You sign in there yourself only when `## Allowed` has `Sign in on Hosted URL: test users` ([format](../ship-plan/config-format.md#-allowed)), and only with the `Sign-in:` source's users. Otherwise the user signs in. These scenarios run after the merge, and the checkout's `## Allowed` is the base branch's, because ship-plan's section 5, step 3 left any PR that touched `## Allowed` to a person's merge.
+  - You sign in there yourself only when `## Allowed` has `Sign in on Hosted URL: test users` ([format](../ship-plan/config-format.md#-allowed)), and only with the `Sign-in:` source's users. Otherwise the user signs in.
   - If a tool or safety rule refuses that sign-in, try no other route: list the scenario under Not tested.
 
 No `## UI testing` section: no scenarios. User-visible changes are reported as
@@ -42,8 +40,8 @@ not tested.
 - Load all the browser tools in one ToolSearch call. Open a **new** tab (`tabs_create_mcp`), and close it when you finish.
 - Judge by the DOM and the network, not by a screenshot alone. Read the page with `get_page_text` / `find`, read errors with `read_console_messages` (`onlyErrors: true`) and API responses with `read_network_requests` (`urlPattern`). A green toast over a 403 is a failed scenario.
 - Record a GIF (`gif_creator`) of any multi-step flow that fails, and of the final passing run of each multi-step scenario. Give the file a meaningful name.
-- Click through `find` refs or `javascript_tool` (`el.click()`). Screenshot coordinates can miss.
-- Never trigger a native `alert` / `confirm`: it freezes the extension. If one comes up, stop and tell the user.
+- Click through `find` refs or `javascript_tool` (`el.click()`), not screenshot coordinates.
+- Never trigger a native `alert` / `confirm`. If one comes up, stop and tell the user.
 - Only no-op or throwaway writes on data you did not create. Test deletes on rows the scenario created itself. On a hosted URL, no writes at all unless `Writes allowed: yes` (section 2).
 
 ## 4. When a scenario fails
