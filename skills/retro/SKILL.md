@@ -22,7 +22,7 @@ Each candidate carries one quoted piece of evidence: a message, an error line, a
 | a rule for every session and repo | `~/.claude/CLAUDE.md` or a file it imports | a direct edit |
 | a convention of this repo | the repo's `AGENTS.md` or `CLAUDE.md` | the repo's rule for docs changes |
 | a recurring blocker or a standing answer for a run skill | that skill's log in the repo (e.g. `.claude/ship-plan/blockers.md`), or in the local store under `## Logs` `Location: local` | that skill's lessons PR; under `local`, an edit of the store by section 8's log rules ([phase-close.md](../ship-plan/phase-close.md)) |
-| a missing or wrong step in a skill | the skill's source (`readlink -f ~/.claude/skills/<name>`) | that repo's workflow: its README or a memory |
+| a missing or wrong step in a skill | the skill's source repo (for a plugin skill, the plugin's repo, never its installed cache) | that repo's workflow: its README or a memory |
 | a check that can run the same way every time | a hook or a permission in settings | the `update-config` skill |
 | a fact about the user, the project or an outside system | memory | the memory rules: update a file before adding one |
 | a defect in product code | a ticket | none: list it under "Not a tool change" |
