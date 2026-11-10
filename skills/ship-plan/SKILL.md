@@ -158,7 +158,6 @@ Invoking the skill is the user's standing authorization, for this run, to:
 - in the `## Slack` channel only, never another: post a review request per PR it opens (section 4R, step 2), reply in that post's thread asking for a re-review (section 4R, step 3), add the `pr-merged` reaction to it (section 5);
 - read and write the run's issue (found or chosen in section 0, step 5): create it where the user chose, link it to the related issue the user chose, assign, set status, append to its description, comment;
 - each issue the plan's `Tickets:` line lists (section 0, step 5): read, assign, set status as section 1 and section 7, step 1 say, comment. Nothing else: no description edit, no link, no other issue;
-- open, push, merge the docs branch a `Docs PR:` line names (section 7, step 2): the spec `ship-issue` kept out of the code PR, and the docs changes the spec lists;
 - open, push, merge the docs-only lessons branch (section 8).
 
 Not authorized; each goes into the question batch (section 3), never done on your own:
@@ -219,7 +218,7 @@ digraph ship {
   wait [label="Wait 10 min, rerun once"];
   fix [label="Fix-forward branch: debug, test, fix" shape=box];
   deploy [label="6b Validate the deploy" shape=box];
-  close [label="7 Close out: tracker or PR comment, docs PR, lessons, report, one question batch" shape=doublecircle];
+  close [label="7 Close out: tracker or PR comment, lessons, report, one question batch" shape=doublecircle];
 
   pre -> branch -> impl -> simp -> verify;
   verify -> pr [label="clean"];
@@ -380,8 +379,7 @@ never the plan path, the issue key or answers.
 | "Approve it / resolve their thread so it can merge" | Never. Approval and a person's thread belong to the reviewer. |
 | "Run issue done, close its sibling sub-tasks too" | Only `Tickets:` issues, each once its own tasks are committed and a commit carries its key. |
 | "The tracker already says done" | Done means the config's `Done means:`. Check the base-branch run first. |
-| "The PR is merged, so I'm done" | Done when the base branch is green, the closing comment written, the docs PR open (when the ledger has a `Docs PR:` line), and lessons recorded. |
-| "The spec can go in with a later docs change" | A held spec lands only through section 7, step 2: open the docs PR at close-out. |
+| "The PR is merged, so I'm done" | Done when the base branch is green, the closing comment written, and lessons recorded. |
 | "Base branch failed, probably flaky, rerun until green" | Only a failure listed as transient gets a rerun, at most 3. With `Merge deploys to:`, none (a rerun redeploys), unless `Rerun a transient deploy failure on:` covers a runner or network failure: one, after a 10-minute wait; a second failure escalates. A billing refusal escalates at once. Anything else gets a root cause. |
 | "Push the one-line fix straight to the base branch" | Never. A fix branch goes through the same loop. |
 | "The ruling is obvious, no need to write it down" | An unrecorded ruling is a secret decision. Write the ledger line. |

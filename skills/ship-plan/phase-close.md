@@ -12,24 +12,23 @@ Sections 7 and 8 of [ship-plan](SKILL.md). Everything in SKILL.md applies here.
    - **Base branch red:** merged, and the base branch still red, or a validation failure (section 6b) still unfixed. "Issue comment: base branch red" or "PR comment: base branch red"; the issue stays in the start status.
    - **Awaiting review:** the PR is open, green, and every comment so far is handled, but it waits on reviewers (section 4R, step 5). "Issue comment: awaiting review"; without an issue, the report only (the PR shows its own state). The issue stays in its status. The report says how to resume.
    - **Not merged:** the PR is still open for another reason (verify not clean, checks never registered, the base branch red before merge, a refused merge, a deploy `## Allowed` does not cover, 5 review rounds), or no PR exists. "Issue comment: not merged" or "PR comment: not merged"; with no PR and no issue, the report is the only record.
-2. **When the ledger has a `Docs PR:` line and the code PR merged, read [docs-pr.md](docs-pr.md).**
-3. **A next part:** when the outcome is Done and the plan names a next part (a later plan or issue), write a handoff for it as the ledger section says, but as `HANDOFF-next.md` when the `handoff` skill is unavailable, so it never overwrites the session-end `HANDOFF.md`. Its resume line is not the ledger section's: it starts that part: `/ship-plan <its plan path>`, or `/ship-issue <its key>` when it has no plan yet.
-4. **Lessons** (section 8), except under "Awaiting review" and `Phase: 5 awaiting merge`: they wait for the run's final close-out.
-5. **Report,** concise, in this order, once every background prerequisite still running is stopped (TaskStop):
+2. **A next part:** when the outcome is Done and the plan names a next part (a later plan or issue), write a handoff for it as the ledger section says, but as `HANDOFF-next.md` when the `handoff` skill is unavailable, so it never overwrites the session-end `HANDOFF.md`. Its resume line is not the ledger section's: it starts that part: `/ship-plan <its plan path>`, or `/ship-issue <its key>` when it has no plan yet.
+3. **Lessons** (section 8), except under "Awaiting review" and `Phase: 5 awaiting merge`: they wait for the run's final close-out.
+4. **Report,** concise, in this order, once every background prerequisite still running is stopped (TaskStop):
    1. **Needs you:** the batch.
-   2. Status: base branch green or red (or "no CI"), PR, merge SHA, the docs PR, the lessons PR (and why it stays open, if it does) or, under `## Logs` `Location: local`, the local store's path, the issue link if any, and the ledger's `Allowed:` lines (section 0, step 7).
+   2. Status: base branch green or red (or "no CI"), PR, merge SHA, the lessons PR (and why it stays open, if it does) or, under `## Logs` `Location: local`, the local store's path, the issue link if any, and the ledger's `Allowed:` lines (section 0, step 7).
    3. Gate and scenario tables (from `verify-and-fix`), the `Simplify:` line, every unknown config section, and every override line not applied.
    4. **Decisions made for you:** every `Ruling:`, each with what it costs if wrong.
    5. **Not tested:** what, and why.
    6. The lessons recorded, the ledger's `Removed:` lines with section 8's git-history line, and what section 8 proposes: each proposed shared-skill change, `## Allowed` line and loosening config line, with its exact text, and under `local` each tracked lesson with its target file.
-6. **Mark the ledger** `Phase: done` when the outcome is Done, and if this run was started by `/loop`, end the report with "Done: stop the `/loop`." Every other outcome keeps the run open, so a later `/ship-plan` resumes it.
-7. **Ask the batch once,** after the report, with `AskUserQuestion` when the answers are choices. When the user answers, carry on, even on a `Phase: done` ledger (section 0, step 2): run the pending scenarios once they have signed in, add a new tracker or PR comment, and record each answer in `interruptions.md` as section 8 says.
+5. **Mark the ledger** `Phase: done` when the outcome is Done, and if this run was started by `/loop`, end the report with "Done: stop the `/loop`." Every other outcome keeps the run open, so a later `/ship-plan` resumes it.
+6. **Ask the batch once,** after the report, with `AskUserQuestion` when the answers are choices. When the user answers, carry on, even on a `Phase: done` ledger (section 0, step 2): run the pending scenarios once they have signed in, add a new tracker or PR comment, and record each answer in `interruptions.md` as section 8 says.
    **Before creating a follow-up issue,** whether this batch approved it or an earlier answer did (a `Ruling: user` line copied from `ship-issue`'s I3 batch), check that a reviewer has not filed it already. Read the PR's review bodies and comments (the host's *Fetch review items*), and search the tracker as the tracker's *Find an existing follow-up* says. When an issue already covers it, create nothing: name that issue in the Done comment's follow-ups, and record a `Ruling:` that quotes the line of it that covers the follow-up. Also grep `<logs>/ship-plan/*.md` and `<logs>/ship-issue/*.md` ([Reading the logs](SKILL.md#reading-the-logs)) for the follow-up's subject: a log entry can name the issue when a tracker text search misses it. Create each issue as the tracker's *Create an issue* says, and link it to the run issue as the tracker's *Link two issues* says. With `Tracker: none` there is no follow-up issue: it stays under Follow-ups.
 
 ## 8. Lessons
 
 Last, after everything else: the merge, base-branch CI, validation (section
-6b), the docs PR and the closing comment; then the report. On a branch from
+6b) and the closing comment; then the report. On a branch from
 `origin/<base>` (`docs/ship-plan-lessons-<yyyy-mm-dd>`), never on the feature branch.
 Run `git fetch origin <base>` right before `git switch -c`. Then merge
 the branch of every open lessons PR

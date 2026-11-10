@@ -24,3 +24,4 @@ a missed entry costs a rediscovery.
 ## Removed rules
 
 - **The `ship` migration shim** (2026-11-10, lean wave 2): ship-plan, ship-issue and verify-and-fix stopped when `.claude/ship.md` existed without `.claude/ship-plan.md`, telling the user to move the config. Every repo had migrated, so the line cost every run tokens for nothing. A repo still on `.claude/ship.md` now gets a drafted config like any unconfigured repo. Scenario S9 retired with it.
+- **The held-spec docs PR** (2026-11-10, lean wave 2): when a repo's agent instructions kept docs and code in separate PRs, ship-issue held the spec in the ledger directory and ship-plan's close-out opened a docs PR after the merge (`docs-pr.md`, a `Docs PR:` ledger line, a `Docs branch:` line for the queue). Only one repo used it. The spec is now always committed on the feature branch; a repo that needs the split adds it in its own override.

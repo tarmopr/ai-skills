@@ -57,7 +57,7 @@ lessons PR. Its `.claude/ship-plan.md`:
 ```
 
 **Where the run stands:** close-out (section 7). The PR merged, base-branch CI
-is green, and the closing comment is posted. No docs PR is due. The ledger at
+is green, and the closing comment is posted. The ledger at
 `.superpowers/ship-plan/feature-BILL-463-card-retry/ledger.md` reads:
 
 ```

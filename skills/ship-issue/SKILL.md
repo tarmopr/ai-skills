@@ -120,7 +120,7 @@ with no key, I1 first asks ship-plan's templates-issue.md "Issue question" (its
 Everything ship-plan's "What invoking this skill authorizes" lists, plus:
 
 - creating the issue in the tracker when none was given, and writing to it (no tracker step with `Tracker: none`);
-- creating the feature branch and committing on it the spec (unless held for a docs PR, I2 step 3), the plan and a confirmed draft config;
+- creating the feature branch and committing on it the spec, the plan and a confirmed draft config;
 - creating and preparing a worktree when the current checkout is busy, only with section W's setup steps (ship-plan's "do not create a worktree on your own" covers its own run);
 - **skipping the approval stops** of superpowers:brainstorming (design sections, written spec) and superpowers:writing-plans (plan review, execution-method choice): invoking this skill is the user's explicit instruction to skip them. Each skipped stop becomes a `Ruling:` line. The execution method is always ship-plan (subagent-driven-development).
 
@@ -259,7 +259,6 @@ A flag is never the issue key, slug, description or answers.
 | "Pass the issue key to ship-plan" | The plan file path; the tracker's copy may be mangled. |
 | "Assign it, move it to In Progress now" | ship-plan's section 1 does, when work starts. |
 | "Main checkout is on another branch, I'll switch it" | Someone works there: worktree recipe. |
-| "A docs worktree for the spec beside the code" | Stages cannot write there; an early docs PR loses its approval. Hold the spec in the ledger directory (I2 step 3); ship-plan opens the docs PR after the merge, in this checkout. |
 | "Worktree ready, run the tests" | Prerequisites run, `Copy:` files copied, `Shared:` checked? |
 | "The spec exists, but I'd design it differently" | Existing work is approved. Route per I0. |
 | "Quicker to write the spec or plan here" / "Raise this session's effort for it" | Dispatch the stages; they set their own effort and keep this session small and its prompt cache valid. |

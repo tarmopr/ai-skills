@@ -90,7 +90,6 @@ const FILES = {
     '## Issue comment: review round', '## Issue comment: awaiting review',
   ],
   // Moved verbatim from SKILL.md sections; no headings are pinned.
-  'ship-plan/docs-pr.md': [],
   'ship-plan/red-base.md': [],
   'ship-plan/log-formats.md': ['## interruptions.md seed', '## blockers.md seed'],
   'ship-plan/hosts/github.md': h2(HOST_OPS),
@@ -180,7 +179,6 @@ const PHRASES = {
     'jira, linear, github or none', 'closing keyword'],
   'ship-plan/phase-verify.md': ['no PR CI for this diff'],
   'ship-plan/phase-merge.md': ['read [red-base.md](red-base.md)', '## 6b. Validate the deploy'],
-  'ship-plan/phase-close.md': ['read [docs-pr.md](docs-pr.md)'],
   'verify-and-fix/SKILL.md': ['`jira.md`, `linear.md` or `github.md`', 'closing keyword', 'read [review-comments.md](review-comments.md)', '.claude/ship-plan/verify-and-fix/',
     ...SKILL_RUNNER, 'Done: <HEAD sha>'],
   'ship-issue/phase-spec.md': ['jira, linear, github or none', 'as file names write it'],

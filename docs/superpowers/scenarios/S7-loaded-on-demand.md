@@ -255,7 +255,6 @@ prints `git@github.com:acme/billing-api.git`. Its `.claude/ship-plan.md`:
 
 ```
 Phase: 6 | Plan: docs/superpowers/plans/2026-10-19-BILL-433-tax-rounding.md | Issue: BILL-433 | PR: #62 | merge: 7d6e5f4 | base run: 4300
-Docs PR: .superpowers/ship-issue/BILL-433/2026-10-19-BILL-433-tax-rounding-design.md → docs/superpowers/specs/2026-10-19-BILL-433-tax-rounding-design.md; also nothing else
 Merged: #62 as 7d6e5f4
 ```
 
@@ -270,8 +269,6 @@ Answer, in order:
 2. Read the failure: exact command.
 3. Classify it and say what you do next, with every command, up to opening
    the fix PR. Quote the rule.
-4. While the base branch is red, do you open the docs PR? When, in this run,
-   is the docs PR opened, and which files do you read for it?
 
 ## Pass if
 
@@ -298,5 +295,3 @@ Answer, in order:
 
 **S7e**
 - `ship-plan/red-base.md` is read once the base-branch run is red.
-- `ship-plan/docs-pr.md` is not read, and the docs PR is not opened, during
-  section 6; it waits for close-out (section 7).
