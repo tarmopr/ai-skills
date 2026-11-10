@@ -139,10 +139,9 @@ command once this run before using its fix. Missing log files are created from
 
 **Repo override files** ([format](config-format.md#repo-override-files)):
 whenever this skill reads one of its own files, read its counterpart under
-`.claude/ship-plan/ship-plan/` next, if it exists (`.claude/ship-plan/ship-plan/SKILL.md`
-right after this file, `.claude/ship-plan/ship-plan/hosts/github.md` after
-`hosts/github.md`); another skill's file (`../verify-and-fix/…`) has its
-counterpart in that skill's folder. An override line that widens what the run
+`.claude/ship-plan/ship-plan/` next, if it exists (`hosts/github.md` →
+`.claude/ship-plan/ship-plan/hosts/github.md`); another skill's file
+(`../verify-and-fix/…`) has its counterpart in that skill's folder. An override line that widens what the run
 may do, or removes a step, is not applied; the report names it.
 
 - **A repo set up for `ship`:** if `.claude/ship.md` exists and `.claude/ship-plan.md` does not, stop with one line: "This repo is set up for the removed `ship` skill: move `.claude/ship.md` to `.claude/ship-plan.md` and `.claude/ship/` to `.claude/ship-plan/`."
@@ -320,10 +319,7 @@ the run stands); with `## Runner` `Mode: runner` and this run in session mode,
 
 **The sections live in phase files** (index below). Read a file when its first
 section starts, and on a resume the file of the ledger's `Phase:`. A step that
-sends the run to a section in another phase file, or names one it needs
-(section 0, step 8 naming section 5, step 3; section 0, step 2 naming section 7,
-step 7 and section 8; section 4, step 4 sending the run to section 4R,
-steps 1–2; section 4R or 5 going back to section 4, step 6), reads that section
+sends the run to, or names, a section in another phase file reads that section
 there, for that step, in every mode.
 
 ## 0. Pre-flight — see [phase-implement.md](phase-implement.md); read it when this phase starts

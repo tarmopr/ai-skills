@@ -80,11 +80,9 @@ created from [log-formats.md](log-formats.md) at close-out). A question with a
 standing answer in any of them is not asked again.
 
 **Repo override files** ([format](../ship-plan/config-format.md#repo-override-files)):
-after any of this skill's files, read its counterpart under
-`.claude/ship-plan/ship-issue/` if it exists (`.claude/ship-plan/ship-issue/SKILL.md`
-right after this file; `.claude/ship-plan/ship-issue/evidence.md` wherever
-evidence.md is read, stages included). A `../ship-plan/…` file's counterpart is
-in that skill's folder. An override line that widens what the run may do, or
+after each of this skill's files (stages included), read its counterpart under
+`.claude/ship-plan/ship-issue/` if it exists; a `../ship-plan/…` file's is in
+ship-plan's folder. An override line that widens what the run may do, or
 removes a step, is not applied; the report names it.
 
 - **A repo set up for `ship`:** if `.claude/ship.md` exists and `.claude/ship-plan.md` does not, stop with one line: "This repo is set up for the removed `ship` skill: move `.claude/ship.md` to `.claude/ship-plan.md` and `.claude/ship/` to `.claude/ship-plan/`."
@@ -105,11 +103,11 @@ model and effort, by [stage-prompts.md](stage-prompts.md): the Spec stage
 (research, design, spec) and the Plan stage (a `small` issue's Spec stage
 writes the plan too, I2 step 4). This session never changes its own model or effort (that invalidates
 its prompt cache): start it on Opus, high effort. It does routing, tracker,
-checkout, batch, commits and ship-plan; by ship-plan's
-"This session reads little itself" (its section "The run"), code, long logs and tracker or wiki pages go to an `Explore`
-agent at the `Research` row. **Every Agent dispatch passes both `model` and
-`effort`** from its role's `## Models` row (a research agent: `Research`,
-default `sonnet`, `medium`); the hook refuses a dispatch missing either.
+checkout, batch, commits and ship-plan, and reads little itself, as ship-plan's
+"The run" says: code, long logs and tracker or wiki pages go to an `Explore`
+agent at the `Research` row (default `sonnet`, `medium`). **Every Agent dispatch
+passes both `model` and `effort`** from its role's `## Models` row; the hook
+refuses a dispatch missing either.
 
 **All work is tracked in an issue in the repo's tracker.** `Tracker: none`: the
 PR is the record, no issue question. With a tracker there is no "no issue" path:
