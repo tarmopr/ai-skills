@@ -91,6 +91,8 @@ const FILES = {
   ],
   // Moved verbatim from SKILL.md sections; no headings are pinned.
   'ship-plan/red-base.md': [],
+  // Lean wave 2: the batch-ticket rules, read only with a `Tickets:` line.
+  'ship-plan/tickets.md': ['## Pre-flight', '## Start', '## Before the merge', '## Close-out', '### Issue comment: done (batch ticket)', '### Issue comment: not done (batch ticket)'],
   'ship-plan/log-formats.md': ['## interruptions.md seed', '## blockers.md seed'],
   'ship-plan/hosts/github.md': h2(HOST_OPS),
   'ship-plan/hosts/azure-devops.md': h2(HOST_OPS),
