@@ -19,7 +19,7 @@ Status is labels, progress is comments. There is no board: never call
 
 `gh auth status`, then `gh repo view <Repo> --json hasIssuesEnabled`.
 
-**GitHub Issues configured but unavailable** (not signed in, the call fails, or `hasIssuesEnabled` is `false`): park "GitHub Issues unavailable: <exact error>" in the batch, continue as if no tracker were configured (the PR body carries the plan), and say so in the report. Never retry it through another route. **A `gh issue`, `gh label` or milestones `gh api` call that fails later in the run** gets the same rule; if the PR already exists, post its Plan section with the host's *PR comment*.
+**GitHub Issues configured but unavailable** (not signed in, the call fails, or `hasIssuesEnabled` is `false`): park "GitHub Issues unavailable: <exact error>" in the batch, continue as if no tracker were configured (the PR body carries the plan), and say so in the report. Never retry it through another route. Under ship-issue, nothing that needs the issue starts until the parked item is answered (its I1). A `gh issue`, `gh label` or milestones `gh api` call that fails later in the run gets the same rule; a PR that exists gets its Plan section through the host's *PR comment*.
 
 ## Issue keys
 
@@ -29,13 +29,13 @@ Branch pattern: `<type>/<n>-<slug>`.
 
 An issue's open PR (the host's *Find open PRs*, by search) is one whose body links the issue's URL, matched on `/issues/<n>)`, never `#<n>`: a search for `#<n>` or `<n>` matches any PR that mentions the number.
 
-From a branch name, the key is only the digits between `<type>/` and the next `-`: `fix/7-sync-auth` carries `#7`; `fix/2fa-login` carries no key. Numbers are common in branch names, so a branch this run did not start (verify-and-fix on its own, a resumed or someone else's branch) carries a key only when its PR body links that issue (`[#<n>](…/issues/<n>)`) or a ship-plan or ship-issue ledger exists for the branch. Otherwise it has no issue: a hand-made `fix/<n>-page-styling` never comments on `#<n>`.
+From a branch name, the key is only the digits between `<type>/` and the next `-` (`fix/7-sync-auth`: `#7`; `fix/2fa-login`: none). A branch this run did not start (verify-and-fix on its own, a resumed or someone else's branch) carries that key only when its PR body links that issue (`[#<n>](…/issues/<n>)`) or a ship-plan or ship-issue ledger exists for the branch; otherwise it has no issue.
 
 ## Integration
 
 Nothing links a branch to an issue. The PR body's issue link (templates.md, written `[#<n>](<issue url>)`) puts the PR in the issue's timeline. That is the only reference the run makes.
 
-**No closing keyword.** GitHub closes an issue on merge to the default branch when a PR title, PR body or commit message has a closing keyword (`close`, `closes`, `closed`, `fix`, `fixes`, `fixed`, `resolve`, `resolves`, `resolved`, in any case, optionally followed by `:`) directly before an issue reference. The run never writes one, in any of the three. A commit subject or PR title names the issue only as `(#<n>)` at its end (`fix: reject malformed dates (#<n>)`, never `fix #<n>` or `Fixes: #<n>`). An implementer or fixer sees only its own prompt, so ship-plan section 2 and verify-and-fix's fix rules put this rule in every dispatch, and ship-issue's Plan stage keeps it out of the plan's commit subjects. The run closes the issue itself (*Set status*).
+**No closing keyword.** GitHub closes an issue on merge to the default branch when a PR title, PR body or commit message has a closing keyword (`close`, `closes`, `closed`, `fix`, `fixes`, `fixed`, `resolve`, `resolves`, `resolved`, in any case, optionally followed by `:`) directly before an issue reference. The run never writes one, in any of the three. A commit subject or PR title names the issue only as `(#<n>)` at its end (`fix: reject malformed dates (#<n>)`, never `fix #<n>` or `Fixes: #<n>`). The run closes the issue itself (*Set status*).
 
 Do not assume nothing closes the issue. You set the done status, only when the config's `Done means:` is met. If the issue is closed earlier, leave it closed while reruns or fixes are still running, so it does not flip back and forth, and record a `Lesson:`: something closes issues, and the config's `Notes:` need correcting.
 
@@ -66,49 +66,22 @@ The config's `Repo:`. One place to choose, the milestone, and only when the repo
 - Type labels: fix → bug, feature → enhancement
 ```
 
-`Repo:` is written only when the issues live outside the `origin` repo; on an Azure DevOps host it is required, and its absence is a question in the batch. The draft goes in the question batch like any draft config, and once confirmed it is committed on the feature branch like `## Linear`'s draft (ship-plan: with the product change; ship-issue: with the spec). "No issue": no draft.
+`Repo:` is written only when the issues live outside the `origin` repo; on an Azure DevOps host it is required, and its absence is a question in the batch. The draft goes in the question batch like any draft config; once confirmed it is committed on the feature branch (ship-plan: with the product change; ship-issue: with the spec). "No issue": no draft.
 
 ## Create an issue
 
-`gh issue create -R <Repo> --title "<title>" --body-file <file> --assignee @me`, plus:
+As templates-issue.md's "New issue" says; the title never starts with a closing keyword. `gh issue create -R <Repo> --title "<title>" --body-file <file> --assignee @me`, plus:
 
 - `--label <label>` when `Type labels:` maps the branch type to a label and `gh label list -R <Repo> --search <label> --json name` returns a label whose `name` is exactly `<label>` (`--search` also matches longer names: `bug-bounty` is not `bug`; a type label is never created);
 - `--milestone "<title>"` when the user chose one.
 
-Then *Set status* to the start label. Title: the outcome, not the task ("Notes can be exported as GeoJSON", not "Implement export"); it never starts with a closing keyword.
-
-```markdown
-<one paragraph: the problem and who has it, from the plan's Goal>
-
-## Plan
-
-Source: `<plan path>` · Spec: `<spec path, or "none">`
-
-<Architecture, in 2–4 sentences>
-
-- [ ] Task 1 — <title>
-- [ ] Task 2 — <title>
-…
-
-## Done when
-
-<the plan's acceptance criteria, or "Merged, base-branch CI green, and the scenarios below pass">
-```
+Then *Set status* to the start label.
 
 ## Append the plan
 
-GitHub has no append: `gh issue edit` replaces the whole body. Read it with `gh issue view <n> -R <Repo> --json body`, add the sections at the end, and write the full body back with `gh issue edit <n> -R <Repo> --body-file <file>`. Never change or reflow the user's text.
+GitHub has no append: `gh issue edit` replaces the whole body. Read it with `gh issue view <n> -R <Repo> --json body`, add the sections templates-issue.md's "Plan appended" names at the end, and write the full body back with `gh issue edit <n> -R <Repo> --body-file <file>`. Never change or reflow the user's text.
 
-**What is appended.** ship-plan appends the `## Plan` section from "Create an issue" only. ship-issue appends `## Plan`, then `## Done when`, then one line `Full plan: <plan path> on branch <branch>; the local file is authoritative.`; only when the plan is git-ignored (it never leaves the checkout) does `## Full plan` carry the plan text instead.
-
-**Too big for GitHub.** A body or a comment holds at most 65,536 characters. When the existing body plus the sections would exceed it (count the text you would write; leave 2,000 characters of headroom), the fallback is fixed:
-
-- The body gets `## Plan` and `## Done when` only, then one line: `Full plan: in the comments "Full plan (1/<n>)" … "(<n>/<n>)"; the local file <plan path> is authoritative.`
-- The plan text goes in *Comment* comments headed `Full plan (<i>/<n>)`, each under 60,000 characters. Split only between top-level sections or `### Task` headings, never inside a code block; a single section that is still too long is split between its steps.
-- If even `## Plan` and `## Done when` do not fit, post them as a comment too, and leave the body as it is.
-- Record the fallback as a `Ruling:` with the character counts.
-
-**The local plan file is authoritative.** ship-plan always gets the file, never the issue text.
+**Too big:** `<limit>` 65,536 characters (body or comment), `<chunk>` 60,000.
 
 ## Assign
 
@@ -141,4 +114,4 @@ A comment on the issue being linked (GitHub mentions are the links; no sub-issue
 
 ## Find an existing follow-up
 
-Use "Find an issue" with the follow-up's subject as the search. When an issue already covers it, create nothing: name that issue in the Done comment's follow-ups. Otherwise create the follow-up (with the run issue's milestone, no question) and link it to the run issue as "Link two issues" says.
+*Find an issue* with the follow-up's subject as the search. A new follow-up gets the run issue's milestone, no question.

@@ -37,6 +37,7 @@ Any change under `skills/**` or `hooks/**` must raise `version` in `.claude-plug
 **`ship-plan` is the shared core.** Its `SKILL.md` stays short and reads companion files only when a condition needs them:
 - `phase-*.md`: implement, verify, merge and close steps.
 - `hosts/{github,azure-devops}.md`, `trackers/{jira,linear,github}.md`, `notifiers/slack.md`: one `##` section per named operation. Skills say "the host's *X*" and never call host commands directly. A new host or tracker must provide every operation heading the checker lists.
+- `runner-child.md` and each ship skill's `modes.md`: the queued and runner child rules. SKILL.md keeps only the mode headings and their conditional reads, so a normal run never loads them.
 - `config-format.md`: the format of the per-repo `.claude/ship-plan.md` (`## Repo`, `## Gates`, `## Models`, `## Allowed`, `## Runner`, `## Logs`, …). `## Allowed` is a closed list that only a person edits.
 - Repo overrides at `.claude/ship-plan/<skill>/<file>.md` are read right after the shared file of the same name. An override may add steps or make a rule stricter. It may never widen what a run may do.
 

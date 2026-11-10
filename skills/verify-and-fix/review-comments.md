@@ -30,8 +30,7 @@ says; the ledger records
 `Review: <key> <author> <grade> — <one line> — <action>`. The table of keys
 and of when each is new is in that operation.
 
-Read each item with the code it points at, at `HEAD`: an
-outdated thread may already be fixed. Then grade it in section 5 with the
+Read each item with the code it points at, at `HEAD`. Then grade it in section 5 with the
 agents' findings, by the same rules: a comment is right or wrong on its merits,
 not by who wrote it.
 
@@ -40,8 +39,8 @@ reply"; write the body to a file in this skill's ledger directory, `.superpowers
 written as `-`, under `ship-plan` too), with the host's
 *Reply to a review item*.
 
-- **Resolve** a bot reviewer's thread (the bots the host's *Resolve a bot's thread* names: Copilot on GitHub), with that operation, once it has a reply of any kind (fixed, answered, follow-up, not valid). A person's thread is theirs to resolve. On a host without bot reviewers this never applies, and a person's thread stays theirs to resolve on every host.
-- **Re-request** a person with the host's *Re-request a reviewer* when every change they requested is addressed, or when your push dismissed their approval. Never re-request a bot: a ruleset that wants it re-reviews on push by itself.
+- **Resolve** a bot reviewer's thread (the bots the host's *Resolve a bot's thread* names: Copilot on GitHub), with that operation, once it has a reply of any kind (fixed, answered, follow-up, not valid). A person's thread is theirs to resolve, on every host.
+- **Re-request** a person with the host's *Re-request a reviewer* when every change they requested is addressed, or when your push dismissed their approval. Never re-request a bot.
 
 Record each reply as `Replied: <key> — <fixed in <sha> | answered | follow-up | not valid | needs a decision>`.
 
@@ -53,7 +52,7 @@ Record each reply as `Replied: <key> — <fixed in <sha> | answered | follow-up 
 review): the PR's comments are the only new findings. Run this section and section 5 on
 them, then the gates. Run a review round only when a fix changes behaviour, and
 then only on the fix commits (`git diff <commit before the fixes>..HEAD`), not
-the whole branch: reviewers already saw the rest. It runs as a delta round
+the whole branch. It runs as a delta round
 (section 4, *Round 2 and later*), every agent at its `Review round` or `Wording review` row, never
 `Final review`; the 200-line and `## Risk paths` tests apply to the fix diff,
 and a full panel reviews the fix diff, not the branch. A red PR check is a finding
@@ -77,5 +76,4 @@ words, quoting code where it settles the point. Fixed replies name the commit.
 | Needs the user | `This needs a decision from the author: <the question>. I've raised it with them.` |
 
 A reply that promises a change in another file or a later PR names a place you
-have grepped first. A reply once promised a README line the README already
-had, and the correction took a second comment and an edit of the Done comment.
+have grepped first.

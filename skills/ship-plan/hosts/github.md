@@ -30,11 +30,7 @@ Run each once.
 
 ## Where CI is defined
 
-Read `.github/workflows/*.yml`. From the jobs that run on `pull_request`, take each `run:` command, in order, as a gate. Setup, checkout, cache and install steps become Prerequisites, not gates. Service containers become a Prerequisites note. A step's `working-directory` becomes part of its command (`cd <dir> && …`). Expand a `${{ }}` expression to its literal value, or drop the step and list it under "consider adding".
-
-**Never a gate:** a step that deploys, publishes, uploads (coverage, artifacts), comments on the PR, or reads `secrets.*`.
-
-`Workflow:` is the workflow that runs on `push` to the base branch. Workflows on PRs only: leave `Workflow:` out and note "no push workflow" in the batch.
+`.github/workflows/*.yml`: PR gates from the jobs that run on `pull_request`, `Workflow:` from the one that runs on `push` to the base branch, both as [config-drafting.md](../config-drafting.md) steps 1 and 3 say.
 
 ## Allowed merge methods
 
@@ -61,21 +57,15 @@ In `gh pr create`'s output, and in `gh pr view <n> --json number,url`.
 
 ## Wait for the PR's checks
 
-`gh pr checks <n> --watch --fail-fast` with `run_in_background`. Read once, without waiting: `gh pr checks <n>`. Its summary can count Copilot's review run (workflow `Copilot`, event `dynamic`) as pending: that is the AI review, which *Review state* tracks, not a check to wait for.
-
-If it answers "no checks reported":
-- **CI None** — the config's `## CI` says `None`, or `.github/workflows/` holds no workflow file: there is nothing to wait for.
-- Otherwise see *Does CI cover this diff*.
+`gh pr checks <n> --watch --fail-fast` with `run_in_background`. Read once, without waiting: `gh pr checks <n>`. Its summary can count Copilot's review run (workflow `Copilot`, event `dynamic`) as pending: that is the AI review, which *Review state* tracks, not a check to wait for. "No checks reported": [phase-verify.md](../phase-verify.md) section 4, step 6.
 
 ## Does CI cover this diff
 
 Read each workflow's `on:` block: its `pull_request` trigger, branch filters and `paths` / `paths-ignore`. **No workflow covers this PR** (a docs-only diff under `paths-ignore`, a PR-only filter that excludes this base): there is no PR CI for this diff.
 
-A workflow does cover it: CI has not registered yet. Wait up to 10 minutes, then treat it as a blocker.
-
 ## Read a failed run
 
-A red PR check: `gh run view <run-id> --log-failed | tail -150`. A red base-branch run: `gh run view <id> --log-failed | tail -150`.
+`gh run view <id> --log-failed | tail -150`, with the red PR check's or base-branch run's id.
 
 ## Rerun a failed PR check
 
@@ -87,11 +77,10 @@ Record
 `Review rule: approvals <n> | code owners <yes/no> | stale dismissed <yes/no> | threads must be resolved <yes/no> | source <config/ruleset/protection/unknown/none possible/user>`:
 - **The rulesets:** `gh api repos/<o>/<r>/rules/branches/<base> --hostname <host>`. Every rule with `"type": "pull_request"` counts; take the strictest of each of `required_approving_review_count`, `require_code_owner_review`, `dismiss_stale_reviews_on_push` and `required_review_thread_resolution` from its `parameters`.
 - **Else classic branch protection:** `gh api repos/<o>/<r>/branches/<base>/protection/required_pull_request_reviews --hostname <host>`. A 403 or 404 means unknown, not none.
-- **The config's `Approvals:`** (`## Repo`: `none` for POCs and internal tools, or a number) applies when neither could be read, and can raise what they say (source `config`), never lower it: GitHub enforces its own rules whatever the config says.
+- **The config's `Approvals:`** applies when neither could be read, and can raise what they say (source `config`), never lower it.
 - **Nothing readable and no `Approvals:`:** assume 1.
-- **Both answer 403 with a message that the feature needs a paid plan or a public repository** (for example "Upgrade to GitHub Pro or make this repository public to enable this feature"): the repository can have no rulesets and no branch protection, so GitHub enforces no review rule. Record source `none possible`. With no `Approvals:`, assume 1. Once the PR's checks are green, every remaining path is blocked (only another collaborator could approve), so ask now, as section 3, step 5 ([phase-verify.md](../phase-verify.md)) allows, without waiting out `Review wait:` first. The question, part of this run's batch: "Add `Approvals: none` to `## Repo`?", with the 403 text quoted. It is a loosening change ([config-format.md](../config-format.md#loosening-changes)).
-  - **Yes:** record it as an `Asked:` line, and record the rule again, replacing the first line, as `Review rule: approvals 0 | … | source user`. This run's PR and its lessons PR are then judged by that line, and section 8 writes `Approvals: none` on the lessons branch.
-  - **No, or no answer:** the rule stays at 1, and section 4R waits and hands off as usual.
+- **Both answer 403 saying the feature needs a paid plan or a public repository:** no review rule is possible. Source `none possible`; with no `Approvals:`, 1. Once the checks are green, ask now (section 3, step 5 of [phase-verify.md](../phase-verify.md)), not after `Review wait:`, in this run's batch: "Add `Approvals: none` to `## Repo`?", quoting the 403 (a [loosening change](../config-format.md#loosening-changes)).
+  - **Yes:** an `Asked:` line, and the rule recorded again, replacing the first line, as `Review rule: approvals 0 | … | source user`; it judges this PR and its lessons PR, and section 8 writes `Approvals: none` on the lessons branch. **No, or no answer:** 1, and section 4R waits and hands off as usual.
 
 ## Request an AI review
 
@@ -150,7 +139,7 @@ Merge with the configured method: `gh pr merge <n> --squash --delete-branch` (or
 
 ## Find the base-branch run
 
-`gh run list --workflow=<config Workflow> --branch=<base> --commit <sha> --json databaseId,status` (no `Workflow:` configured: `gh run list --branch <base> --commit <sha> --json databaseId,status,workflowName`, and watch every run). It may take a few seconds to appear. **No run for `<sha>` within 5 minutes** (the workflows do not run on pushes, or their path filters exclude this commit): record "no base-branch run for `<sha>`", treat it like CI None for this merge, and say so in the report.
+`gh run list --workflow=<config Workflow> --branch=<base> --commit <sha> --json databaseId,status` (no `Workflow:` configured: `gh run list --branch <base> --commit <sha> --json databaseId,status,workflowName`, and watch every run). It may take a few seconds to appear.
 
 The base branch's last runs: `gh run list --branch <base> --workflow <config Workflow> --limit 3`.
 
@@ -158,11 +147,9 @@ The base branch's last runs: `gh run list --branch <base> --workflow <config Wor
 
 `gh run watch <id> --exit-status` with `run_in_background`. If it exits 1, check `gh run view <id> --json status,conclusion` before calling the run red: `gh run watch` also exits 1 on a transient GitHub API error while the run carries on.
 
-Green, as the config's `Green:` defines.
-
 ## Rerun a base-branch run
 
-`gh run rerun <id> --failed`, then watch again. Keep the rerun a separate command, so it matches the pre-approval.
+`gh run rerun <id> --failed`, as its own command, then watch again.
 
 ## PR comment
 

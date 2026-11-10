@@ -26,6 +26,6 @@ Why the guarded files are never changed: "the runner compares them before and af
 
 ## Red flags
 
-Row "I'll start ship-plan's ledger for it": "Never. An existing ship-plan ledger means "resume", and the plan path would be read as answers." (The rule and reason stay in "The ledger".)
+Row "I'll start ship-plan's ledger for it": "Never. An existing ship-plan ledger means "resume", and the plan path would be read as answers." Row removed in wave 1 (2026-11-10): the rule and reason stay in "The ledger".
 
-Row "It's quicker to write the spec or plan here": "The stages run as subagents so this session stays small and keeps one effort level. Dispatch them."
+Row "Quicker to write the spec or plan here": "The stages run as subagents so this session stays small and keeps one effort level. Dispatch them."

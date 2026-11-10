@@ -2,10 +2,7 @@
 
 How the three skills do each tracker operation when the repo's tracker is Linear.
 
-MCP tool names depend on how a connector is installed. The Linear tools are
-listed as `mcp__plugin_linear_linear__*`. A repo whose connector has
-another name gets permission prompts. Record the name in `blockers.md` and
-propose the allow line, as for any refused command.
+Tools are `mcp__plugin_linear_linear__*`; a connector under another name prompts: record it in `blockers.md` and propose the allow line.
 
 Team, project and statuses come from the config's `## Linear`; follow its `Notes:`.
 
@@ -13,7 +10,7 @@ Team, project and statuses come from the config's `## Linear`; follow its `Notes
 
 Linear `get_user("me")`.
 
-**Linear configured but unavailable** (not connected, or the call fails): park "Linear unavailable: <exact error>" in the batch, continue as if Linear were not configured (the PR body carries the plan), and say so in the report. Never retry it through another route. **A Linear call that fails later in the run** gets the same rule; if the PR already exists, post its Plan section with the host's *PR comment*.
+**Linear configured but unavailable** (not connected, or a call fails, now or later in the run): park "Linear unavailable: <exact error>" in the batch, continue as if Linear were not configured (the PR body carries the plan; a PR that exists gets its Plan section through the host's *PR comment*), and say so in the report. Never retry it through another route. Under ship-issue, nothing that needs the issue starts until the parked item is answered (its I1).
 
 ## Issue keys
 
@@ -54,37 +51,15 @@ The configured team and project, from the config's `## Linear`. No question is a
 - **Project:** `list_projects` for the chosen team (the default, or the team of the most relevant candidate).
 - **Start, Review and Done status:** `list_issue_statuses` for that team: the first "started" status, a review status if the team has one, and the first "completed" status.
 
-Ask them in the issue question's batch, one question each (Team, Project, Start status, Review status, Done status), every question with 2 to 4 options, the recommended one first and marked "(Recommended)"; "Other" is added by the tool. More than 4 questions in the batch: ask the rest in a second `AskUserQuestion` call right after. The answers are the drafted `## Linear` (Team, Project, Start status, Review status, Done status; `Done means:` and `Notes:` left at their defaults), each a `Ruling: user <date>`. The draft goes in the question batch like any draft config, and once confirmed it is committed on the feature branch like `## Jira`'s draft (ship-plan: with the product change; ship-issue: with the spec). "No issue": no draft.
+Ask them in the issue question's batch, one question each (Team, Project, Start status, Review status, Done status), with that question's option rules. More than 4 questions in the batch: ask the rest in a second `AskUserQuestion` call right after. The answers are the drafted `## Linear` (`Done means:` and `Notes:` left at their defaults), each a `Ruling: user <date>`. It goes in the question batch like any draft config; once confirmed it is committed on the feature branch (ship-plan: with the product change; ship-issue: with the spec). "No issue": no draft.
 
 ## Create an issue
 
-`save_issue`: `team` and `project` from the config's `## Linear`,
-`assignee: "me"`, `state: <Start status>`. Set `priority` only if the plan
-states one. Title: the outcome, not the task ("Notes can be exported as
-GeoJSON", not "Implement export").
-
-```markdown
-<one paragraph: the problem and who has it, from the plan's Goal>
-
-## Plan
-
-Source: `<plan path>` · Spec: `<spec path, or "none">`
-
-<Architecture, in 2–4 sentences>
-
-- [ ] Task 1 — <title>
-- [ ] Task 2 — <title>
-…
-
-## Done when
-
-<the plan's acceptance criteria, or "Merged, base-branch CI green, and the scenarios below pass">
-```
+As templates-issue.md's "New issue" says. `save_issue`: `team` and `project` from the config's `## Linear`, `assignee: "me"`, `state: <Start status>`.
 
 ## Append the plan
 
-`save_issue` with `patch: [{op: "append", text: "\n\n## Plan\n\n…"}]`. Use
-the same Plan section as above (ship-plan appends `## Plan` only; ship-issue also appends `## Done when` and the `Full plan:` line, or `## Full plan` for a git-ignored plan, as in [github.md](github.md)). Never replace the user's text.
+`save_issue` with `patch: [{op: "append", text: "\n\n## Plan\n\n…"}]`, with the sections templates-issue.md's "Plan appended" names.
 
 ## Assign
 
@@ -116,4 +91,4 @@ the same Plan section as above (ship-plan appends `## Plan` only; ship-issue als
 
 ## Find an existing follow-up
 
-Use "Find an issue" with the follow-up's subject as the `query`. When an issue already covers it, create nothing: name that issue in the Done comment's follow-ups. Otherwise create the follow-up and link it to the run issue as "Link two issues" says.
+*Find an issue* with the follow-up's subject as the `query`.

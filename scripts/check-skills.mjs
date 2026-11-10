@@ -73,6 +73,13 @@ const FILES = {
     '### `## Models`', '### `## Never do`',
   ],
   'ship-plan/config-drafting.md': ['## Drafting a missing config', '## Examples'],
+  // Lean wave 1 (2026-11-10): queued and runner mode text moved out of the SKILL.md files.
+  'ship-plan/runner-child.md': ['## Is this a runner child', '## Questions and answers', '## Ledger lines',
+    '## Never touch what the runner guards', '## The final line'],
+  'ship-plan/modes.md': ['## Queued mode', '## Runner mode'],
+  'ship-issue/modes.md': ['## Queued mode', '## Runner mode'],
+  'verify-and-fix/modes.md': ['## Runner mode'],
+  'verify-and-fix/lessons.md': [],
   'ship-plan/templates.md': ['## PR body'],
   'ship-plan/templates-pr.md': [
     '## PR comment: done', '## PR comment: not merged', '## PR comment: base branch red',
@@ -149,30 +156,37 @@ const MOVE_LINE = 'move `.claude/ship.md` to `.claude/ship-plan.md`';
 
 // C8: phrases that pin decisions from the spec and plan.
 // Ship runner (2026-11-03): what skills/ship-plan/scripts/runner*.mjs parses from a child.
-const RUNNER_PHRASES = ['## Runner mode (ship-runner)', 'printenv SHIP_RUNNER', 'printenv SHIP_RUNNER_KEY', 'state.json', '`current`',
+const RUNNER_PHRASES = ['printenv SHIP_RUNNER', 'printenv SHIP_RUNNER_KEY', 'state.json', '`current`',
   'RUNNER: <phase-done|waiting|blocked|done> <text>', 'Blocked: <reason>', '`Asked: … — pending`',
   'Progress: <text>', 'Answer in the session that started the run.'];
+// Lean wave 1 (2026-11-10): each SKILL.md keeps the heading and the conditional reads of the mode files.
+const SKILL_RUNNER = ['## Runner mode (ship-runner)', 'printenv SHIP_RUNNER', 'runner-child.md)', '[modes.md](modes.md'];
 const PHRASES = {
   'ship-plan/SKILL.md': [
     'not pre-approved', MOVE_LINE,
     // Repo overrides and `## Allowed`: post-deploy validation, and this skill's override folder.
     '## 6b. Validate the deploy', '.claude/ship-plan/ship-plan/',
     // Ship runner (2026-11-03): the phrases of moved sections are pinned in their phase files below.
-    ...RUNNER_PHRASES, 'Progress: task <n> done', 'Phase: 4R', 'git log <base>..HEAD --oneline',
+    ...SKILL_RUNNER, 'started by ship-queue as its child session', 'printenv SHIP_QUEUE_PARENT',
+  ],
+  'ship-plan/runner-child.md': RUNNER_PHRASES,
+  'ship-plan/modes.md': ['Progress: task <n> done', 'Phase: 4R', 'git log <base>..HEAD --oneline',
     // ship-queue (2026-11-01).
     '/ship-queue <parent> <KEY>: <answers>', 'never `AskUserQuestion`', 'docs/ship-plan-lessons-<yyyy-mm-dd>-<KEY-n>',
     'Outcome: <Done|Base branch red|Awaiting review|Not merged>', 'Lessons branch: <name>', 'started by ship-queue as its child session',
-  ],
+    '[runner-child.md](runner-child.md)'],
+  'ship-issue/modes.md': ['/ship-queue <parent> <KEY>: <answers>', 'never `AskUserQuestion`', 'started by ship-queue as its child session', 'Phase: I6'],
+  'verify-and-fix/modes.md': ['`kind` `verify`', 'Done:'],
   'ship-plan/phase-implement.md': ['read [templates-issue.md](templates-issue.md)', 'read [notifiers/slack.md](notifiers/slack.md)',
     'jira, linear, github or none', 'closing keyword'],
   'ship-plan/phase-verify.md': ['no PR CI for this diff'],
   'ship-plan/phase-merge.md': ['read [red-base.md](red-base.md)', '## 6b. Validate the deploy'],
   'ship-plan/phase-close.md': ['read [docs-pr.md](docs-pr.md)'],
   'verify-and-fix/SKILL.md': ['`jira.md`, `linear.md` or `github.md`', 'closing keyword', MOVE_LINE, 'read [review-comments.md](review-comments.md)', '.claude/ship-plan/verify-and-fix/',
-    ...RUNNER_PHRASES, 'Done: <HEAD sha>'],
+    ...SKILL_RUNNER, 'Done: <HEAD sha>'],
   'ship-issue/phase-spec.md': ['jira, linear, github or none', 'as file names write it'],
-  'ship-issue/SKILL.md': [MOVE_LINE, ...RUNNER_PHRASES, 'Phase: I6', 'read [worktree.md](worktree.md)', '.claude/ship-plan/ship-issue/',
-    '/ship-queue <parent> <KEY>: <answers>', 'never `AskUserQuestion`', 'started by ship-queue as its child session'],
+  'ship-issue/SKILL.md': [MOVE_LINE, ...SKILL_RUNNER, 'read [worktree.md](worktree.md)', '.claude/ship-plan/ship-issue/',
+    'started by ship-queue as its child session', 'printenv SHIP_QUEUE_PARENT'],
   'ship-plan/config-format.md': [
     'A missing `.github/` folder', 'Tracker:', 'Host:', 'read [config-drafting.md](config-drafting.md)',
     // Repo overrides and `## Allowed`: the override layout, the closed list, the loosening rule, the new fields.
@@ -448,7 +462,7 @@ const KEY_ALLOW = new Set([
   // Placeholders in skills/.
   'ENG-123', 'PROJ-123', 'KEY-1',
   // Placeholders a scenario runner wrote in its saved answer.
-  'PROJECT-2', 'PROJECT-3',
+  'PROJECT-2', 'PROJECT-3', 'KEY-2', 'KEY-3',
   // Fictional keys in the scenarios and their results (KEY_FICTIONAL covers the rest).
   'BILL-401', 'BILL-412', 'BILL-415', 'BILL-420', 'BILL-430', 'BILL-433', 'BILL-440', 'BILL-450',
   'BILL-461', 'BILL-462', 'BILL-463', 'BILL-464', 'BILL-470', 'PAY-301', 'RTE-88',

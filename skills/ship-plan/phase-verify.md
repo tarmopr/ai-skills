@@ -11,7 +11,7 @@ Every time you'd want to ask the user something:
    - the plan, the spec, the repo's agent instructions, a standing answer, or existing code points one way, and you can quote it;
    - a follow-up commit can undo it;
    - it is not in the "does not authorize" list;
-   - it doesn't **widen** access or change money: nothing new becomes visible or allowed to a role, and nothing changes what a customer is charged. Those need the user, even if you are confident. **Narrowing access to what the spec already states,** through the repo's existing mechanism (its access-control layer, an existing role check), passes this part. It is a security fix, not a product decision. Pick the variant the codebase already uses for the same case, and quote that sibling.
+   - it doesn't **widen** access or change money: nothing new becomes visible or allowed to a role, and nothing changes what a customer is charged. Those need the user, even if you are confident. **Narrowing access to what the spec already states,** through the repo's existing mechanism (its access-control layer, an existing role check), passes this part. Pick the variant the codebase already uses for the same case, and quote that sibling.
 3. **"Should we go beyond the spec?"** (widen a role, add a feature the spec leaves out) is not a question for this run. Rule for what the spec says, and list the alternative under Follow-ups in the closing comment.
 4. **Otherwise, park it** in `questions.md`: the question, the options, your recommendation, and what is blocked by it. Then keep working on everything else.
 5. **Ask only when nothing unblocked is left.** Then ask the whole of `questions.md` at once. The usual moment is the close-out (section 7). Mid-run, the only reason is that every remaining path is blocked, for example a denied merge with nothing else to do.
@@ -30,7 +30,7 @@ on the spot, except for a destructive action.
 4. **Ask for review** (section 4R, steps 1–2): record the review rule, request the AI review, post the review request, and with an issue set the review status (the tracker's *Set status*) if the config names one. CI and the reviews run in parallel.
 5. **With an issue:** the tracker's *Link the PR*, as its *Integration* says for this host.
 6. **Wait for checks:** the host's *Wait for the PR's checks*. While waiting, draft the closing comments. If no checks are reported:
-   - **CI None** — the config's `## CI` says `None`, or the host's *Has CI* finds none: there is nothing to wait for. Record `CI: None` in the ledger and go to section 4R. This is not a question: the repo has no CI, and `verify-and-fix` clean is the gate.
+   - **CI None** — the config's `## CI` says `None`, or the host's *Has CI* finds none: there is nothing to wait for. Record `CI: None` in the ledger and go to section 4R; `verify-and-fix` clean is the gate, not a question.
    - Otherwise the host's *Does CI cover this diff*. **No CI covers this PR**: there is no PR CI for this diff. Record "no PR CI for this diff", go to section 4R, and say so in the report.
    - CI does cover it: CI has not registered yet. Wait up to 10 minutes, then treat it as a blocker: park it and close out with the PR open ("not merged").
 7. **A red check:** the host's *Read a failed run*.

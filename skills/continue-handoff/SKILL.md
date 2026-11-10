@@ -1,6 +1,6 @@
 ---
 name: continue-handoff
-description: Use when the user types /continue-handoff, or says "continue from the handoff", "pick up where we left off", "resume the handoff" in a fresh session. Reads the newest pending handoff for this repo (written by the handoff skill), checks it against reality, marks it consumed, and carries on with its next step.
+description: Use when the user types /continue-handoff, or says "continue from the handoff", "pick up where we left off", "resume the handoff" in a fresh session, to resume work from a handoff the handoff skill wrote.
 argument-hint: '[handoff name or part of it; default: the newest pending one]'
 allowed-tools:
   - Bash(node ${CLAUDE_SKILL_DIR}/../handoff/scripts/gather.mjs*)

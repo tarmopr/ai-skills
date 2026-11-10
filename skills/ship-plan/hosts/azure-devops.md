@@ -4,20 +4,13 @@ The commands `ship-plan`, `verify-and-fix` and `ship-issue` use when the
 config's `Host:` is `azure-devops`. Write each command exactly as shown: the
 `az` lines in the skills' `allowed-tools` match only these forms.
 
-**Host:** the config's `## Repo` `Host:`. When it is missing, read
-`git remote get-url origin`: `dev.azure.com` or `*.visualstudio.com` is
-`azure-devops`, anything else is `github`. Record the result as a `Ruling:`.
+**Host:** resolved as [config-format.md](../config-format.md) says; with no `Host:`, record the result as a `Ruling:`.
 
 `<n>` is the PR number (`pullRequestId`), `<id>` a pipeline run id,
 `<pipeline>` the config's `Workflow:` (a pipeline definition id),
 `<base>` the base branch, `<branch>` the PR's source branch, `<sha>` a commit,
 and `<repo>` and `<project>` the names in the remote URL
 (`https://dev.azure.com/<org>/<project>/_git/<repo>`).
-
-Every command here was run read-only against a real Azure DevOps repo on
-2026-10-24, except the writes (`pr update`, `pr policy queue`,
-`pipelines run`, and `az devops invoke` with `POST` or `PATCH`), which were
-never run.
 
 ## Auth check
 
@@ -52,9 +45,7 @@ Your login is `user.name` in `az account show`'s output. It is the `uniqueName` 
 `az repos policy list --repository-id <repo id> --branch <base> --query "[?type.displayName=='Require a merge strategy' && isEnabled].settings" -o json`.
 
 - Empty (no merge strategy policy): every method is allowed. `Merge:` is `squash`.
-- Otherwise `allowSquash` true: `squash`; else `allowNoFastForward` true: `merge`. Neither (rebase only): put it in the batch; the skills merge only by squash or merge commit.
-
-These two field names were not seen in a real policy: the repo checked has no merge strategy policy. If they are missing from the output, put the output in the batch.
+- Otherwise `allowSquash` true: `squash`; else `allowNoFastForward` true: `merge`. Neither (rebase only): put it in the batch; the skills merge only by squash or merge commit. Neither field in the output: put the output in the batch.
 
 ## Open the PR
 
@@ -80,7 +71,7 @@ az devops invoke --area git --resource pullRequests --http-method POST --route-p
 
 The id is `pullRequestId` in the response. Right after creation, post `pr-body-rest.md` with *PR comment*, before anything else is posted, so it is the first comment.
 
-The command has no `$(...)` and no shell quoting of the body, so its pre-approval (`Bash(az devops invoke --area git --resource pullRequests --http-method POST *)`) matches in every permission mode. The earlier form, `--description "$(cat <file>)"`, was checked only in auto mode, where it showed nothing about prompting modes; do not use it.
+Never pass the body with `$(...)` or shell quoting (`--description "$(cat <file>)"`): the pre-approval must match in every permission mode.
 
 ## PR web URL
 
@@ -131,7 +122,7 @@ How `filenamePatterns` match a changed file:
 - A pattern that starts with neither `/` nor `*` has no effect.
 - No filters (`null` or empty) means every file.
 
-Every changed file excluded, or no build policy at all: "no PR CI for this diff", not CI None. A changed file a blocking policy includes: the build has not registered yet; wait up to 10 minutes, then treat it as a blocker.
+Every changed file excluded, or no build policy at all: "no PR CI for this diff", not CI None. A changed file a blocking policy includes: CI covers it.
 
 ## Read a failed run
 
@@ -167,7 +158,7 @@ Record
 - **Code owners:** yes when a blocking "Required reviewers" policy exists.
 - **Stale dismissed:** the "Minimum number of reviewers" policy's `settings.resetOnSourcePush` is true.
 - **Threads must be resolved:** yes when a blocking "Comment requirements" policy exists.
-- **The config's `Approvals:`** applies when the policies could not be read, and can raise what they say (source `config`), never lower it: Azure DevOps enforces its own policies whatever the config says.
+- **The config's `Approvals:`** applies when the policies could not be read, and can raise what they say (source `config`), never lower it.
 - **The policy list fails, and no `Approvals:`:** assume 1.
 
 ## Request an AI review
@@ -265,9 +256,7 @@ refused (ship-plan 5.5).
 
 The merge SHA: `az repos pr show --id <n> --query lastMergeCommit.commitId -o tsv`, once `status` is `completed`.
 
-Unlike `gh pr merge --delete-branch`, this does not switch the local checkout.
-It stays on the feature branch, whose remote branch is now deleted. Sections
-6–8 create their branches from `origin/<base>`, so leave it.
+The local checkout stays on the feature branch (its remote branch deleted); leave it: sections 6–8 branch from `origin/<base>`.
 
 ## Find the base-branch run
 
@@ -277,7 +266,7 @@ Find the run on the merge SHA, newest first:
 az pipelines runs list --pipeline-ids <pipeline> --branch refs/heads/<base> --top 10 --query-order QueueTimeDesc --query "[?sourceVersion=='<sha>'].{id:id,status:status,result:result,reason:reason}" -o json
 ```
 
-- Without `--query-order QueueTimeDesc`, a run still in progress can fall outside `--top`, and the run looks missing. Without `--branch`, the same pipeline's PR builds can fill `--top`.
+- Keep `--query-order QueueTimeDesc` and `--branch`: without either, the run can fall outside `--top`.
 - No `Workflow:` configured: leave out `--pipeline-ids` and watch every run on the SHA.
 
 **Batched CI** (`reason: batchedCI`) builds only the newest commit when several merges land together, so a run on `<sha>` may never exist. Find the run that contains it:
@@ -286,7 +275,7 @@ az pipelines runs list --pipeline-ids <pipeline> --branch refs/heads/<base> --to
 2. `git fetch origin <base>`.
 3. For each candidate, oldest first: `git merge-base --is-ancestor <sha> <sourceVersion>`. The first one that exits 0 is the run for this merge.
 
-**No run within 5 minutes** (neither on `<sha>` nor one that contains it): record "no base-branch run for `<sha>`", treat it like CI None for this merge, and say so in the report. Never queue a run yourself: the pipeline's own run is usually already queued, and a manual one duplicates it, or deploys.
+**No run within 5 minutes,** neither on `<sha>` nor one that contains it: as [phase-merge.md](../phase-merge.md) section 6, step 1 says. Never queue a run yourself: the pipeline's own run is usually already queued, and a manual one duplicates it, or deploys.
 
 The base branch's last runs: `az pipelines runs list --pipeline-ids <pipeline> --branch refs/heads/<base> --top 3 --query-order QueueTimeDesc --query "[].{id:id,status:status,result:result,sourceVersion:sourceVersion}" -o json`.
 
@@ -313,8 +302,6 @@ otherwise. `partiallySucceeded`, `failed` and `canceled` are red. Still
   A classic pipeline (`type` 1) deploys when an enabled step deploys or publishes (its name says Deploy, Publish, Release or App Service), or its name does.
 
   Unsure, for either kind: it deploys.
-
-`process.stages` is empty for both kinds of pipeline, so it cannot tell.
 
 Not pre-approved: a pattern would also match a deploy pipeline. When `Workflow:` names a pipeline that does not deploy, ship-plan's pre-flight batch lists the exact allow line:
 

@@ -39,12 +39,13 @@ the branch), then write each as an `Asked:` line and a `Ruling: user <date>`.
 
 ## New issue
 
-Fields: the place from "Issue question"; the issue type and fields from the
-config; assign it to the user; set a priority only if the plan states one. If
-the create is rejected for a missing required field, do not guess its value:
-park it in the batch, with the field the error names. Then set the start
-status as the tracker's *Set status* says. Title: the outcome, not the task
-("Notes can be exported as GeoJSON", not "Implement export").
+Every tracker's *Create an issue* uses this. Fields: the place from "Issue
+question"; the issue type and fields from the config; assign it to the user;
+set a priority only if the plan states one. If the create is rejected for a
+missing required field, do not guess its value: park it in the batch, with the
+field the error names. Then set the start status as the tracker's *Set status*
+says. Title: the outcome, not the task ("Notes can be exported as GeoJSON", not
+"Implement export"). Body:
 
 ```markdown
 <one paragraph: the problem and who has it, from the plan's Goal>
@@ -66,7 +67,14 @@ Source: `<plan path>` · Spec: `<spec path, or "none">`
 
 ## Plan appended
 
-Add the Plan section above at the end of the issue's text, as the tracker's *Append the plan* says. ship-plan appends `## Plan` only; ship-issue appends `## Plan`, `## Done when` and a `Full plan: <plan path> on branch <branch>` line (`## Full plan` with the text only for a git-ignored plan). Never replace the user's text.
+Add the Plan section above at the end of the issue's text, as the tracker's *Append the plan* says. ship-plan appends `## Plan` only. ship-issue appends `## Plan`, then `## Done when`, then one line `Full plan: <plan path> on branch <branch>; the local file is authoritative.`; only for a git-ignored plan (it never leaves the checkout) does `## Full plan` carry the plan text instead. Never replace the user's text. The local plan file is authoritative: ship-plan always gets the file, never the issue text.
+
+**Too big,** when the tracker's *Append the plan* names a `<limit>` and a `<chunk>`: the existing text plus the sections would exceed `<limit>` characters (count the text you would write; leave 2,000 characters of headroom). The fallback is fixed:
+
+- The issue text gets `## Plan` and `## Done when` only, then one line: `Full plan: in the comments "Full plan (1/<n>)" … "(<n>/<n>)"; the local file <plan path> is authoritative.`
+- The plan text goes in the tracker's *Comment* comments headed `Full plan (<i>/<n>)`, each under `<chunk>` characters. Split only between top-level sections or `### Task` headings, never inside a code block; a single section still too long is split between its steps.
+- If even `## Plan` and `## Done when` do not fit, post them as a comment too, and leave the issue text as it is.
+- Record the fallback as a `Ruling:` with the character counts.
 
 ## Issue comment: merged
 

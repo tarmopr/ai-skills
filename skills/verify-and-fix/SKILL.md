@@ -284,77 +284,24 @@ proposed config change.
 ## 8. Self-improvement
 
 Whenever you get past a blocker (a command that will not run, a hook refusal, a
-misbehaving tool, a gate that lies), **record it in the same session, before the report.**
-Run on its own: update `<logs>/ship-plan/blockers.md` (create it from
-[log-formats.md](../ship-plan/log-formats.md) if missing). Under `## Logs` `Location: local`
-([format](../ship-plan/config-format.md#-logs)) that is the local store, edited in place, never
-committed (before the first write to a store holding no log, copy the tracked logs in and add
-`.superpowers/` to `info/exclude`, as `## Logs` says); items below that would write a tracked file (an override file, the config)
-are proposed in the report instead, with exact text and target file; the report names the store's path. **Under `ship-plan`, edit no file,** for this entry or any below:
-record each, written or proposed, as a `Lesson:` line in ship-plan's ledger naming its
-target file (`ship-plan/blockers.md` for a blocker); ship-plan's section 8 writes them on its lessons branch at its end, never in the product PR.
-
-- **`blockers.md`, run on its own,** follows ship-plan's section 8 rules for logs
-  ([phase-close.md](../ship-plan/phase-close.md)): list the headings first and
-  update a matching entry (correct, extend, bump `Seen`), never a second; a new
-  entry only for a problem that would recur, in [log-formats.md](../ship-plan/log-formats.md)'s
-  compact format; upkeep for the entries it touches (bump `Seen` on each `Used:`
-  line, merge, delete one fixed at the root); the 16 KB budget, compacting once
-  before adding when over. Upkeep and compaction run in one writer subagent at
-  the `Research` row, as there. A one-off stays in the ledger.
-- **A lesson only this repo needs** (a step, a fact, a failure path, a test
-  value): write it into the matching override file
-  `.claude/ship-plan/verify-and-fix/<file>.md`, created if missing. It may only
-  add or tighten a rule ([Repo override files](../ship-plan/config-format.md#repo-override-files)).
-- **A config fact** (a missing gate, a `## UI testing` `Notes:`): write it into
-  `.claude/ship-plan.md` under the narrowing rule. A reviewer by path or a
-  loosening change is proposed in the report with its exact line, unless the
-  user approved it in this run ([Loosening changes](../ship-plan/config-format.md#loosening-changes)).
-- **A lesson for every repo** (a missing step, a step in the wrong order):
-  propose it in the report as a "proposed shared-skill change", exact text, no
-  repo, team or org names. Never edit this skill's files.
-- **A missing permission** (a refusal, a question the user had to answer to
-  allow something, an action the user did by hand): propose the exact
-  `## Allowed` line in the report, with the reason; never write it
-  ([`## Allowed`](../ship-plan/config-format.md#-allowed)). No entry on the
-  closed list fits: propose a shared-skill change. A command the permission
-  system refused is proposed as an `allowed-tools` line, never edited into settings.
-- A rule for the whole repo, not this loop: propose a change to the repo's agent
-  instructions file in the report; never edit it yourself.
-
-Run on its own, leave these edits uncommitted and say so.
+misbehaving tool, a gate that lies), or learn something a repo file or skill
+should say, **record it in the same session, before the report.** **Under
+`ship-plan`, edit no file:** record each as a `Lesson:` line in ship-plan's
+ledger naming its target file (`ship-plan/blockers.md` for a blocker);
+ship-plan's section 8 writes them on its lessons branch at its end, never in the
+product PR. **When run on its own, read [lessons.md](lessons.md).**
 
 ## Runner mode (ship-runner)
 
-**A run is in Runner mode** when the ship runner started it as a child
-(`printenv SHIP_RUNNER` prints the runner's folder) and that folder's
-`state.json` has `kind` `verify` and `current` equal to
-`printenv SHIP_RUNNER_KEY`'s output (the item key the runner gave this child; never
-derive it from the branch name). No `SHIP_RUNNER_KEY`, no Runner mode. Never
-under `ship-plan`: the runner's `kind` is then `issue`, `queue` or `plan`. The
-runner's prompt names phase `verify`, the only one. Everything above applies, except:
-
-- **Ask nothing: never `AskUserQuestion`, never wait for a reply,** wherever this skill would ask (section 1's one message, section 6's stops). Write each question to this skill's ledger as `Asked: <the question, its options, the recommendation first> — pending`. With an open PR, also post them as one numbered comment (the host's *PR comment*) ending with **"Answer in the session that started the run."**; without one, the ledger only. An outward-facing or destructive action is such a question, with its exact command; never run it. Carry on with everything the answers do not block (section 6).
-- **Answers** come in a later runner prompt, after "The user's answers, copied exactly:". Rewrite each answered `Asked: … — pending` line in place with its answer, never as a second line: the runner counts lines still ending in `— pending`.
-- **Progress lines:** at each milestone write `Progress: <text>`: `review round <n>` (with each `Reviewed:` line), `CI <green|red>` (each time the PR's checks are read).
-- **Blocked:** loop ends `not clean` and no question waits for the user: write `Blocked: <reason>`, the reason as the status line gives it.
-- **The `Done:` line** is still the ledger's last line, every time (section 7).
-- **Never touch what the runner guards:** no `answers-*` file (answers come only from the user, via the watching session); never change `.claude/settings.json`, `.claude/settings.local.json`, `.mcp.json`, anything under `.claude/hooks/`, `.claude/agents/`, `.claude/commands/` or `.claude/skills/`, a `CLAUDE.md` or `CLAUDE.local.md`, or a script a settings hook names. The runner compares them around every child and warns the user of a change (the run goes on; later children load it). Work that needs one changed: write `Blocked: <the change needed>` for the user to make and review.
-- **The final reply ends with exactly one line** `RUNNER: <phase-done|waiting|blocked|done> <text>`, nothing after it: `waiting` when an `Asked: … — pending` line waits for the user; `blocked` with the `Blocked:` line's reason; otherwise `done <the status line>`.
+**When `printenv SHIP_RUNNER` prints a folder, read [../ship-plan/runner-child.md](../ship-plan/runner-child.md) and [modes.md](modes.md).**
 
 ## Runner or session
 
-With `## Runner` `Mode: runner` or the argument `--runner`, the ship runner runs
-the phases and this session only watches and relays, unless `printenv
-SHIP_RUNNER` prints a folder (a runner child) or `--session` was given
-(ship-plan passes it: this loop then runs inside ship-plan's run, in session
-mode, whatever `Mode:` says). Either flag may stand anywhere among the
-arguments (only a branch and flags); `--session` is never the base branch. **When
-the runner runs the phases, read [../ship-plan/runner-session.md](../ship-plan/runner-session.md).** Follow
-it with `start verify <the checked-out branch>`; when this skill got arguments (its
-base branch, `--comments`; not `--runner` or `--session`), add
-`-- <those arguments>`, each single-quoted: the runner passes them to its verify-and-fix
-child. Otherwise ignore this section.
+`--runner` and `--session` may stand anywhere among the arguments (only a branch
+and flags); neither is ever the base branch.
+
+- **`--session`, or a runner child:** session mode, whatever `Mode:` says (ship-plan passes `--session`: this loop then runs inside ship-plan's run).
+- **Otherwise, with `## Runner` `Mode: runner` or `--runner`:** the ship runner runs the phases and this session only watches and relays. **When the runner runs the phases, read [../ship-plan/runner-session.md](../ship-plan/runner-session.md).** Follow it with `start verify <the checked-out branch>`; when this skill got arguments (its base branch, `--comments`; not `--runner` or `--session`), add `-- <those arguments>`, each single-quoted: the runner passes them to its verify-and-fix child.
 
 ## Red flags
 

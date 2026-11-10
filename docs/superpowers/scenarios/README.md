@@ -11,7 +11,7 @@ files' shape. These scenarios pin behaviour.
 
 | Id | File | What it pins |
 |---|---|---|
-| S1 | [S1-github-jira.md](S1-github-jira.md) | GitHub with Jira and no `Host:`/`Tracker:`: the same commands as before the change (regression) |
+| S1 | [S1-github-jira.md](S1-github-jira.md) | GitHub with Jira and no `Host:`/`Tracker:`: the GitHub host's and Jira tracker's commands, no question asked |
 | S2 | [S2-ghe-no-tracker.md](S2-ghe-no-tracker.md) | GitHub Enterprise with `Tracker: none` |
 | S3 | [S3-azure-linear.md](S3-azure-linear.md) | Azure DevOps with Linear, no `.github/` folder, a long PR body |
 | S4 | [S4-azure-jira.md](S4-azure-jira.md) | Azure DevOps with Jira: how the PR reaches the issue |
@@ -34,18 +34,14 @@ files' shape. These scenarios pin behaviour.
 ## How to run one
 
 1. Pick `SKILLDIR`: the folder that holds the skill folders
-   (`ship-plan/`, `ship-issue/`, `verify-and-fix/`). For the new layout it is
-   `<this repo>/skills`. For the S1 baseline it
-   is a copy of the `skills/` folder as it was before the change, in a scratch
-   folder.
+   (`ship-plan/`, `ship-issue/`, `verify-and-fix/`): `<this repo>/skills`.
 2. Dispatch one fresh `general-purpose` subagent per prompt. Its prompt is
    the text of the scenario's `## Prompt` section (S7 has five, `## Prompt
    S7a` … `## Prompt S7e`, each its own run; S17 has four, and pastes its shared repo block where a prompt says **[The repo]**), with every `SKILLDIR` replaced by
    the path from step 1, followed by the whole **Answer format** section below.
    Never give it the **Pass if** lines, this README's table, or the spec and
    plan: a runner that knows what is being tested answers to the test.
-3. Save its answer verbatim to `results/<id>.md` (`baseline/<id>.md` for the
-   baseline), with one change: replace every occurrence of the step 1 path
+3. Save its answer verbatim to `results/<id>.md`, with one change: replace every occurrence of the step 1 path
    with the literal `SKILLDIR` first. Saved answers are published, and they
    must hold no home path.
 4. Grade the answer against the scenario's `## Pass if` lines. Every line must

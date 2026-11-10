@@ -189,7 +189,7 @@ No run of BILL-701 has started before.
 
 **S18b**
 
-- Q1: exactly two reviews: `pr-review-toolkit:code-reviewer` with `model: opus`, `effort: xhigh`, and the `security-review` skill. No `silent-failure-hunter` and no `pr-test-analyzer`. Scope `git diff origin/main...HEAD`.
+- Q1: exactly two reviews: `pr-review-toolkit:code-reviewer` with `model: opus`, `effort: high` (the `Review round` row: a small diff, 120 lines and no `## Risk paths` file), and the `security-review` skill. No `silent-failure-hunter` and no `pr-test-analyzer`. Scope `git diff origin/main...HEAD`.
 - Q2: scope `git diff abc1234..HEAD`. `code-reviewer` and the security review, each review agent at `model: opus`, `effort: high`. Each reviewer is told to read the whole files the delta touches, not only the hunks, and is given round 1's findings and fixes. After the round: a `Reviewed: <HEAD sha> — round 2, delta, …` line.
 - Q3: the full panel: `code-reviewer` at `opus`/`xhigh`, `silent-failure-hunter` at `opus`/`high`, and the security review, on `git diff origin/main...HEAD`. No `pr-test-analyzer` (no test changed).
 - Q4: no whole-branch or final code reviewer is dispatched. The only Agent call is the simplify pass, `pr-review-toolkit:code-simplifier` at `model: sonnet`, `effort: high`.
@@ -198,7 +198,7 @@ No run of BILL-701 has started before.
 
 - Q1: this session reads only the last 60 lines itself (`tail -n 60 <log>` or the same with Read's offset). Reading more goes to an agent.
 - Q2: an Agent call with `subagent_type: Explore`, `model: sonnet`, `effort: medium`, whose prompt asks for at most 30 lines with file:line quotes. This session runs no `grep` or `git grep` over the source itself.
-- Q3: `grep -n` for `make test` (or the gate's name) in `.claude/ship-plan/blockers.md`; not a full read.
+- Q3: the heading list of `.claude/ship-plan/blockers.md` (`grep -n '^##'`), then only the matching entry (`sed -n '<from>,<to>p'`); not a full read.
 - Q4: the prompt ends with "Report in at most 20 lines: status, commits, tests run with their result, concerns." (verbatim or nearly).
 
 **S18d**

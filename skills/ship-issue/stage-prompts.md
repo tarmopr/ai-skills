@@ -138,8 +138,7 @@ change:
 - When the tests would add more lines than the change they test, take the
   simpler approach, or say in the spec why the extra size is needed.
 
-Leave nothing as "the builder's call" (the Plan stage would rule without your
-research): rule on each such choice (a name, a test's form or setup, a doc
+Leave nothing as "the builder's call": rule on each such choice (a name, a test's form or setup, a doc
 comment's text) with the same confidence test, or return it as a question.
 
 Always write a spec, even for a bounded change; the classification only sets
@@ -225,7 +224,7 @@ section "Stage report", and nothing after it.
 
 Before it, read the last 5 lines of every file you wrote (`tail -n 5 <file>`)
 and delete any tool-call markup that leaked into it (`</content>`,
-`</invoke>`): a stray tag ends up committed.
+`</invoke>`).
 
 The last thing a stage writes. One line per item, in ship-plan's ledger
 formats, and only these headings:
