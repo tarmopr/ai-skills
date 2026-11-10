@@ -384,7 +384,7 @@ const TECH = /\b(npm|npx|yarn|pnpm|bun|dotnet|pytest|ruff|mypy|docker|deno|terra
 const TECH_EXEMPT = new Set(['ship-plan/config-format.md', 'ship-plan/config-drafting.md']);
 // Single lines exempt from C3: verbatim lessons that name the command that failed, not commands the run is told to use (Task 9 ruling).
 const TECH_LINE_EXEMPT = {
-  'ship-issue/stage-prompts.md': ['run `dotnet build` on it', 'refuses a `docker exec … psql` joined to'],
+  'ship-issue/stage-prompts.md': ['refuses a `docker exec … psql` joined to'],
 };
 // C4: names from the repos these skills were first written for may appear nowhere. This repo is
 // public, so those names are not in it: they are read from the SKILLS_PRIVATE_PATTERNS env var

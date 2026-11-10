@@ -100,9 +100,9 @@ to one is a question.
    observed output, expected output), whose failing test is the plan's first
    task, not research.
 4. Prove claims the design rests on before they go in the spec. For a
-   concurrency, source generator or analyzer, or schema claim, read that
-   section of <skill dir>/spec-probes.md ("Concurrency", "Source generator or
-   analyzer", "Schema") and run its probe. Read no section whose trigger does
+   concurrency, build-time code generation, or schema claim, read that
+   section of <skill dir>/spec-probes.md ("Concurrency", "Build-time code
+   generation", "Schema") and run its probe. Read no section whose trigger does
    not apply.
 
 ## Acceptance checks

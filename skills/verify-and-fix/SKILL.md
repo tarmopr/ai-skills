@@ -163,7 +163,7 @@ After each round, write `Reviewed: <HEAD sha> — round <n>, <full|delta>, <the 
 
 **Copied code, every round.** Diff each added file that copies another repo
 file (a second service's setup, a test fixture, a helper) against its source: a
-CI duplication gate (Sonar's "Duplicated Lines on New Code", 3% by default)
+CI duplication gate (often a small percentage of new lines)
 catches shared blocks no local gate does. A shared block over about 30 lines is Important: extract it as the repo's agent instructions
 say, or, when the plan copies on purpose, put it in the question batch with
 extraction recommended.
