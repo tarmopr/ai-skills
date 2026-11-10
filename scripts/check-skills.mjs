@@ -79,6 +79,7 @@ const FILES = {
   'ship-plan/modes.md': ['## Queued mode', '## Runner mode'],
   'ship-issue/modes.md': ['## Queued mode', '## Runner mode'],
   'verify-and-fix/modes.md': ['## Runner mode'],
+  'verify-and-fix/lessons.md': [],
   'ship-plan/templates.md': ['## PR body'],
   'ship-plan/templates-pr.md': [
     '## PR comment: done', '## PR comment: not merged', '## PR comment: base branch red',
