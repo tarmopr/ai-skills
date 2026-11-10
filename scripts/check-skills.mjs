@@ -462,7 +462,7 @@ const KEY_ALLOW = new Set([
   // Placeholders in skills/.
   'ENG-123', 'PROJ-123', 'KEY-1',
   // Placeholders a scenario runner wrote in its saved answer.
-  'PROJECT-2', 'PROJECT-3',
+  'PROJECT-2', 'PROJECT-3', 'KEY-2', 'KEY-3',
   // Fictional keys in the scenarios and their results (KEY_FICTIONAL covers the rest).
   'BILL-401', 'BILL-412', 'BILL-415', 'BILL-420', 'BILL-430', 'BILL-433', 'BILL-440', 'BILL-450',
   'BILL-461', 'BILL-462', 'BILL-463', 'BILL-464', 'BILL-470', 'PAY-301', 'RTE-88',
