@@ -358,8 +358,10 @@ Answer, in order:
 **S14a**
 - The `## After merge` check runs first, then the run signs in itself to the
   hosted URL as `admin@example.test` and `customer@example.test`, and runs
-  scenarios 4 and 5 there. Each of these steps' sources includes section 6b
-  of `ship-plan/SKILL.md` (`## 6b. Validate the deploy`).
+  scenarios 4 and 5 there. The After merge check, the sign-ins and the
+  decision to run the scenarios there each cite section 6b
+  (`## 6b. Validate the deploy`, in `ship-plan/phase-merge.md`); the steps
+  that drive a scenario may cite `verify-and-fix/ui-testing.md` for how.
 - The outcome is Done: "Issue comment: done", then the tracker's *Set status*
   with the `Done` transition.
 
