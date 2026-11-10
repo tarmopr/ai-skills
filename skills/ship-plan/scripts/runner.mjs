@@ -205,7 +205,7 @@ const gitCommonDir = (root) => resolve(root, git(root, 'rev-parse', '--git-commo
 // Where `answer` stores a run's answers: <git dir>/ship-runner/answers/<run>/, outside the
 // checkout, and the runner reads answers only here. A child is told the run dir (SHIP_RUNNER),
 // never this one: a mitigation, not a defence (a child runs as the same user and can find it;
-// the window check and the watching session do the rest, see runner-session.md).
+// the window check and the watching session do the rest, see docs/rationale/ship-plan-runner-session.md).
 const answersStore = (root, dir) => join(gitDir(root), 'ship-runner', 'answers', basename(dir));
 
 const answersName = (key) => `answers-${key}.md`;
@@ -227,7 +227,7 @@ function recordedMode(root, dir) {
 // open one runs to now) was not written by the user: the child that asked answered itself.
 // A child runs as the same user, so the file's times are all there is to go by: both mtime and
 // ctime must fall outside every window (utimes can backdate mtime, never ctime). A mitigation,
-// not a full defence (see runner-session.md).
+// not a full defence (see docs/rationale/ship-plan-runner-session.md).
 const inChildWindow = (item, ms) => (item.windows ?? []).some(([from, to]) => ms >= from && ms <= (to ?? Infinity));
 const writtenInWindow = (item, st) => inChildWindow(item, st.mtimeMs) || inChildWindow(item, st.ctimeMs);
 
