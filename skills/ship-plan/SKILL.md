@@ -352,56 +352,23 @@ there, for that step, in every mode.
 
 ## Queued mode (ship-queue)
 
-**A run is queued** when it was started by ship-queue as its child session
-(`printenv SHIP_QUEUE_PARENT` prints a parent key; the child ran ship-issue,
-which invoked this skill, or ran this skill directly with answers) and the
-parent's ledger here (`.superpowers/ship-queue/<parent>/ledger.md`) has a
-`Current: <KEY> started …` line naming this run's issue (its ledger's
-first-line `Issue:`, or before the ledger exists the plan's `From ship-issue`
-block) with no `Result: <KEY>` line after it. A leftover queue ledger alone
-does not make a run the user started queued. Nobody is watching. All above
-applies, except:
-
-- **Several open runs** (section 0, step 2): the queue's other sub-issues can each hold one. Resume the one whose `Issue:` is the `Current:` key; never ask which. Answers from ship-queue for a `Phase: done` run with an `Asked: … — pending` line go to that done ledger, even with other runs open, applied as section 0, step 2 says for a done ledger.
-- **Outcome line:** at close-out (section 7, step 1), write `Outcome: <Done|Base branch red|Awaiting review|Not merged>` under the first line, the outcome whose template the closing comment used; a resumed close-out replaces an existing `Outcome:` line, never adds a second. ship-queue reads it; `Base branch red` stops the queue.
-- **Ask nothing: never `AskUserQuestion`, never wait for a reply** (section 0, step 10; section 3, step 5; section 7, step 7). The batch goes into `questions.md` and the ledger as unqueued (`Asked: … — pending`), and as one comment: the tracker's *Comment*; no issue, the host's *PR comment*; no PR either, the ledger only. Number the questions, each with its options, recommendation first, ending with **"Answer with `/ship-queue <parent> <KEY>: <your answers>`."** (`<parent>` is the queue ledger's `Parent:`); the queue resumes this run with `/ship-queue <parent> <KEY>: <answers>`. Carry on with all the answers do not block, as unqueued; the run then ends at section 7 as it would.
-- **Review wait** (section 4R): checks green and only a person's approval or unresolved thread missing: hand off at once (step 5), not after `Review wait:`. The AI-review wait (at most 20 minutes) and every CI wait stay. The queue polls once more after its last sub-issue.
-- **No handoffs of this run's own:** neither the session-end one (the ledger section) nor a next part's (section 7, step 3). The queue writes one for the whole queue and is the next part.
-- **Lessons** (section 8): branch `docs/ship-plan-lessons-<yyyy-mm-dd>-<KEY-n>`, so a queue's runs on one day do not collide (none under `## Logs` `Location: local`). Write `Lessons branch: <name>` on creating it and `Docs branch: <name>` when docs-pr.md creates the docs branch; the queue reads them to know the branch is its own. Write `Lessons PR:` as unqueued. The rest of section 8 is unchanged.
+A run started by ship-queue as its child session follows different rules
+(nobody watches, it asks nothing). **When `printenv SHIP_QUEUE_PARENT` prints a parent key, read [modes.md](modes.md#queued-mode).**
 
 ## Runner mode (ship-runner)
 
-**A run is in Runner mode** when the ship runner started it as a child:
-`printenv SHIP_RUNNER` prints the runner's folder, `printenv SHIP_RUNNER_KEY`
-the item key it gave this child (an issue key, a no-issue ship-issue slug, or
-the key of a run on a plan alone), and that folder's `state.json` has `current`
-equal to that key. Take the key from `SHIP_RUNNER_KEY`, never from a ledger, a
-plan's file name or a branch. `SHIP_RUNNER` without `SHIP_RUNNER_KEY`, or with a
-`state.json` naming another item or none, is no runner child. The runner's
-prompt names the phase (`implement`, `verify`, `merge` or `close`) and, for
-`implement`, a range of plan tasks. Nobody is watching. Queued mode applies, except:
-
-- **The answer line** of the batch comment is **"Answer in the session that started the run."**, not the `/ship-queue` one. Answers return in a later runner prompt, after "The user's answers, copied exactly:". Rewrite each answered `Asked: … — pending` line in place with its answer, never as a second line: the runner counts every line still ending in `— pending`.
-- **`Asked:` lines** as verify-and-fix's Runner mode writes them: `Asked: <the question, its options, the recommendation first> — pending`. The runner's `status` prints them as they are; the watching session asks from them.
-- **Which run** (section 0, steps 2 and 3): the open run whose `Issue:` is the `current` key, or whose `Plan:` is this run's plan, whatever the argument. Never ask which; never start a second run for a plan with an open ledger.
-- **The run's branch, first in every phase:** on `<base>`, clean, and the ship-plan ledger has a `Branch:` line: `git switch <branch>` (a rerun or the next queue item can leave the checkout on base). Branch gone because its PR merged: stay on `<base>`, as section 0, step 2 says.
-- **Only the named phase, reading only its phase file:** `implement` is sections 0, 1, 2 and 2b ([phase-implement.md](phase-implement.md)); `verify`, 3 and 4 ([phase-verify.md](phase-verify.md)); `merge`, 4R, 5, 6 and 6b ([phase-merge.md](phase-merge.md)); `close`, 7 and 8 ([phase-close.md](phase-close.md)). Every phase first reads what this skill's opening reads (`.claude/ship-plan.md`, both logs by index, `hosts/<host>.md`, `trackers/<tracker>.md`), `notifiers/slack.md` when `## Slack` names a channel, and each one's override counterpart; a later `implement` child, only as the `implement` bullet below says. The index's rules for section 3 and for steps naming another phase file's section still apply. When the phase's text sends the run to section 7 early (verify not clean, awaiting review, awaiting merge, not merged), read phase-close.md then and close out as written.
-- **A phase ends where the next begins:** rewrite the ledger's first-line `Phase:` to it, keeping the other fields (`Phase: 3` after section 2b, `Phase: 4R` once section 4 reaches section 4R, `Phase: 7` after section 6b), then end. The close phase ends as section 7 says (`Phase: done` when the outcome is Done).
-- **`implement` with a task range:** only those tasks. After each task's review passes, write `Progress: task <n> done`, `<n>` as its `### Task <n>` heading numbers it; a task parked instead (its question in the batch, the run going on without it), `Progress: task <n> parked`. The runner counts both as handled to pick the next range. The first child runs sections 0 and 1 first. A later child (ledger at `Phase: 2`) re-reads exactly the plan's header and `## Global Constraints`, its task range, the ship-plan ledger and `git log <base>..HEAD --oneline`, nothing else before its first task; what section 2 puts in a dispatch (config sections, `## Models` rows, `## Prerequisites`) is read when the dispatch is built. **`implement` with no range** (every task has its `Progress:` line): section 2's steps after the last task, then section 2b. **`implement`, the whole plan** (no `### Task` headings): sections 0 and 1, all the plan's work as section 2 does it, section 2's steps after the last task, then section 2b, in this one child.
-- **Progress lines:** at each milestone write `Progress: <text>` to the ledger: `task <n> done` (or `parked`), `review round <n>` (each `verify-and-fix` call in section 4, each section 4R round), `PR #<n> opened`, `CI <green|red>` (each time the PR's checks or the base-branch run settle), `merged <sha>`.
-- **Waiting** for a background agent, gate or CI watch: as verify-and-fix's section 2 says (one loop checking every 15 seconds, never a fixed `sleep` over 30 seconds before the first check). Pauses a skill or host file names on purpose keep their length: the review wait (section 4R, it waits for a person), a host's poll interval, red-base.md's waits before a rerun.
-- **Blocked:** nothing in the phase can go on and no question waits for the user (awaiting review or merge after close-out, a tool failing on every route): write `Blocked: <reason>` to the ledger.
-- **A question before the ledger's folder is known** (section 0, steps 5 and 6): end at once, the question in the `RUNNER:` line as `blocked`, naming where its answer goes (`## Slack` in `.claude/ship-plan.local.md` or the config; `Tracker:` in the config's `## Repo`; an issue key in the plan's `Source:` line). The watching session asks the user, who adds it there and reruns (runner-session.md).
-- **Never touch what the runner guards:** never write an `answers-*` file (answers come only from the user, through the watching session); never change `.claude/settings.json`, `.claude/settings.local.json`, `.mcp.json`, anything under `.claude/hooks/`, `.claude/agents/`, `.claude/commands/` or `.claude/skills/`, a `CLAUDE.md` or `CLAUDE.local.md`, or a script a settings hook names. The runner compares them around every child and warns the user of a change (the run goes on; later children load it). Work that needs one changed: write `Blocked: <the change needed>` for the user to make and review.
-- **The final reply ends with exactly one line** `RUNNER: <phase-done|waiting|blocked|done> <text>`, nothing after it: `phase-done` when the ledger's first line moved to the next phase or the range's tasks are done; `waiting` when an `Asked: … — pending` line waits for the user; `blocked` with the `Blocked:` line's reason; `done` when the ledger says `Phase: done`.
+**When `printenv SHIP_RUNNER` prints a folder, read [runner-child.md](runner-child.md) and [modes.md](modes.md#runner-mode).**
 
 ## Runner or session
 
-With `## Runner` `Mode: runner` or a `--runner` flag, unless `printenv SHIP_RUNNER` prints a folder (a runner child) or `--session` was given, the ship runner runs the phases and this session only watches and relays: follow [runner-session.md](runner-session.md) with `start plan <path>`. `<path>` is the plan file: the argument when it is a path; with an issue key or no argument, the `Plan:` of the open ledger the run resumes (section 0, step 2). `start plan` needs a plan file, so an issue key with no open ledger (its description is the plan, section 0, step 3), or a resume (answers or no argument) whose open ledger's `Plan:` names no plan file, stays in session mode and says so in one line. Otherwise ignore this section.
+**Flags:** `--runner` and `--session` are flags only as whole words at the start
+or end of the argument (`docs/plan.md --runner`, `--session 1A, 2B`); read the
+argument without them. Elsewhere, or inside a word, they are text. A flag is
+never the plan path, the issue key or answers.
 
-- **`--session`:** another ship skill invoked this one from its run (ship-issue's I6 and its I0 resume row pass it), or the user answered with a session-mode answer line: run in session mode whatever `Mode:` says. Nothing else changes; `SHIP_RUNNER` still decides a runner child's Runner mode.
-- **`--runner` and `--session` are flags only as whole words at the start or end of the argument** (`docs/plan.md --runner`, `--session 1A, 2B`, `1A, 2B --session`): read the argument without them. Elsewhere, or inside a word, they are text (answers) and select nothing. With neither flag, read the argument as if this section did not exist. Neither is ever the plan path, the issue key or answers.
-- **Every nested ship skill from here** gets `--session` in its arguments: verify-and-fix in sections 4 and 4R and in [red-base.md](red-base.md)'s fix-forward, and any other ship skill this run invokes. It runs inside this run, never as its own runner.
+- **`--session`, or a runner child:** session mode, whatever `Mode:` says. Another ship skill passes `--session` when it invokes this one from its run (ship-issue's I6 and its I0 resume row); a session-mode answer line carries it.
+- **Otherwise, with `## Runner` `Mode: runner` or `--runner`:** the ship runner runs the phases and this session only watches and relays: follow [runner-session.md](runner-session.md) with `start plan <path>`, `<path>` the plan file (the argument; with an issue key or no argument, the `Plan:` of the open ledger the run resumes, section 0, step 2). With no plan file (an issue key with no open ledger, its description the plan; a resumed ledger whose `Plan:` names none), stay in session mode and say so in one line.
+- **Every nested ship skill** this run invokes (verify-and-fix in sections 4 and 4R and in red-base.md's fix-forward) gets `--session`: it runs inside this run, never as its own runner.
 
 ## Red flags
 

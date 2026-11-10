@@ -229,48 +229,23 @@ main checkout or a worktree): stay. **When the current checkout is dirty or on a
 
 ## Queued mode (ship-queue)
 
-**A run is queued** when it was started by ship-queue as its child session
-(`printenv SHIP_QUEUE_PARENT` prints a parent key; ship-queue's *Child sessions*
-sets it) and that parent's ledger in this checkout
-(`.superpowers/ship-queue/<parent>/ledger.md`) has a `Current: <KEY> started …`
-line naming this run's issue, with no `Result: <KEY>` line after it. A leftover
-queue ledger alone does not make a user-started run queued: it asks as unqueued.
-Nobody watches. Everything above applies, except:
-
-- **Ask nothing: never `AskUserQuestion`, never wait for a reply,** wherever this skill would ask (I1, the I3 batch, a later question). Ledger lines as unqueued (`Asked: … — pending`, `Parked:`, for I3 the `Waiting: batch …` line). Post the batch as one issue comment (the tracker's *Comment*): questions numbered, each with options, recommendation first, ending **"Answer with `/ship-queue <parent> <KEY>: <your answers>`."** (`<parent>`: the queue ledger's `Parent:`); the queue's resume form is `/ship-queue <parent> <KEY>: <answers>`. Do everything the answers do not block (the Spec stage and its commit), then end the run.
-- **A question before the issue is read** (a tracker call failing at I1): write it to the ledger with the exact error; end the run.
-- **I0's live-run row** skips this issue's ledgers in the queue ledger's `Checkout:` (the parent queue's). One in any other checkout still counts.
-- **No session-end handoff** of its own: the queue writes one for the whole queue.
-- **ship-plan** runs in its own queued mode (its "Queued mode (ship-queue)" section), found the same way.
+A run started by ship-queue as its child session follows different rules
+(nobody watches, it asks nothing). **When `printenv SHIP_QUEUE_PARENT` prints a parent key, read [modes.md](modes.md#queued-mode).**
 
 ## Runner mode (ship-runner)
 
-**A run is in Runner mode** when the ship runner started it as a child:
-`printenv SHIP_RUNNER` prints the runner's folder, `printenv SHIP_RUNNER_KEY`
-the item key given to this child (the issue key, or with no issue the slug), and
-that folder's `state.json` has `current` equal to that key. Take the key from
-`SHIP_RUNNER_KEY`; never derive it. A `SHIP_RUNNER` without `SHIP_RUNNER_KEY`,
-or whose `state.json` names another item or none, is no runner child. The
-runner's prompt names the phase. Queued mode applies, except:
-
-- **Answer line:** **"Answer in the session that started the run."** Answers arrive in a later runner prompt, after "The user's answers, copied exactly:". Rewrite each answered `Asked: … — pending` line in place, never as a second line (the runner counts lines ending `— pending`); then go on as I0 says for a resume with answers.
-- **`Asked:` lines:** `Asked: <the question, its options, the recommendation first> — pending`, as in verify-and-fix's Runner mode; the watching session asks from them.
-- **Never a worktree or another checkout** (section W, [worktree.md](worktree.md)): on `<base>`, clean, branch there, or `git switch <branch>` if this issue's branch exists (a resume); on this issue's branch, stay. Where W would create a worktree (checkout dirty or on another branch), write `Blocked: needs a new worktree — <reason>` (no ledger yet: in the `RUNNER:` line), end `RUNNER: blocked`.
-- **Only the named phase, reading only its file:** `spec` is I0–I3 ([phase-spec.md](phase-spec.md)); `plan` is I4 and I5 ([phase-plan.md](phase-plan.md)). Set the first line's `Phase:` field (other fields kept) to `Phase: I4` once the spec holds no `[pending Q<n>` marker, to `Phase: I6` after I5, then end. **A `small` issue whose Spec stage wrote the plan** (last `Stage:` line `Stage: plan done <path> — combined with spec (small)`), with no `[pending Q<n>` marker and no batch waiting (no `Waiting: batch …`, no `Asked: … — pending`): `spec` goes on through I4 and I5 in the same child, reading [phase-plan.md](phase-plan.md), ending at `Phase: I6`; no plan child starts.
-- **`implement`, `verify`, `merge` and `close` are ship-plan's:** skip this skill's reads before I0. No ship-plan ledger for this issue (none at the `ship-plan ledger:` path, none by I6's `Plan:`/`Issue:` match): I6. Else correct the field if it differs and invoke ship-plan with `--session` and no other argument, as I0's ship-plan-ledger row does; it runs in its Runner mode (its "Runner mode (ship-runner)" section) for the named phase and task range, and its `RUNNER:` line ends this run's reply.
-- **I0's live-run row** skips this issue's ledgers in this checkout (the runner's lock runs one child at a time; the last write may be the previous child's), not those in other checkouts.
-- **Progress lines:** at each milestone write `Progress: <text>`: `spec done <path>`, `batch of <n> sent` (before the `Waiting: batch …` line, which then stays last until the answers come), `plan done <path>`.
-- **Blocked:** nothing in the phase can go on and no question waits (e.g. a stage `blocked` with nothing to ask): write `Blocked: <reason>`.
-- **Never touch what the runner guards:** never write an `answers-*` file (answers come only from the user); never change `.claude/settings.json`, `.claude/settings.local.json`, `.mcp.json`, anything under `.claude/hooks/`, `.claude/agents/`, `.claude/commands/` or `.claude/skills/`, a `CLAUDE.md` or `CLAUDE.local.md`, or a script a settings hook names. If the work needs one changed, write `Blocked: <the change needed>` for the user to make and review.
-- **The final reply ends with exactly one line,** nothing after it: `RUNNER: <phase-done|waiting|blocked|done> <text>`; `phase-done` when the first line moved to the next phase; `waiting` when an `Asked: … — pending` or `Waiting: batch …` line waits for the user; `blocked` with the `Blocked:` reason; `done` when the issue is in status category Done and nothing ships (I0's first row).
+**When `printenv SHIP_RUNNER` prints a folder, read [../ship-plan/runner-child.md](../ship-plan/runner-child.md) and [modes.md](modes.md#runner-mode).**
 
 ## Runner or session
 
-With `## Runner` `Mode: runner` or `--runner`, unless `printenv SHIP_RUNNER` prints a folder (a runner child) or `--session` was given, the ship runner runs the phases; this session only watches and relays: read [../ship-plan/runner-session.md](../ship-plan/runner-session.md) and follow it with `start issue <KEY>` (an issue key, or the slug of an existing no-issue ledger). A run from a description alone (no key yet, or `Tracker: none` with no ledger yet) is session mode throughout: I6 (and I0's resume row) pass `--session` to ship-plan, and I3's answer line carries `--session`. Otherwise ignore this section.
+**Flags:** `--runner`, `--session` and `--small` are flags only as whole words at
+the start or end of the argument (`--session BILL-7 1A, 2B`, `BILL-7 --small --runner`);
+read the argument without them (I0). Elsewhere, or inside a word, they are text.
+A flag is never the issue key, slug, description or answers.
 
-- **`--session`:** the user answered with a session-mode run's answer line (I3): session mode, whatever `Mode:` says.
-- **`--small`:** the user sizes the issue `small` (I1 says how): the light Spec stage writes spec and plan in one dispatch. Runner mode: `start issue '<KEY>' --small`.
-- **`--runner`, `--session` and `--small` are flags only as whole words at the start or end of the argument** (`--session BILL-7 1A, 2B`, `BILL-7 1A, 2B --session`, `BILL-7 --small --runner`): read the argument without them (I0). Elsewhere, or inside a word, they are text and select nothing. With no flag, read the argument as if this section did not exist. A flag is never the issue key, slug, description or answers.
+- **`--small`:** the user sizes the issue `small` (I1 says how): the light Spec stage writes spec and plan in one dispatch.
+- **`--session`, or a runner child:** session mode, whatever `Mode:` says. A session-mode run's answer line (I3) carries `--session`.
+- **Otherwise, with `## Runner` `Mode: runner` or `--runner`:** the ship runner runs the phases; this session only watches and relays: follow [../ship-plan/runner-session.md](../ship-plan/runner-session.md) with `start issue <KEY>` (an issue key, or the slug of an existing no-issue ledger; with `--small`, `start issue '<KEY>' --small`). A run from a description alone (no key yet, or `Tracker: none` with no ledger yet) stays in session mode throughout: I6 (and I0's resume row) pass `--session` to ship-plan, and I3's answer line carries `--session`.
 
 ## Red flags
 
