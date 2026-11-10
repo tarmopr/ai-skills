@@ -47,7 +47,7 @@ Incidents and reasons moved out of skills/verify-and-fix/SKILL.md to keep it sho
 
 ## 7. Report
 
-- The plugin's dispatch hook reads the last ledger line (`Done: …`) as "this run has ended".
+- The plugin's dispatch hook reads the last ledger line (`Done: …`) as "this run has ended". Under ship-plan it also reads the ship-plan ledger of the same folder name: `Phase: done` there ends this run too. A `Review:` line appended after `Done:` once the PR was merged had kept a finished run live for six hours (2026-11-10).
 - A third-party flow without test credentials is the usual case for the Not tested section.
 - A check the reader cannot see was skipped is worse than a failing one.
 

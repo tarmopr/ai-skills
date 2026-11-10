@@ -120,6 +120,21 @@ test('verify-and-fix ledger with a round after Done: live again', () => {
   assert.equal(liveShipLedgers([dir], now).length, 1);
 });
 
+test('verify-and-fix ledger with a line after Done:, its same-named ship-plan ledger Phase: done: allow', () => {
+  const dir = fresh();
+  ledgerLines(dir, 'ship-plan/feature-x', ['Phase: done | Plan: p']);
+  ledgerLines(dir, 'verify-and-fix/feature-x', ['Done: abc1234 — clean', 'Review: r1 someone APPROVED — fine — none']);
+  assert.deepEqual(liveShipLedgers([dir], now), []);
+});
+
+test('verify-and-fix ledger with a line after Done:, its ship-plan ledger open or absent: live', () => {
+  const dir = fresh();
+  ledgerLines(dir, 'ship-plan/feature-x', ['Phase: 4 | Plan: p'], 7 * 3600e3);
+  const open = ledgerLines(dir, 'verify-and-fix/feature-x', ['Done: abc1234 — clean', 'Round 2: gates green']);
+  const alone = ledgerLines(dir, 'verify-and-fix/feature-y', ['Done: abc1234 — clean', 'Round 2: gates green']);
+  assert.deepEqual(liveShipLedgers([dir], now).sort(), [open, alone].sort());
+});
+
 test('ship-queue ledger ending with Summary: posted or Stopped: allow', () => {
   const a = fresh();
   ledgerLines(a, 'ship-queue/PROJ-9', ['Phase: running | Parent: PROJ-9', 'Summary: posted 2026-11-02 10:00']);
@@ -141,6 +156,21 @@ test('ship-issue ledger whose ship-plan ledger is open: live', () => {
   ledgerLines(dir, 'ship-plan/feature-x', ['Phase: 4 | Plan: p'], 7 * 3600e3);
   const file = ledgerLines(dir, 'ship-issue/PROJ-1', ['Phase: I4 | Issue: PROJ-1 | ship-plan ledger: .superpowers/ship-plan/feature-x/ledger.md']);
   assert.deepEqual(liveShipLedgers([dir], now), [file]);
+});
+
+test('ship-issue ledger whose ship-plan ledger sat in a checkout that is gone: allow', () => {
+  const dir = fresh();
+  const gone = join(fresh(), 'removed-worktree');
+  ledgerLines(dir, 'ship-issue/PROJ-1', [`Phase: I6 | Issue: PROJ-1 | ship-plan ledger: ${join(gone, '.superpowers', 'ship-plan', 'feature-x', 'ledger.md')}`]);
+  assert.deepEqual(liveShipLedgers([dir], now), []);
+});
+
+test('ship-issue ledger whose ship-plan ledger is not written yet, in a checkout that exists: live', () => {
+  const dir = fresh();
+  const other = fresh();
+  const abs = ledgerLines(dir, 'ship-issue/PROJ-1', [`Phase: I6 | Issue: PROJ-1 | ship-plan ledger: ${join(other, '.superpowers', 'ship-plan', 'feature-x', 'ledger.md')}`]);
+  const rel = ledgerLines(dir, 'ship-issue/PROJ-2', ['Phase: I6 | Issue: PROJ-2 | ship-plan ledger: .superpowers/ship-plan/feature-y/ledger.md']);
+  assert.deepEqual(liveShipLedgers([dir], now).sort(), [abs, rel].sort());
 });
 
 test('deny reason gives the absolute defaults path and what an unrelated session passes', () => {
