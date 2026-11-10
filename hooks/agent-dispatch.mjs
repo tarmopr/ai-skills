@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// PreToolUse hook for the Agent tool: while a ship run is live in this repo,
+// PreToolUse hook for the Agent tool: while a ship run is live in this checkout,
 // refuse a dispatch that passes no `model` or no `effort`. An omitted model
 // inherits the session's (usually the most expensive seat), and the skills'
 // "always pass both" rule has been lost after context compactions.
@@ -112,15 +112,18 @@ export function decide(toolInput, live) {
   return `A ship run is live (${live[0]}): pass both \`model\` and \`effort\` on every Agent dispatch, from the role's row of \`## Models\` in .claude/ship-plan.md (defaults: ${DEFAULTS}). A dispatch that is not part of that run: pass any \`model\` and \`effort\` that fit the task. Missing: ${missing.join(', ')}.`;
 }
 
+// The session's own checkout only, never the repo's other worktrees: a live run in one
+// worktree must not gate an unrelated session in another. Known gap: a session that works
+// on a run held in another checkout through `git -C` (ship-plan phase-implement step 2)
+// is not gated; the skills' own "pass both" rule still applies there.
 function roots(cwd) {
   try {
-    const out = execFileSync('git', ['-C', cwd, 'worktree', 'list', '--porcelain'], {
+    const top = execFileSync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], {
       encoding: 'utf8',
       timeout: 3000,
       stdio: ['ignore', 'pipe', 'ignore'],
-    });
-    const paths = out.split('\n').filter((l) => l.startsWith('worktree ')).map((l) => l.slice(9));
-    return paths.length ? paths : [cwd];
+    }).trim();
+    return [top || cwd];
   } catch {
     return [cwd];
   }

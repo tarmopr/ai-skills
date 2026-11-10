@@ -192,6 +192,58 @@ test('runner state with a lock: live only while the lock\'s runner pid is alive;
   assert.deepEqual(liveShipLedgers([dir], now).sort(), [liveRun, noLock].sort());
 });
 
+// The hook end to end, in a scratch repo with a linked worktree. No GIT_* from a calling hook
+// and no global or system git config.
+const HOOK = join(dirname(fileURLToPath(import.meta.url)), 'agent-dispatch.mjs');
+const GIT_ENV = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_')));
+Object.assign(GIT_ENV, { GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' });
+function git(cwd, ...args) {
+  const r = spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', ...args], { cwd, encoding: 'utf8', env: GIT_ENV });
+  assert.equal(r.status, 0, r.stderr);
+}
+function repoWithWorktree() {
+  const base = fresh();
+  const main = join(base, 'main');
+  const wt = join(base, 'wt');
+  mkdirSync(join(main, 'sub'), { recursive: true });
+  git(main, 'init', '-q');
+  git(main, 'commit', '-q', '--allow-empty', '-m', 'init');
+  git(main, 'worktree', 'add', '-q', '--detach', wt);
+  mkdirSync(join(wt, 'sub'));
+  return { main, wt };
+}
+function runHook(cwd, toolInput = { prompt: 'x' }) {
+  const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ cwd, tool_input: toolInput }), encoding: 'utf8', env: GIT_ENV });
+  assert.equal(r.status, 0, r.stderr);
+  return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : null;
+}
+
+test('hook: a live run in another worktree of the repo does not gate this session', () => {
+  const { main, wt } = repoWithWorktree();
+  ledger(wt, 'ship-plan/feature-other', 'Phase: 4R awaiting review | Plan: p');
+  assert.equal(runHook(main), null);
+  assert.equal(runHook(join(main, 'sub')), null);
+});
+
+test('hook: a live run in the session\'s own worktree gates it, from any folder in it', () => {
+  const { main, wt } = repoWithWorktree();
+  ledger(wt, 'ship-plan/feature-own', 'Phase: 2 | Plan: p');
+  for (const cwd of [wt, join(wt, 'sub')]) {
+    const out = runHook(cwd);
+    assert.equal(out.permissionDecision, 'deny');
+    assert.match(out.permissionDecisionReason, /feature-own\/ledger\.md/);
+  }
+  ledger(main, 'ship-issue/PROJ-1', 'Phase: I2 | Issue: PROJ-1');
+  assert.match(runHook(join(main, 'sub')).permissionDecisionReason, /PROJ-1\/ledger\.md/);
+});
+
+test('hook: outside a git repo, the cwd itself is the root', () => {
+  const dir = fresh();
+  ledger(dir, 'ship-plan/feature-x', 'Phase: 2 | Plan: p');
+  assert.equal(runHook(dir).permissionDecision, 'deny');
+  assert.equal(runHook(dir, { prompt: 'x', model: 'sonnet', effort: 'low' }), null);
+});
+
 test('hook: an internal error allows the call and says why on stderr', () => {
   const r = spawnSync(process.execPath, [join(dirname(fileURLToPath(import.meta.url)), 'agent-dispatch.mjs')], { input: '{not json', encoding: 'utf8' });
   assert.equal(r.status, 0);

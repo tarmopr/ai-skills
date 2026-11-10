@@ -52,8 +52,8 @@ public contract) gets a light spec and its plan in one `Spec stage (small)` disp
 `Spec stage` and a separate `Plan stage`. Pass `--small` (`/ai-skills:ship-issue PROJ-123 --small`) to size an issue `small` yourself; the run still resizes it for access, money, migrations or what a follow-up commit cannot undo. To skip spec and plan entirely, run `ship-plan` with the issue key when its description already spells out the change. `verify-and-fix` sends a small diff (at most 200 changed lines,
 nothing under `## Risk paths`) to one code reviewer plus the security review, and later rounds review only the
 fixes. `ship-queue` runs each sub-issue in a fresh `claude -p` child session (`## Queue`, `Queue run` row) and
-logs each one's cost. While a ship run is live, the plugin's `PreToolUse` hook refuses any Agent dispatch that
-passes no `model` or no `effort`.
+logs each one's cost. While a ship run is live in the session's own checkout, the plugin's `PreToolUse` hook
+refuses any Agent dispatch that passes no `model` or no `effort`. A run in another worktree does not count.
 
 ## Ship runner (opt-in)
 
