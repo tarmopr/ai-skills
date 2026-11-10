@@ -1,6 +1,6 @@
 ---
 name: ship-queue
-description: Use when the user wants every sub-issue of a parent issue shipped with ship-issue, one after another, unsupervised — "ship all sub-issues of PROJ-123", "queue these issues", "run ship-issue for each sub-issue", "ship the whole epic in order". Logs what could not finish, moves on, and ends with a summary of what the user must do next. Also use to resume such a queue after a context compaction.
+description: Use when the user wants every sub-issue of a parent issue shipped with ship-issue, one after another, unsupervised — "ship all sub-issues of PROJ-123", "queue these issues", "run ship-issue for each sub-issue", "ship the whole epic in order". Also use to resume such a queue after a context compaction.
 argument-hint: '<parent key> [show order] [keys…] [KEY: answers…] [--runner]'
 allowed-tools:
   - Bash(git status)
