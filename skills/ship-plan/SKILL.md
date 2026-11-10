@@ -155,7 +155,7 @@ Invoking the skill is the user's standing authorization, for this run, to:
 - open the PR, rerun failed CI jobs, merge once every check is green and the repo's review rules are met (section 4R);
 - request an AI review (the host's *Request an AI review*) and do all that `verify-and-fix`'s [review-comments.md](../verify-and-fix/review-comments.md) allows on the PR: push fixes for review comments, reply in review threads, resolve bot reviewers' threads (as the host names them), re-request a reviewer whose requested changes were addressed or whose approval a push dismissed;
 - open, push, merge follow-up branches fixing a red base branch this run caused, including a revert PR;
-- in the `## Slack` channel only, never another: post a review request per PR it opens (section 4R, step 2), reply in that post's thread asking for a re-review (section 4R, step 3), add the `pr-merged` reaction to it (section 5);
+- in the `## Slack` channel only, never another: post a review request per PR it opens (section 4R, step 2), reply in that post's thread asking for a re-review (section 4R, step 3), add the `Merged reaction:` to it (section 5);
 - read and write the run's issue (found or chosen in section 0, step 5): create it where the user chose, link it to the related issue the user chose, assign, set status, append to its description, comment;
 - each issue the plan's `Tickets:` line lists (section 0, step 5): read, assign, set status as section 1 and section 7, step 1 say, comment. Nothing else: no description edit, no link, no other issue;
 - open, push, merge the docs-only lessons branch (section 8).

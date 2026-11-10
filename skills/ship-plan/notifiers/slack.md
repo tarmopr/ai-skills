@@ -23,7 +23,7 @@ The `People:` table in `## Slack` maps a host login to a Slack user id. A login 
 Short; Slack unfurls the PR and issue links. Take `Size` from the host's *PR size* right before the post, never from memory: the message cannot be edited or deleted.
 
 ```markdown
-:github-pr: **Review request:** <PR title> <pr url>
+<Post prefix, then a space, when set>**Review request:** <PR title> <pr url>
 <1–2 sentences: what changes for a user.> <Issue: <issue url> | no issue>
 Size: <files> files, +<added> −<removed>. Needs: <n approvals | code owner approval | no approval, review welcome>.
 ```
@@ -46,10 +46,10 @@ When a review round has addressed comments from people, and a review request was
 
 ## Mark merged
 
-Right after the merge, add the `pr-merged` reaction to the review request post: `slack_add_reaction` with the channel and `<ts>` of `Slack: posted <ts>`, reaction name `pr-merged`. Once per PR: record `Slack: merged reaction` in the ledger, and skip it when the line is there, also on a resume. Fix-forward, revert, docs and lessons PRs get it too when they had a post. With no `Slack: posted <ts>` line, nothing was posted: add nothing.
+Right after the merge, add the `## Slack` `Merged reaction:` (default `white_check_mark`; `none`: skip this section) to the review request post: `slack_add_reaction` with the channel, the `<ts>` of `Slack: posted <ts>` and that reaction name. Once per PR: record `Slack: merged reaction` in the ledger, and skip it when the line is there, also on a resume. Fix-forward, revert and lessons PRs get it too when they had a post. With no `Slack: posted <ts>` line, nothing was posted: add nothing.
 
 ## Failures
 
 Slack failures are a `Lesson:`, never retried another way, and never a reason to stop.
 - Slack tools not connected: don't post, record nothing, and write a `Lesson:` once the ledger exists.
-- `pr-merged` is a workspace custom emoji. If the reaction is refused (unknown emoji), the run goes on, records a `Lesson:` for `blockers.md`, and never tries another emoji on its own.
+- A refused reaction (an unknown emoji, often a custom one this workspace lacks): the run goes on, records a `Lesson:` for `blockers.md`, and never tries another emoji on its own.

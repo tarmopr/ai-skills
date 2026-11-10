@@ -193,6 +193,8 @@ local file.
 |---|---|
 | `Channel:` | `#<name> (<channel id>)`, or `none` for no post. The id is what `slack_send_message` takes; the name is for people. |
 | `People:` | A table, `host login | Slack user id`, repo-wide because reviewers belong to the team. Filled the first time a login is seen. Used to @-mention people in the re-review request; a login not in it is named in plain text. |
+| `Post prefix:` | Text put before `**Review request:**` in each post, usually an emoji code such as `:eyes:`. Absent: nothing. |
+| `Merged reaction:` | The reaction added to the post after the merge, a name without colons (a workspace's custom emoji works). Absent: `white_check_mark`; `none`: no reaction. |
 
 ### `## Linear`
 

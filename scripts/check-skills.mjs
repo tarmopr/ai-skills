@@ -199,7 +199,7 @@ const PHRASES = {
     // Token wave 1 (2026-11-02): child sessions.
     '## Child sessions', 'SHIP_QUEUE_PARENT', '`cut off`', 'Cost: <KEY> run <n>', 'not started: session limit'],
   'ship-issue/worktree.md': ['The ship-queue worktree'],
-  'ship-plan/notifiers/slack.md': ['pr-merged', 'thread_ts', 'Slack: re-review', 'Slack: merged reaction'],
+  'ship-plan/notifiers/slack.md': ['Merged reaction:', 'thread_ts', 'Slack: re-review', 'Slack: merged reaction'],
   'ship-plan/hosts/github.md': ['--hostname', 'contains("/issues/<n>)")'],
   'ship-plan/hosts/azure-devops.md': ['git merge-base --is-ancestor', 'Full description in the first comment'],
   'ship-plan/trackers/jira.md': ['createJiraIssueLink', '32,767', 'parent = <key>', 'is blocked by'],
