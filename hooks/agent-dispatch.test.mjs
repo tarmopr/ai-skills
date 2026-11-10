@@ -143,6 +143,21 @@ test('ship-issue ledger whose ship-plan ledger is open: live', () => {
   assert.deepEqual(liveShipLedgers([dir], now), [file]);
 });
 
+test('ship-issue ledger whose ship-plan ledger sat in a checkout that is gone: allow', () => {
+  const dir = fresh();
+  const gone = join(fresh(), 'removed-worktree');
+  ledgerLines(dir, 'ship-issue/PROJ-1', [`Phase: I6 | Issue: PROJ-1 | ship-plan ledger: ${join(gone, '.superpowers', 'ship-plan', 'feature-x', 'ledger.md')}`]);
+  assert.deepEqual(liveShipLedgers([dir], now), []);
+});
+
+test('ship-issue ledger whose ship-plan ledger is not written yet, in a checkout that exists: live', () => {
+  const dir = fresh();
+  const other = fresh();
+  const abs = ledgerLines(dir, 'ship-issue/PROJ-1', [`Phase: I6 | Issue: PROJ-1 | ship-plan ledger: ${join(other, '.superpowers', 'ship-plan', 'feature-x', 'ledger.md')}`]);
+  const rel = ledgerLines(dir, 'ship-issue/PROJ-2', ['Phase: I6 | Issue: PROJ-2 | ship-plan ledger: .superpowers/ship-plan/feature-y/ledger.md']);
+  assert.deepEqual(liveShipLedgers([dir], now).sort(), [abs, rel].sort());
+});
+
 test('deny reason gives the absolute defaults path and what an unrelated session passes', () => {
   const dir = fresh();
   ledger(dir, 'ship-plan/feature-x', 'Phase: 2 | Plan: p');

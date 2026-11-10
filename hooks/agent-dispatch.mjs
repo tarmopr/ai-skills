@@ -5,7 +5,7 @@
 // "always pass both" rule has been lost after context compactions.
 // Node only, no dependencies. Any internal error allows the call.
 import { execFileSync } from 'node:child_process';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -15,7 +15,9 @@ const DEFAULTS = join(dirname(fileURLToPath(import.meta.url)), '..', 'skills', '
 
 // A ledger whose run has ended: `Phase: done` first (ship-plan, ship-queue);
 // a last line `Done:` (verify-and-fix), `Summary: posted` or `Stopped:` (ship-queue);
-// or a ship-issue ledger whose `ship-plan ledger:` is done.
+// or a ship-issue ledger whose `ship-plan ledger:` is done, or sat in a checkout that is gone
+// (a worktree removed after the merge). A missing ledger in a checkout that exists stays live:
+// ship-issue writes the path before ship-plan creates the file.
 function ended(text, root) {
   const lines = text.split('\n').filter((l) => l.trim());
   const first = lines[0] || '';
@@ -24,11 +26,12 @@ function ended(text, root) {
   if (/^(Done:|Summary: posted\b|Stopped:)/.test(last)) return true;
   const m = first.match(/\bship-plan ledger: ([^|\s]+)/);
   if (m && m[1] !== 'none') {
+    const sp = isAbsolute(m[1]) ? m[1] : join(root, m[1]);
     try {
-      const sp = isAbsolute(m[1]) ? m[1] : join(root, m[1]);
       return /^Phase: done\b/.test(readFileSync(sp, 'utf8').split('\n', 1)[0]);
     } catch {
-      return false;
+      const checkout = sp.split(/[\\/]\.superpowers[\\/]/)[0];
+      return checkout !== sp && !existsSync(checkout);
     }
   }
   return false;
