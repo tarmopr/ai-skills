@@ -203,49 +203,35 @@ not a new runner. A command still refused then goes into the batch (section 5, s
 ```dot
 digraph ship {
   pre [label="0 Pre-flight" shape=box];
-  branch [label="1 Tracker (issue if any) and branch" shape=box];
-  impl [label="2 Implement: subagent-driven-development" shape=box];
-  simp [label="2b Simplify: the whole diff, own commit" shape=box];
-  verify [label="3 Verify: verify until clean" shape=box];
-  pr [label="4 Push, PR, link PR" shape=box];
+  branch [label="1 Tracker and branch" shape=box];
+  impl [label="2 Implement, 2b Simplify" shape=box];
+  verify [label="4 Verify until clean" shape=box];
+  pr [label="4 Push, PR" shape=box];
   checks [label="PR checks green?" shape=diamond];
-  review [label="4R Review: request, poll, triage, fix, reply" shape=box];
+  review [label="4R Review: request, triage, fix, reply" shape=box];
   rules [label="Review rules met?" shape=diamond];
-  merge [label="5 Merge, comment" shape=box];
-  baseci [label="base-branch CI green?" shape=diamond];
-  transient [label="Transient failure in blockers.md?" shape=diamond];
-  rerun [label="Rerun the failed jobs" shape=box];
-  wait [label="Wait 10 min, rerun once"];
-  fix [label="Fix-forward branch: debug, test, fix" shape=box];
-  deploy [label="6b Validate the deploy" shape=box];
-  close [label="7 Close out: tracker or PR comment, lessons, report, one question batch" shape=doublecircle];
+  merge [label="5 Merge" shape=box];
+  base [label="6 Base CI green, 6b deploy valid?" shape=diamond];
+  red [label="red-base.md: rerun a transient, or fix-forward" shape=box];
+  close [label="7 Close out, 8 Lessons" shape=doublecircle];
 
-  pre -> branch -> impl -> simp -> verify;
+  pre -> branch -> impl -> verify;
   verify -> pr [label="clean"];
-  verify -> close [label="not clean: park, no PR"];
+  verify -> close [label="not clean: no PR"];
   pr -> checks;
-  checks -> verify [label="no: red job is a gate failure"];
+  checks -> verify [label="no: a gate failure"];
   checks -> review [label="yes, or CI None"];
   review -> checks [label="fixes pushed"];
   review -> rules;
   rules -> merge [label="yes"];
   rules -> close [label="not within Review wait: hand off"];
-  merge -> baseci;
+  merge -> base;
   merge -> close [label="deploy not covered: not merged"];
-  baseci -> deploy [label="yes, or CI None"];
-  deploy -> close [label="passed, or could not run"];
-  deploy -> fix [label="failed: this run's diff"];
-  deploy -> close [label="After merge check failed, not this diff: reported"];
-  baseci -> transient [label="no"];
-  transient -> rerun [label="yes, no Merge deploys to"];
-  transient -> close [label="yes, Merge deploys to set: park the rerun"];
-  transient -> wait [label="runner or network, Rerun a transient deploy failure on covers it"];
-  transient -> close [label="billing: escalate at once"];
-  wait -> deploy [label="green"];
-  wait -> close [label="red again: escalate"];
-  rerun -> baseci;
-  transient -> fix [label="no"];
-  fix -> verify;
+  base -> close [label="yes"];
+  base -> red [label="no"];
+  red -> base [label="rerun"];
+  red -> verify [label="fix-forward"];
+  red -> close [label="escalate or park"];
 }
 ```
 
