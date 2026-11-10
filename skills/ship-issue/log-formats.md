@@ -1,11 +1,9 @@
 # Seed content for the repo's ship-issue log
 
-`ship-issue` creates `.claude/ship-issue/interruptions.md` in the repo the
-first time a run has something to write and the file is missing. It is
-committed through ship-plan's lessons PR: ship-plan's section 8 writes it, under its
-rules, when the plan carries a `From ship-issue` block. Under `## Logs` `Location: local`
-it lives in the local store's `ship-issue/` instead, never committed
-([config-format.md](../ship-plan/config-format.md#-logs)).
+`ship-issue` creates `.claude/ship-issue/interruptions.md` the first time a run
+has something to write. ship-plan's section 8 commits it through the lessons PR
+when the plan carries a `From ship-issue` block. `Location: local`: the local
+store's `ship-issue/`, as [ship-plan's log-formats.md](../ship-plan/log-formats.md) says.
 
 Tooling blockers do not go here: they go in `ship-plan/blockers.md`.
 Research techniques for the repo go in the config's `## Evidence`.

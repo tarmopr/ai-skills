@@ -4,23 +4,23 @@ Read when `## Slack` names a channel, or when it is missing and the channel must
 
 ## Choose the channel
 
-Read `## Slack` from the config, else from `.claude/ship-plan.local.md` (a git-ignored file on this machine). Either says where review requests go: a channel, or `none`. **Neither has it:** ask now, before the run goes on, in this step's own `AskUserQuestion` call (its answer comes back in the same turn, so no answer line is needed): "Post a review request to Slack when the PR is created?"
+Read `## Slack` from the config, else from `.claude/ship-plan.local.md` (config-format.md). **Neither has it:** ask now, before the run goes on, in this step's own `AskUserQuestion` call (its answer comes back in the same turn, so no answer line is needed): "Post a review request to Slack when the PR is created?"
 - Options: up to 2 channels found with `slack_search_channels` (`channel_types: "public_channel,private_channel"`, keywords from the repo name, its team, or "review"), as `#<name>`, the most relevant one recommended; "Don't post to Slack", recommended when no channel was found. "Other" takes a channel name: resolve it to an id with the same search. Not found: ask once more with the closest matches; still not found: don't post this run, and record nothing.
-- **Record it once, in the committed config.** Once section 1 has created the feature branch, write `## Slack` with `Channel: #<name> (<id>)`, or `Channel: none`, to `.claude/ship-plan.md` only, as the feature branch's first commit (`chore: record Slack channel for review requests`). A drafted config gets it inside the draft instead, committed when the draft is confirmed. Nothing is written to `.claude/ship-plan.local.md` or `.git/info/exclude`.
+- **Record it once, in the committed config.** Once section 1 has created the feature branch, write `## Slack` with `Channel: #<name> (<id>)`, or `Channel: none`, to `.claude/ship-plan.md` only, as the feature branch's first commit (`chore: record Slack channel for review requests`). A drafted config gets it inside the draft instead, committed when the draft is confirmed. Nothing is written to the local file or `.git/info/exclude`.
 - Keep the `Asked:` and `Ruling: user <date>` lines in the conversation until the ledger exists, then write them.
 - Slack tools not connected: see Failures.
 
 ## People
 
-The `People:` table in `## Slack` maps a host login to a Slack user id. It is repo-wide, because reviewers belong to the team. A login found in it is @-mentioned. A login missing from it is looked up with `slack_search_users`, by display name or email.
+The `People:` table in `## Slack` maps a host login to a Slack user id. A login found in it is @-mentioned. A login missing from it is looked up with `slack_search_users`, by display name or email.
 - Found: add it to the `People:` table, committed with the run's lessons.
 - Not found: use the person's plain name, and record a `Lesson:`.
 
 ## Review request
 
-`slack_send_message` with its `channel_id`, the text below as `message`, and `unfurl_app_links: true`, unless a standing answer in `interruptions.md` says otherwise (it outranks this default, as every standing answer does). Read it before the post: the message cannot be edited or deleted afterwards. Once per PR: record `Slack: posted <ts>` in the ledger and never post again for that PR, also not on a resume. Fix-forward, revert and lessons PRs are posted only when the review rule needs an approval. A failed post: see Failures.
+`slack_send_message` with its `channel_id`, the text below as `message`, and `unfurl_app_links: true`, unless a standing answer in `interruptions.md` says otherwise (it outranks this default, as every standing answer does); read it before the post. Once per PR: record `Slack: posted <ts>` in the ledger and never post again for that PR, also not on a resume. Fix-forward, revert and lessons PRs are posted only when the review rule needs an approval. A failed post: see Failures.
 
-Short; Slack unfurls the PR and issue links. Take `Size` from the host's *PR size* right before the post, never from memory: the message cannot be edited.
+Short; Slack unfurls the PR and issue links. Take `Size` from the host's *PR size* right before the post, never from memory: the message cannot be edited or deleted.
 
 ```markdown
 :github-pr: **Review request:** <PR title> <pr url>

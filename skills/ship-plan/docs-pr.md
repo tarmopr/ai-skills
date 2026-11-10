@@ -2,7 +2,7 @@
 
 Read only when the ledger has a `Docs PR:` line and the code PR merged (section 7, step 2 of [phase-close.md](phase-close.md)).
 
-**Docs PR,** when the ledger has a `Docs PR:` line (`ship-issue` held the spec out of the code PR, because the repo keeps docs and code in separate PRs) and the code PR has merged. Under "Awaiting review" and "Not merged" it waits: the docs describe code that is not on the base branch yet. Nothing else opens it: without this step the spec stays git-ignored in the ledger directory and never reaches the repository.
+The line means `ship-issue` held the spec out of the code PR (the repo keeps docs and code in separate PRs). Under "Awaiting review" and "Not merged" it waits: the docs describe code not on the base branch yet. Nothing else opens it: without this step the spec stays git-ignored in the ledger directory.
 
 1. In the same checkout, never a second worktree (a worktree-isolated session cannot write to one): `git fetch origin <base>` right before the switch, never an earlier fetch (other PRs merge while this run waits), then `git switch -c docs/<ID>-<slug> origin/<base>`, with the feature branch's `<slug>` and `<ID>` written the way the config's `Branch:` pattern writes it.
 2. Copy the held spec to the path the line names (`docs/superpowers/specs/…`), rewrite the spec's own line about where it lives, and add one `Shipped also:` line where the spec lists its tests or delivery, naming what the code PR did beyond the spec (tests, files, commit count), from `git diff --stat <merge sha>^ <merge sha>`. Make the other changes the line lists: rows in the agent instructions, an ADR the spec asks for, a pointer in an ADR it supersedes (only a proposed one; an accepted ADR is append-only).
