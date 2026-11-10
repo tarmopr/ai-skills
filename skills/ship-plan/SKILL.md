@@ -379,9 +379,6 @@ never the plan path, the issue key or answers.
 | "No approval yet, keep waiting" | Wait `Review wait:`, then hand off. The run must end. |
 | "One background loop over the review window" | One `sleep 300` at a time, a status line after each poll (section 4R, step 3); in one long loop the user sees nothing and cannot ask. |
 | "Approve it / resolve their thread so it can merge" | Never. Approval and a person's thread belong to the reviewer. |
-| "The AI reviewer is a bot, its comments don't matter" | Grade every comment by what a user would get. A bot can be right. |
-| "The reviewer is wrong, ignore it" | Reply with quoted evidence. Every thread gets an answer. |
-| "Approved, and one more AI suggestion: push it" | If stale reviews are dismissed, that push loses the approval. Reply "follow-up". |
 | "Run issue done, close its sibling sub-tasks too" | Only `Tickets:` issues, each once its own tasks are committed and a commit carries its key. |
 | "The tracker already says done" | Done means the config's `Done means:`. Check the base-branch run first. |
 | "The PR is merged, so I'm done" | Done when the base branch is green, the closing comment written, the docs PR open (when the ledger has a `Docs PR:` line), and lessons recorded. |

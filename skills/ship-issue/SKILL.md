@@ -258,7 +258,6 @@ A flag is never the issue key, slug, description or answers.
 | "Two issues look close, I'll take the better" | The user picks, in the issue question. |
 | "No key: I'll create one in the config's project" / "Small, no issue needed" | Issue question first; where it goes and the related issue are the user's. Only `Tracker: none` runs without an issue. |
 | "Pass the issue key to ship-plan" | The plan file path; the tracker's copy may be mangled. |
-| "I'll start ship-plan's ledger" | Never (see The ledger). |
 | "Assign it, move it to In Progress now" | ship-plan's section 1 does, when work starts. |
 | "Main checkout is on another branch, I'll switch it" | Someone works there: worktree recipe. |
 | "A docs worktree for the spec beside the code" | Stages cannot write there; an early docs PR loses its approval. Hold the spec in the ledger directory (I2 step 3); ship-plan opens the docs PR after the merge, in this checkout. |
@@ -268,4 +267,3 @@ A flag is never the issue key, slug, description or answers.
 | "Small, but Opus for the spec to be safe" | `Size:` picks the row; in doubt `standard`. A small-row stage that finds more returns `Resize:`. |
 | "Double-check the stage's research" | Loads what the stage kept out. Take its report; a gap goes back as a `revise` dispatch. |
 | "No `## Evidence`, I'll query production" | Only read-only sources the config names; else the baseline is a reproduction. |
-| "Queued, but this question is quick" | Nobody watches: issue comment with the queue's answer line, end the run. |
