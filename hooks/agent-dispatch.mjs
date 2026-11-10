@@ -37,6 +37,17 @@ function ended(text, root) {
   return false;
 }
 
+// A verify-and-fix run under ship-plan shares its folder name; once that ship-plan ledger is
+// `Phase: done`, the whole run has ended, even when a line landed after verify-and-fix's `Done:`.
+function shipPlanDone(root, run) {
+  try {
+    const first = readFileSync(join(root, '.superpowers', 'ship-plan', run, 'ledger.md'), 'utf8').split('\n', 1)[0];
+    return /^Phase: done\b/.test(first);
+  } catch {
+    return false;
+  }
+}
+
 // Whether pid is a running process (EPERM: it is, owned by someone else).
 function alive(pid) {
   try {
@@ -77,6 +88,7 @@ export function liveShipLedgers(roots, nowMs) {
         try {
           if (statSync(file).mtimeMs < nowMs - LIVE_MS) continue;
           if (ended(readFileSync(file, 'utf8'), root)) continue;
+          if (skill === 'verify-and-fix' && shipPlanDone(root, run)) continue;
           live.push(file);
         } catch {
           // no ledger in this run folder

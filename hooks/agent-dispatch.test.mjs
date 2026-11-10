@@ -120,6 +120,21 @@ test('verify-and-fix ledger with a round after Done: live again', () => {
   assert.equal(liveShipLedgers([dir], now).length, 1);
 });
 
+test('verify-and-fix ledger with a line after Done:, its same-named ship-plan ledger Phase: done: allow', () => {
+  const dir = fresh();
+  ledgerLines(dir, 'ship-plan/feature-x', ['Phase: done | Plan: p']);
+  ledgerLines(dir, 'verify-and-fix/feature-x', ['Done: abc1234 — clean', 'Review: r1 someone APPROVED — fine — none']);
+  assert.deepEqual(liveShipLedgers([dir], now), []);
+});
+
+test('verify-and-fix ledger with a line after Done:, its ship-plan ledger open or absent: live', () => {
+  const dir = fresh();
+  ledgerLines(dir, 'ship-plan/feature-x', ['Phase: 4 | Plan: p'], 7 * 3600e3);
+  const open = ledgerLines(dir, 'verify-and-fix/feature-x', ['Done: abc1234 — clean', 'Round 2: gates green']);
+  const alone = ledgerLines(dir, 'verify-and-fix/feature-y', ['Done: abc1234 — clean', 'Round 2: gates green']);
+  assert.deepEqual(liveShipLedgers([dir], now).sort(), [open, alone].sort());
+});
+
 test('ship-queue ledger ending with Summary: posted or Stopped: allow', () => {
   const a = fresh();
   ledgerLines(a, 'ship-queue/PROJ-9', ['Phase: running | Parent: PROJ-9', 'Summary: posted 2026-11-02 10:00']);
