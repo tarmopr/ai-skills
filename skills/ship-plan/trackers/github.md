@@ -19,7 +19,7 @@ Status is labels, progress is comments. There is no board: never call
 
 `gh auth status`, then `gh repo view <Repo> --json hasIssuesEnabled`.
 
-**GitHub Issues configured but unavailable** (not signed in, the call fails, or `hasIssuesEnabled` is `false`): park "GitHub Issues unavailable: <exact error>" in the batch, continue as if no tracker were configured (the PR body carries the plan), and say so in the report. Never retry it through another route. A `gh issue`, `gh label` or milestones `gh api` call that fails later in the run gets the same rule; a PR that exists gets its Plan section through the host's *PR comment*.
+**GitHub Issues configured but unavailable** (not signed in, the call fails, or `hasIssuesEnabled` is `false`): park "GitHub Issues unavailable: <exact error>" in the batch, continue as if no tracker were configured (the PR body carries the plan), and say so in the report. Never retry it through another route. Under ship-issue, nothing that needs the issue starts until the parked item is answered (its I1). A `gh issue`, `gh label` or milestones `gh api` call that fails later in the run gets the same rule; a PR that exists gets its Plan section through the host's *PR comment*.
 
 ## Issue keys
 

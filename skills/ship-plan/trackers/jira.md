@@ -16,7 +16,7 @@ Tools are `mcp__plugin_atlassian_atlassian__*`; a connector under another name p
 
 With no `## Jira` in the config, call `getAccessibleAtlassianResources`. One Jira site: use its URL. Several: ask which one first, in its own `AskUserQuestion` call.
 
-**Jira unavailable** (not connected, or a call fails, now or later in the run): park "Jira unavailable: <exact error>" in the batch, continue with no Jira issue (the PR body carries the plan; a PR that exists gets its Plan section through the host's *PR comment*), and say so in the report. Never retry it through another route.
+**Jira unavailable** (not connected, or a call fails, now or later in the run): park "Jira unavailable: <exact error>" in the batch, continue with no Jira issue (the PR body carries the plan; a PR that exists gets its Plan section through the host's *PR comment*), and say so in the report. Never retry it through another route. Under ship-issue, nothing that needs the issue starts until the parked item is answered (its I1).
 
 ## Issue keys
 
