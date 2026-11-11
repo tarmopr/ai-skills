@@ -16,7 +16,7 @@ Right before the merge (section 5, step 4): for each listed key, count the PR's 
 
 ## Close-out
 
-At section 7, step 1. Each `Tickets:` issue gets the done status with the run issue, and only when all of these hold: the run issue got it; every plan task whose heading names its key is committed, none parked, skipped or left `[needs a decision]`; and the ledger's `Commits:` line counts at least one commit for it. Then "Issue comment: done (batch ticket)" and the tracker's *Set status* to the done status. Otherwise "Issue comment: not done (batch ticket)", naming what is missing; its status stays, and it goes in the batch. Under every other outcome, each `Tickets:` issue gets the run issue's comment for that outcome, and its status stays.
+At section 7, step 1. Each `Tickets:` issue gets the done status with the run issue, and only when all of these hold: the run issue got it; every plan task whose heading names its key is committed, none parked, skipped or left `[needs a decision]`; and the ledger's `Commits:` line counts at least one commit for it. Then "Issue comment: done (batch ticket)" and the tracker's *Set status* to the done status. Otherwise "Issue comment: not done (batch ticket)", naming what is missing; its status stays, and it goes in the question batch. Under every other outcome, each `Tickets:` issue gets the run issue's comment for that outcome, and its status stays.
 
 ## Templates
 
