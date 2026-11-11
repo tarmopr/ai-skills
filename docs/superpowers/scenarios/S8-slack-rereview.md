@@ -37,6 +37,7 @@ author. Its `.claude/ship-plan.md`:
 
 ## Slack
 - Channel: #billing-reviews (C0BILL123)
+- Merged reaction: pr-merged
 - People:
 
 | Login | Slack user |

@@ -1,6 +1,6 @@
 # S7: Files read only on a condition
 
-Five separate runs, one per condition under which a skill reads an extra file
+Six separate runs, one per condition under which a skill reads an extra file
 (or must not read one). Each `## Prompt S7<x>` is its own runner, graded by
 its own **Pass if** lines at the end.
 
@@ -255,7 +255,6 @@ prints `git@github.com:acme/billing-api.git`. Its `.claude/ship-plan.md`:
 
 ```
 Phase: 6 | Plan: docs/superpowers/plans/2026-10-19-BILL-433-tax-rounding.md | Issue: BILL-433 | PR: #62 | merge: 7d6e5f4 | base run: 4300
-Docs PR: .superpowers/ship-issue/BILL-433/2026-10-19-BILL-433-tax-rounding-design.md → docs/superpowers/specs/2026-10-19-BILL-433-tax-rounding-design.md; also nothing else
 Merged: #62 as 7d6e5f4
 ```
 
@@ -270,8 +269,79 @@ Answer, in order:
 2. Read the failure: exact command.
 3. Classify it and say what you do next, with every command, up to opening
    the fix PR. Quote the rule.
-4. While the base branch is red, do you open the docs PR? When, in this run,
-   is the docs PR opened, and which files do you read for it?
+
+## Prompt S7f
+
+You are running the `ship-plan` skill. Its files are in SKILLDIR/ship-plan/
+(SKILL.md and the files it links), and the skills it calls are in
+SKILLDIR/verify-and-fix/ and SKILLDIR/ship-issue/. Read
+SKILLDIR/ship-plan/SKILL.md and every file it links that matters for this run.
+
+**The repo:** `acme/billing-api` on github.com. `git remote get-url origin`
+prints `git@github.com:acme/billing-api.git`. Its `.claude/ship-plan.md`:
+
+```markdown
+# Ship config
+
+## Repo
+- Base branch: main
+- Merge: squash
+
+## Gates
+| Gate | Command | Only when changed | Timeout |
+|---|---|---|---|
+| Tests | make test | | |
+
+## CI
+- Workflow: ci.yml
+
+## Jira
+- Site: https://acme.atlassian.net
+- Project: BILL
+- Start transition: Start progress
+- Done transition: Done
+
+## Slack
+- Channel: none
+```
+
+**The plan** `docs/superpowers/plans/2026-10-20-BILL-470-invoice-export.md`
+has this header line: `Tickets: BILL-470, BILL-471, BILL-472`. Its tasks are
+`### Task 1: Export endpoint (BILL-470)`, `### Task 2: Credit-note columns
+(BILL-471)` and `### Task 3: Export fixtures for credit notes (BILL-472)`.
+Task 3 was parked: it is still `[needs a decision]`, and its question is in
+`questions.md`.
+
+**Where the run stands:** section 5. The ledger at
+`.superpowers/ship-plan/feature-BILL-470-invoice-export/ledger.md` reads:
+
+```
+Phase: 5 | Plan: docs/superpowers/plans/2026-10-20-BILL-470-invoice-export.md | Issue: BILL-470 | PR: #64
+Tickets: BILL-471, BILL-472
+Progress: task 3 parked
+```
+
+PR #64's checks are green, its review rule is met, and it is not behind
+`main`. After `git fetch origin main`, `git log --format=%s origin/main..HEAD`
+prints:
+
+```
+feat: invoice export endpoint (BILL-470)
+feat: credit-note columns in the export (BILL-471)
+test: credit-note column fixtures (BILL-471)
+```
+
+Assume the merge succeeds as `9e8f7a6` and the `ci.yml` push run on `main`
+for it finishes green.
+
+Answer, in order:
+
+1. Which files under SKILLDIR do you read from this point to the end of
+   close-out, in order?
+2. What do you do right before the merge? Every command, and every line you
+   write in the ledger.
+3. At close-out, for each of BILL-470, BILL-471 and BILL-472: which comment
+   template do you post, and does its status change? Quote the rule.
 
 ## Pass if
 
@@ -298,5 +368,14 @@ Answer, in order:
 
 **S7e**
 - `ship-plan/red-base.md` is read once the base-branch run is red.
-- `ship-plan/docs-pr.md` is not read, and the docs PR is not opened, during
-  section 6; it waits for close-out (section 7).
+- `ship-plan/tickets.md` is not read.
+
+**S7f**
+- `ship-plan/tickets.md` is read before the merge command.
+- Before the merge: `git log --format=%s origin/main..HEAD` (or the output
+  above, cited as that command), and one ledger line
+  `Commits: BILL-471 2, BILL-472 0`.
+- BILL-470: "Issue comment: done", then set to Done.
+- BILL-471: "Issue comment: done (batch ticket)", then set to Done.
+- BILL-472: "Issue comment: not done (batch ticket)", naming the parked
+  task 3; its status does not change, and it is in the question batch.

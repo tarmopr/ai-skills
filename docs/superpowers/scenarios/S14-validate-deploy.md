@@ -74,8 +74,8 @@ Pending after merge: 5. customer downloads an invoice PDF (read-only; same reaso
 Merged: #67 as 9b0c1d2
 ```
 
-Base run 5140 (`test`, then `deploy`) has just finished green. No docs PR is
-due. `fixtures/users.yml` names `admin@example.test` (billing-admin) and
+Base run 5140 (`test`, then `deploy`) has just finished green.
+`fixtures/users.yml` names `admin@example.test` (billing-admin) and
 `customer@example.test` (customer).
 
 **What the world answers:**
@@ -159,8 +159,8 @@ Pending after merge: 5. customer downloads an invoice PDF (read-only; same reaso
 Merged: #67 as 9b0c1d2
 ```
 
-Base run 5140 (`test`, then `deploy`) has just finished green. No docs PR is
-due. `fixtures/users.yml` names `admin@example.test` (billing-admin) and
+Base run 5140 (`test`, then `deploy`) has just finished green.
+`fixtures/users.yml` names `admin@example.test` (billing-admin) and
 `customer@example.test` (customer).
 
 **What the world answers:**
@@ -248,8 +248,8 @@ Pending after merge: 5. customer downloads an invoice PDF (read-only; same reaso
 Merged: #67 as 9b0c1d2
 ```
 
-Base run 5140 (`test`, then `deploy`) has just finished green. No docs PR is
-due. The user never signed in to the hosted URL and has not answered.
+Base run 5140 (`test`, then `deploy`) has just finished green.
+The user never signed in to the hosted URL and has not answered.
 
 **What the world answers:**
 
@@ -331,8 +331,8 @@ Pending after merge: 5. customer downloads an invoice PDF (read-only; same reaso
 Merged: #67 as 9b0c1d2
 ```
 
-Base run 5140 (`test`, then `deploy`) has just finished green. No docs PR is
-due. `fixtures/users.yml` names `admin@example.test` (billing-admin) and
+Base run 5140 (`test`, then `deploy`) has just finished green.
+`fixtures/users.yml` names `admin@example.test` (billing-admin) and
 `customer@example.test` (customer).
 
 **What the world answers:**

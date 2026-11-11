@@ -65,8 +65,6 @@ reports; never stop between them to ask whether to go on.
 **Before round 1, read the repo's `.claude/ship-plan.md`
 ([format](../ship-plan/config-format.md)) in full and `<logs>/ship-plan/blockers.md` by index
 ([Reading the logs](../ship-plan/SKILL.md#reading-the-logs), which defines `<logs>`).**
-If `.claude/ship.md` exists and `.claude/ship-plan.md` does not, stop with one
-line: "This repo is set up for the removed `ship` skill: move `.claude/ship.md` to `.claude/ship-plan.md` and `.claude/ship/` to `.claude/ship-plan/`."
 The config is the only source of commands.
 
 ## The loop
@@ -165,7 +163,7 @@ After each round, write `Reviewed: <HEAD sha> — round <n>, <full|delta>, <the 
 
 **Copied code, every round.** Diff each added file that copies another repo
 file (a second service's setup, a test fixture, a helper) against its source: a
-CI duplication gate (Sonar's "Duplicated Lines on New Code", 3% by default)
+CI duplication gate (often a small percentage of new lines)
 catches shared blocks no local gate does. A shared block over about 30 lines is Important: extract it as the repo's agent instructions
 say, or, when the plan copies on purpose, put it in the question batch with
 extraction recommended.

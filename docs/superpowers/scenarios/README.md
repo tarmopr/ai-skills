@@ -17,9 +17,8 @@ files' shape. These scenarios pin behaviour.
 | S4 | [S4-azure-jira.md](S4-azure-jira.md) | Azure DevOps with Jira: how the PR reaches the issue |
 | S5 | [S5-no-config.md](S5-no-config.md) | No config: the draft and the tracker question |
 | S6 | [S6-jira-no-tracker-field.md](S6-jira-no-tracker-field.md) | `## Jira` without `Tracker:`: no new question |
-| S7 | [S7-loaded-on-demand.md](S7-loaded-on-demand.md) | Five runs, one per file read only on a condition |
+| S7 | [S7-loaded-on-demand.md](S7-loaded-on-demand.md) | Six runs, one per file read only on a condition |
 | S8 | [S8-slack-rereview.md](S8-slack-rereview.md) | Slack re-review reply and merged reaction, across a resume |
-| S9 | [S9-ship-repo.md](S9-ship-repo.md) | A repo still set up for the removed `ship` skill |
 | S10 | [S10-verify-standalone.md](S10-verify-standalone.md) | `verify-and-fix` on a branch with no PR |
 | S11 | [S11-override-files.md](S11-override-files.md) | A repo override file: read right after its shared file and followed; a line that widens is not applied |
 | S12 | [S12-allowed-merge-deploys.md](S12-allowed-merge-deploys.md) | Four runs: `Merge deploys to:` with and without `## Allowed` `Merge that deploys to:`, a production-like name, a fix-forward PR |
@@ -36,8 +35,8 @@ files' shape. These scenarios pin behaviour.
 1. Pick `SKILLDIR`: the folder that holds the skill folders
    (`ship-plan/`, `ship-issue/`, `verify-and-fix/`): `<this repo>/skills`.
 2. Dispatch one fresh `general-purpose` subagent per prompt. Its prompt is
-   the text of the scenario's `## Prompt` section (S7 has five, `## Prompt
-   S7a` … `## Prompt S7e`, each its own run; S17 has four, and pastes its shared repo block where a prompt says **[The repo]**), with every `SKILLDIR` replaced by
+   the text of the scenario's `## Prompt` section (S7 has six, `## Prompt
+   S7a` … `## Prompt S7f`, each its own run; S17 has four, and pastes its shared repo block where a prompt says **[The repo]**), with every `SKILLDIR` replaced by
    the path from step 1, followed by the whole **Answer format** section below.
    Never give it the **Pass if** lines, this README's table, or the spec and
    plan: a runner that knows what is being tested answers to the test.

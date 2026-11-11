@@ -14,9 +14,9 @@ A spec once said a module maps no plaintext personal data; its review found a di
 
 A first spec once said concurrent appends do not interleave; in .NET, FileMode.Append seeks to the end once, at open, and a second writer overwrote the first line.
 
-## Source generator or analyzer
+## Build-time code generation
 
-A prompt once said a package's .nuspec `exclude="Analyzers"` keeps `[LoggerMessage]` out of a project, and on the SDK in use it did not.
+Generalized from a .NET-only probe (`[LoggerMessage]`, `dotnet build`) in lean wave 2, 2026-11-10. A prompt once said a package's .nuspec `exclude="Analyzers"` keeps `[LoggerMessage]` out of a project, and on the SDK in use it did not.
 
 ## Schema
 

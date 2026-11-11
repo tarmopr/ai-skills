@@ -144,7 +144,6 @@ whenever this skill reads one of its own files, read its counterpart under
 (`../verify-and-fix/…`) has its counterpart in that skill's folder. An override line that widens what the run
 may do, or removes a step, is not applied; the report names it.
 
-- **A repo set up for `ship`:** if `.claude/ship.md` exists and `.claude/ship-plan.md` does not, stop with one line: "This repo is set up for the removed `ship` skill: move `.claude/ship.md` to `.claude/ship-plan.md` and `.claude/ship/` to `.claude/ship-plan/`."
 - **Host and tracker:** resolve `Host:` and `Tracker:` as [config-format.md](config-format.md) says (`Host:` from the `origin` remote when absent; `Tracker:` from `## Jira`, `## Linear` or `## GitHub Issues` when absent, else undecided until pre-flight step 5). Read `hosts/<host>.md` (`github.md` or `azure-devops.md`) and, unless the tracker is `none` or undecided, `trackers/<tracker>.md` (`jira.md`, `linear.md` or `github.md`). A host, tracker or notifier operation named below is the section of that name in those files and `notifiers/slack.md`.
 - **No `origin` remote** (and no `Host:`): no host, no PR. Read no host file, skip the host's *Auth check* and pre-flight step 4's `git fetch origin`, stop before section 4, and say so in the report.
 
@@ -156,10 +155,9 @@ Invoking the skill is the user's standing authorization, for this run, to:
 - open the PR, rerun failed CI jobs, merge once every check is green and the repo's review rules are met (section 4R);
 - request an AI review (the host's *Request an AI review*) and do all that `verify-and-fix`'s [review-comments.md](../verify-and-fix/review-comments.md) allows on the PR: push fixes for review comments, reply in review threads, resolve bot reviewers' threads (as the host names them), re-request a reviewer whose requested changes were addressed or whose approval a push dismissed;
 - open, push, merge follow-up branches fixing a red base branch this run caused, including a revert PR;
-- in the `## Slack` channel only, never another: post a review request per PR it opens (section 4R, step 2), reply in that post's thread asking for a re-review (section 4R, step 3), add the `pr-merged` reaction to it (section 5);
+- in the `## Slack` channel only, never another: post a review request per PR it opens (section 4R, step 2), reply in that post's thread asking for a re-review (section 4R, step 3), add the `Merged reaction:` to it (section 5);
 - read and write the run's issue (found or chosen in section 0, step 5): create it where the user chose, link it to the related issue the user chose, assign, set status, append to its description, comment;
 - each issue the plan's `Tickets:` line lists (section 0, step 5): read, assign, set status as section 1 and section 7, step 1 say, comment. Nothing else: no description edit, no link, no other issue;
-- open, push, merge the docs branch a `Docs PR:` line names (section 7, step 2): the spec `ship-issue` kept out of the code PR, and the docs changes the spec lists;
 - open, push, merge the docs-only lessons branch (section 8).
 
 Not authorized; each goes into the question batch (section 3), never done on your own:
@@ -205,49 +203,35 @@ not a new runner. A command still refused then goes into the batch (section 5, s
 ```dot
 digraph ship {
   pre [label="0 Pre-flight" shape=box];
-  branch [label="1 Tracker (issue if any) and branch" shape=box];
-  impl [label="2 Implement: subagent-driven-development" shape=box];
-  simp [label="2b Simplify: the whole diff, own commit" shape=box];
-  verify [label="3 Verify: verify until clean" shape=box];
-  pr [label="4 Push, PR, link PR" shape=box];
+  branch [label="1 Tracker and branch" shape=box];
+  impl [label="2 Implement, 2b Simplify" shape=box];
+  verify [label="4 Verify until clean" shape=box];
+  pr [label="4 Push, PR" shape=box];
   checks [label="PR checks green?" shape=diamond];
-  review [label="4R Review: request, poll, triage, fix, reply" shape=box];
+  review [label="4R Review: request, triage, fix, reply" shape=box];
   rules [label="Review rules met?" shape=diamond];
-  merge [label="5 Merge, comment" shape=box];
-  baseci [label="base-branch CI green?" shape=diamond];
-  transient [label="Transient failure in blockers.md?" shape=diamond];
-  rerun [label="Rerun the failed jobs" shape=box];
-  wait [label="Wait 10 min, rerun once"];
-  fix [label="Fix-forward branch: debug, test, fix" shape=box];
-  deploy [label="6b Validate the deploy" shape=box];
-  close [label="7 Close out: tracker or PR comment, docs PR, lessons, report, one question batch" shape=doublecircle];
+  merge [label="5 Merge" shape=box];
+  base [label="6 Base CI green, 6b deploy valid?" shape=diamond];
+  red [label="red-base.md: rerun a transient, or fix-forward" shape=box];
+  close [label="7 Close out, 8 Lessons" shape=doublecircle];
 
-  pre -> branch -> impl -> simp -> verify;
+  pre -> branch -> impl -> verify;
   verify -> pr [label="clean"];
-  verify -> close [label="not clean: park, no PR"];
+  verify -> close [label="not clean: no PR"];
   pr -> checks;
-  checks -> verify [label="no: red job is a gate failure"];
+  checks -> verify [label="no: a gate failure"];
   checks -> review [label="yes, or CI None"];
   review -> checks [label="fixes pushed"];
   review -> rules;
   rules -> merge [label="yes"];
   rules -> close [label="not within Review wait: hand off"];
-  merge -> baseci;
+  merge -> base;
   merge -> close [label="deploy not covered: not merged"];
-  baseci -> deploy [label="yes, or CI None"];
-  deploy -> close [label="passed, or could not run"];
-  deploy -> fix [label="failed: this run's diff"];
-  deploy -> close [label="After merge check failed, not this diff: reported"];
-  baseci -> transient [label="no"];
-  transient -> rerun [label="yes, no Merge deploys to"];
-  transient -> close [label="yes, Merge deploys to set: park the rerun"];
-  transient -> wait [label="runner or network, Rerun a transient deploy failure on covers it"];
-  transient -> close [label="billing: escalate at once"];
-  wait -> deploy [label="green"];
-  wait -> close [label="red again: escalate"];
-  rerun -> baseci;
-  transient -> fix [label="no"];
-  fix -> verify;
+  base -> close [label="yes"];
+  base -> red [label="no"];
+  red -> base [label="rerun"];
+  red -> verify [label="fix-forward"];
+  red -> close [label="escalate or park"];
 }
 ```
 
@@ -381,8 +365,7 @@ never the plan path, the issue key or answers.
 | "Approve it / resolve their thread so it can merge" | Never. Approval and a person's thread belong to the reviewer. |
 | "Run issue done, close its sibling sub-tasks too" | Only `Tickets:` issues, each once its own tasks are committed and a commit carries its key. |
 | "The tracker already says done" | Done means the config's `Done means:`. Check the base-branch run first. |
-| "The PR is merged, so I'm done" | Done when the base branch is green, the closing comment written, the docs PR open (when the ledger has a `Docs PR:` line), and lessons recorded. |
-| "The spec can go in with a later docs change" | A held spec lands only through section 7, step 2: open the docs PR at close-out. |
+| "The PR is merged, so I'm done" | Done when the base branch is green, the closing comment written, and lessons recorded. |
 | "Base branch failed, probably flaky, rerun until green" | Only a failure listed as transient gets a rerun, at most 3. With `Merge deploys to:`, none (a rerun redeploys), unless `Rerun a transient deploy failure on:` covers a runner or network failure: one, after a 10-minute wait; a second failure escalates. A billing refusal escalates at once. Anything else gets a root cause. |
 | "Push the one-line fix straight to the base branch" | Never. A fix branch goes through the same loop. |
 | "The ruling is obvious, no need to write it down" | An unrecorded ruling is a secret decision. Write the ledger line. |

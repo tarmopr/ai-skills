@@ -122,8 +122,9 @@ SKILLDIR/ship-issue/SKILL.md and every file it links that matters for this run.
 
 [The repo]
 
-**Where the run stands:** the invocation is `ship-issue BILL-504`. The
-checkout holds `.superpowers/ship-queue/BILL-500/ledger.md`, whose first line
+**Where the run stands:** the invocation is `ship-issue BILL-504`, and
+`printenv SHIP_QUEUE_PARENT` prints `BILL-500`. The checkout holds
+`.superpowers/ship-queue/BILL-500/ledger.md`, whose first line
 is `Phase: running | Parent: BILL-500 | Order: BILL-501, BILL-504, BILL-503, BILL-502 | Current: BILL-504 | Checkout: /work/billing-api`
 and whose last line is `Current: BILL-504 started 2026-11-02 11:40`.
 

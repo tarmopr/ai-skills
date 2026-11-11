@@ -90,8 +90,9 @@ const FILES = {
     '## Issue comment: review round', '## Issue comment: awaiting review',
   ],
   // Moved verbatim from SKILL.md sections; no headings are pinned.
-  'ship-plan/docs-pr.md': [],
   'ship-plan/red-base.md': [],
+  // Lean wave 2: the batch-ticket rules, read only with a `Tickets:` line.
+  'ship-plan/tickets.md': ['## Pre-flight', '## Start', '## Before the merge', '## Close-out', '### Issue comment: done (batch ticket)', '### Issue comment: not done (batch ticket)'],
   'ship-plan/log-formats.md': ['## interruptions.md seed', '## blockers.md seed'],
   'ship-plan/hosts/github.md': h2(HOST_OPS),
   'ship-plan/hosts/azure-devops.md': h2(HOST_OPS),
@@ -152,7 +153,6 @@ const KINDS = [
   ['ship-plan/trackers/jira.md', 'ship-plan/trackers/linear.md', 'ship-plan/trackers/github.md'],
 ];
 
-const MOVE_LINE = 'move `.claude/ship.md` to `.claude/ship-plan.md`';
 
 // C8: phrases that pin decisions from the spec and plan.
 // Ship runner (2026-11-03): what skills/ship-plan/scripts/runner*.mjs parses from a child.
@@ -163,7 +163,7 @@ const RUNNER_PHRASES = ['printenv SHIP_RUNNER', 'printenv SHIP_RUNNER_KEY', 'sta
 const SKILL_RUNNER = ['## Runner mode (ship-runner)', 'printenv SHIP_RUNNER', 'runner-child.md)', '[modes.md](modes.md'];
 const PHRASES = {
   'ship-plan/SKILL.md': [
-    'not pre-approved', MOVE_LINE,
+    'not pre-approved',
     // Repo overrides and `## Allowed`: post-deploy validation, and this skill's override folder.
     '## 6b. Validate the deploy', '.claude/ship-plan/ship-plan/',
     // Ship runner (2026-11-03): the phrases of moved sections are pinned in their phase files below.
@@ -181,11 +181,10 @@ const PHRASES = {
     'jira, linear, github or none', 'closing keyword'],
   'ship-plan/phase-verify.md': ['no PR CI for this diff'],
   'ship-plan/phase-merge.md': ['read [red-base.md](red-base.md)', '## 6b. Validate the deploy'],
-  'ship-plan/phase-close.md': ['read [docs-pr.md](docs-pr.md)'],
-  'verify-and-fix/SKILL.md': ['`jira.md`, `linear.md` or `github.md`', 'closing keyword', MOVE_LINE, 'read [review-comments.md](review-comments.md)', '.claude/ship-plan/verify-and-fix/',
+  'verify-and-fix/SKILL.md': ['`jira.md`, `linear.md` or `github.md`', 'closing keyword', 'read [review-comments.md](review-comments.md)', '.claude/ship-plan/verify-and-fix/',
     ...SKILL_RUNNER, 'Done: <HEAD sha>'],
   'ship-issue/phase-spec.md': ['jira, linear, github or none', 'as file names write it'],
-  'ship-issue/SKILL.md': [MOVE_LINE, ...SKILL_RUNNER, 'read [worktree.md](worktree.md)', '.claude/ship-plan/ship-issue/',
+  'ship-issue/SKILL.md': [...SKILL_RUNNER, 'read [worktree.md](worktree.md)', '.claude/ship-plan/ship-issue/',
     'started by ship-queue as its child session', 'printenv SHIP_QUEUE_PARENT'],
   'ship-plan/config-format.md': [
     'A missing `.github/` folder', 'Tracker:', 'Host:', 'read [config-drafting.md](config-drafting.md)',
@@ -202,7 +201,7 @@ const PHRASES = {
     // Token wave 1 (2026-11-02): child sessions.
     '## Child sessions', 'SHIP_QUEUE_PARENT', '`cut off`', 'Cost: <KEY> run <n>', 'not started: session limit'],
   'ship-issue/worktree.md': ['The ship-queue worktree'],
-  'ship-plan/notifiers/slack.md': ['pr-merged', 'thread_ts', 'Slack: re-review', 'Slack: merged reaction'],
+  'ship-plan/notifiers/slack.md': ['Merged reaction:', 'thread_ts', 'Slack: re-review', 'Slack: merged reaction'],
   'ship-plan/hosts/github.md': ['--hostname', 'contains("/issues/<n>)")'],
   'ship-plan/hosts/azure-devops.md': ['git merge-base --is-ancestor', 'Full description in the first comment'],
   'ship-plan/trackers/jira.md': ['createJiraIssueLink', '32,767', 'parent = <key>', 'is blocked by'],
@@ -387,7 +386,7 @@ const TECH = /\b(npm|npx|yarn|pnpm|bun|dotnet|pytest|ruff|mypy|docker|deno|terra
 const TECH_EXEMPT = new Set(['ship-plan/config-format.md', 'ship-plan/config-drafting.md']);
 // Single lines exempt from C3: verbatim lessons that name the command that failed, not commands the run is told to use (Task 9 ruling).
 const TECH_LINE_EXEMPT = {
-  'ship-issue/stage-prompts.md': ['run `dotnet build` on it', 'refuses a `docker exec … psql` joined to'],
+  'ship-issue/stage-prompts.md': ['refuses a `docker exec … psql` joined to'],
 };
 // C4: names from the repos these skills were first written for may appear nowhere. This repo is
 // public, so those names are not in it: they are read from the SKILLS_PRIVATE_PATTERNS env var

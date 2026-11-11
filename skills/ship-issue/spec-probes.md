@@ -28,13 +28,13 @@ is still exposed once one exists.
 Run a two-writer probe in a scratch directory outside the checkout and quote
 its result.
 
-## Source generator or analyzer
+## Build-time code generation
 
-**Trigger:** the design relies on a source generator or analyzer (`[LoggerMessage]`, `[GeneratedRegex]`, a JSON source generator).
+**Trigger:** the design relies on code a build step generates or checks: a source generator, an analyzer, an annotation processor, a macro, a codegen step.
 
-Check it reaches the new project. Prove it with a build: add one use of the
-generator to the project, run `dotnet build` on it, quote the result, and
-remove the probe. A .nuspec's `exclude="Analyzers"` is not proof.
+Check it reaches the new project or package. Prove it with a build: add one
+use of it, run the repo's build command, quote the result, and remove the
+probe. A package manifest's dependency list or exclude rule is not proof.
 
 ## Schema
 

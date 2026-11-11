@@ -39,3 +39,7 @@ Reasons moved out of `skills/ship-plan/hosts/`, `trackers/`, `notifiers/` and `t
 ## Slack
 
 - `People:` is repo-wide because reviewers belong to the team (also in `config-format.md`).
+
+## Slack post prefix and merged reaction
+
+Both were hardcoded to one workspace's custom emojis (`:github-pr:` before each review request, `pr-merged` after the merge); another workspace showed the code as text and refused the reaction. They are now `## Slack` `Post prefix:` (default none) and `Merged reaction:` (default the standard `white_check_mark`). A repo that wants the old look sets `Post prefix: :github-pr:` and `Merged reaction: pr-merged`.

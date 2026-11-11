@@ -193,6 +193,8 @@ local file.
 |---|---|
 | `Channel:` | `#<name> (<channel id>)`, or `none` for no post. The id is what `slack_send_message` takes; the name is for people. |
 | `People:` | A table, `host login | Slack user id`, repo-wide because reviewers belong to the team. Filled the first time a login is seen. Used to @-mention people in the re-review request; a login not in it is named in plain text. |
+| `Post prefix:` | Text put before `**Review request:**` in each post, usually an emoji code such as `:eyes:`. Absent: nothing. |
+| `Merged reaction:` | The reaction added to the post after the merge, a name without colons (a workspace's custom emoji works). Absent: `white_check_mark`; `none`: no reaction. |
 
 ### `## Linear`
 
@@ -393,7 +395,7 @@ behaves as today.
 - **A branch's own edit never widens its own run:** when either field is set, a merge first runs `git diff origin/<base>...HEAD -- .claude/ship-plan.md`. A diff that touches `## Allowed`, or removes or changes `Merge deploys to:` other than by adding an environment, makes the PR a hand merge; otherwise the working tree's `## Allowed` is the base branch's, and its `Merge deploys to:` the union of both.
 - **Production-like names:** an environment name that contains `prod`, `prd` or `live`, case-insensitive, is never applied in `Merge that deploys to:` or `Rerun a transient deploy failure on:`. The report names it; the line's other names still apply.
 - **`## Never do` wins:** when a `## Never do` line forbids what an entry allows, the stricter rule wins.
-- **Coverage:** `Merge that deploys to:` covers every merge the run is already authorized to make in this repo: the code PR, a fix-forward or revert PR (`red-base.md`), the docs PR and the lessons PR. It never covers rerunning or queueing a run that deploys; the host files' rerun rules stay, and the run hands off instead. The one exception is `Rerun a transient deploy failure on:`, and only for the environments it names.
+- **Coverage:** `Merge that deploys to:` covers every merge the run is already authorized to make in this repo: the code PR, a fix-forward or revert PR (`red-base.md`) and the lessons PR. It never covers rerunning or queueing a run that deploys; the host files' rerun rules stay, and the run hands off instead. The one exception is `Rerun a transient deploy failure on:`, and only for the environments it names.
 - **The merge rule:** with `## CI` `Merge deploys to:` present, the run merges only when `Merge that deploys to:` covers it: every environment listed there is named in `Merge that deploys to:` and is applied (not production-like). Otherwise the merge goes into the question batch, with the exact `## Allowed` line that would allow it, to add to `.claude/ship-plan.md` on `<base>` only if `<env>` is not production. For a production-like environment no line allows the merge: the batch asks the user to merge it by hand and proposes no `## Allowed` line.
 - **Only a person edits it.** A run never adds, changes or removes a line here: not on the feature branch, not in the lessons PR, not when drafting a config. Any PR whose diff touches `## Allowed`, or removes or changes `Merge deploys to:` other than by adding an environment (code, fix-forward, revert, docs or lessons PR), is a hand merge: the run never merges it, it stays open, and the report says why.
 - **Visible on every run:** the run lists each switched-on entry in the ledger at pre-flight and in the report's status section.

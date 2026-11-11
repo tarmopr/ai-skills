@@ -100,9 +100,9 @@ to one is a question.
    observed output, expected output), whose failing test is the plan's first
    task, not research.
 4. Prove claims the design rests on before they go in the spec. For a
-   concurrency, source generator or analyzer, or schema claim, read that
-   section of <skill dir>/spec-probes.md ("Concurrency", "Source generator or
-   analyzer", "Schema") and run its probe. Read no section whose trigger does
+   concurrency, build-time code generation, or schema claim, read that
+   section of <skill dir>/spec-probes.md ("Concurrency", "Build-time code
+   generation", "Schema") and run its probe. Read no section whose trigger does
    not apply.
 
 ## Acceptance checks
@@ -143,10 +143,7 @@ comment's text) with the same confidence test, or return it as a question.
 
 Always write a spec, even for a bounded change; the classification only sets
 its length. It holds the evidence, the decisions and who made them, out of
-scope, and acceptance with the baseline. Save it to <spec path>. When
-<spec path> is under <ledger dir> (held for a docs PR), the spec's location
-line says so, and its delivery section lists what the docs PR carries besides
-the spec (rows in the agent instructions, an ADR).
+scope, and acceptance with the baseline. Save it to <spec path>.
 
 When the spec suggests a commit order, check yourself (the builder check does
 not) that each commit builds from what it and the commits before it add.

@@ -22,7 +22,7 @@ Why the branch type is one of ship-plan's five even when the config lists others
 
 Why every PR the issue names is fetched now: an issue written minutes earlier can already be stale; it can describe a PR without a change the PR gained minutes before.
 
-Why never a second worktree for the spec or the docs: a worktree-isolated session's stage cannot write to one or enter it, and a docs PR opened before the code PR merges falls behind the base branch and loses its approval.
+Why never a second worktree for the spec: a worktree-isolated session's stage cannot write to one or enter it.
 
 Why a red base branch goes in the spec: a red base branch from someone else's work will fail this PR's checks too.
 
