@@ -10,9 +10,9 @@ One Bash call renames a symbol and every reference to it across the whole soluti
 
 ## Workflow
 
-1. **Check the contract.** If the symbol is serialized (a JSON/API DTO property, a message contract, a workflow job variable such as a Zeebe worker `TInput` property, an EF entity column), renaming it changes the wire or database name — a breaking change. Stop and ask before renaming one.
+1. **Check the contract.** If the symbol is serialized (a JSON/API DTO property, a message contract, a workflow or job input variable, an EF entity column), renaming it changes the wire or database name — a breaking change. Stop and ask before renaming one.
 2. **Rename** with the command below. On exit 3, pick the intended candidate from the list and rerun. Use `--dry-run` only when the user wants to see the scope before anything is written.
-3. **Find string usages** the compiler can't see: `rg -nw <OldName>` across the repo, including non-C# files (BPMN, appsettings, YAML, JSON, Markdown). Fix these with Edit only where the string really refers to the symbol.
+3. **Find string usages** the compiler can't see: `rg -nw <OldName>` across the repo, including non-C# files (workflow definitions, appsettings, YAML, JSON, Markdown). Fix these with Edit only where the string really refers to the symbol.
 4. **Build**: `dotnet build`. Report the summary line and the build result; show `git diff --stat` only if asked. If the build fails, treat every error as possibly caused by the rename, including errors in files it didn't change: a consumer in a project that failed to load, or a file a project names in a `<Compile Include>`. Call an error pre-existing only after building without the rename (`git stash`, build, `git stash pop`) shows the same error.
 
 ## Command
