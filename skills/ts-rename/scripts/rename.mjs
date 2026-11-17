@@ -14,7 +14,8 @@ const t0 = Date.now();
 const notices = [];
 const die = (code, msg) => {
   const text = [msg.replace(/\n$/, ''), ...notices].join('\n');
-  process.stderr.write(text + '\n');
+  // writeSync: process.exit right after an async write cuts a pipe's output at 64 KB.
+  fs.writeSync(2, text + '\n');
   process.exit(code);
 };
 
@@ -25,9 +26,10 @@ const USAGE = `Rename a TS symbol and every reference in every tsconfig*.json pr
   node ${SELF} --at <file>:<line>:<col> --new-name <New>       (locals, parameters, exit-3 candidates)
 Container: a class, interface, function or the file's base name, chainable (apiClient.RequestOptions.timeoutMs).
 Options: --project <tsconfig> (repeatable)  --in-comments  --in-strings  --no-file-rename  --dry-run  --verbose  --all-leftovers
+  --allow-errors (write even when the check finds type errors or a name clash the rename would add)
 Replace a word on given lines only (for the leftovers a rename lists; no type checking):
   node ${SELF} --text <Old> --new-name <New> --lines <file>:<line>,<line> [--lines <file>:<line>]...
-Exit codes: 0 done, 1 error, 2 not found, 3 ambiguous (stderr lists --at candidates).
+Exit codes: 0 done, 1 error (also: nothing written because the rename would break the code), 2 not found, 3 ambiguous (stderr lists --at candidates).
 --text exits 1 when no listed line had the word; lines without it are named on stdout.`;
 const argv = process.argv.slice(2);
 const opts = { inComments: false, inStrings: false, fileRename: true, dryRun: false, verbose: false, projects: [], lines: [] };
@@ -48,6 +50,7 @@ for (let i = 0; i < argv.length; i++) {
     case '--dry-run': opts.dryRun = true; opts.verbose = true; break;
     case '--verbose': opts.verbose = true; break;
     case '--all-leftovers': opts.allLeftovers = true; break;
+    case '--allow-errors': opts.allowErrors = true; break;
     default: die(1, `unknown argument: ${a}`);
   }
 }
@@ -63,9 +66,10 @@ const wordRe = (w) => new RegExp(`(?:(?<![\\w$])|(?<=\\\\[bBdDwWsSnrt]))${escRe(
 const splitLines = (text) => text.split(/(\r\n|[\n\r\u2028\u2029])/);
 
 // ---------- repo ----------
-// The repo of the file or tsconfig named by an absolute --at/--project, else of the working directory.
+// The repo of the file or tsconfig named by an absolute --at/--project/--lines path, else of the working directory.
 const gitTop = (dir) => { try { return execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return null; } };
-const anchor = [opts.at && /^(.*):\d+:\d+$/.exec(opts.at)?.[1], opts.projects[0]].find((p) => p && path.isAbsolute(p) && fs.existsSync(p));
+const anchor = [opts.at && /^(.*):\d+:\d+$/.exec(opts.at)?.[1], opts.projects[0], opts.lines[0] && /^(.*):[\d,]+$/.exec(opts.lines[0])?.[1]]
+  .find((p) => p && path.isAbsolute(p) && fs.existsSync(p));
 // git prints the real path (/private/var/… on macOS); keep the form the path was given in, as TypeScript does,
 // so the repo-membership checks compare like with like.
 const rootFrom = (dir) => {
@@ -74,7 +78,8 @@ const rootFrom = (dir) => {
   const up = path.relative(top, fs.realpathSync(dir));
   return up ? path.resolve(dir, ...up.split(path.sep).map(() => '..')) : dir;
 };
-const root = path.resolve((anchor && rootFrom(path.dirname(anchor))) || rootFrom(process.cwd()) || process.cwd());
+const cwdRoot = rootFrom(process.cwd());
+const root = path.resolve((anchor && rootFrom(path.dirname(anchor))) || cwdRoot || process.cwd());
 const norm = (p) => path.resolve(p).split(path.sep).join('/');
 const rel = (p) => path.relative(root, p).split(path.sep).join('/');
 
@@ -148,6 +153,10 @@ if (!configPaths.length) die(1, 'no tsconfig*.json found');
 
 const registry = ts.createDocumentRegistry(ts.sys.useCaseSensitiveFileNames, root);
 const versions = new Map();
+// The rename's result, checked before anything is written: file -> new text, or null for a file renamed away.
+let overlay = null;
+const moveTo = new Map(); // file renames, from -> to
+const overlaid = (f) => overlay?.get(norm(f));
 const services = [];
 const configErrors = [];
 for (const cfg of configPaths) {
@@ -163,13 +172,19 @@ for (const cfg of configPaths) {
   }
   if (errs.length) notices.push(`${rel(cfg)} loaded with errors, so references may be missed: ${errs.map((d) => ts.flattenDiagnosticMessageText(d.messageText, ' ')).join('; ')}`);
   const host = {
-    getScriptFileNames: () => parsed.fileNames,
+    getScriptFileNames: () => (overlay ? parsed.fileNames.map((f) => moveTo.get(norm(f)) ?? f) : parsed.fileNames),
     getScriptVersion: (f) => String(versions.get(norm(f)) ?? 0),
-    getScriptSnapshot: (f) => (fs.existsSync(f) ? ts.ScriptSnapshot.fromString(fs.readFileSync(f, 'utf8')) : undefined),
+    getScriptSnapshot: (f) => {
+      const o = overlaid(f);
+      if (o !== undefined) return o === null ? undefined : ts.ScriptSnapshot.fromString(o);
+      return fs.existsSync(f) ? ts.ScriptSnapshot.fromString(fs.readFileSync(f, 'utf8')) : undefined;
+    },
     getCurrentDirectory: () => path.dirname(cfg),
     getCompilationSettings: () => parsed.options,
     getDefaultLibFileName: (o) => ts.getDefaultLibFilePath(o),
-    fileExists: ts.sys.fileExists, readFile: ts.sys.readFile, readDirectory: ts.sys.readDirectory,
+    fileExists: (f) => { const o = overlaid(f); return o !== undefined ? o !== null : ts.sys.fileExists(f); },
+    readFile: (f, enc) => { const o = overlaid(f); return o !== undefined ? (o ?? undefined) : ts.sys.readFile(f, enc); },
+    readDirectory: ts.sys.readDirectory,
     directoryExists: ts.sys.directoryExists, getDirectories: ts.sys.getDirectories, realpath: ts.sys.realpath,
     useCaseSensitiveFileNames: () => ts.sys.useCaseSensitiveFileNames,
   };
@@ -215,7 +230,8 @@ if (opts.at) {
   const container = parts.join('.');
   const seen = new Map();
   for (const s of services) {
-    const items = s.ls.getNavigateToItems(name, 500, undefined, false); // false: include the repo's own .d.ts files
+    // No result cap: it applies before the container filter, so a common member name could hide the one asked for.
+    const items = s.ls.getNavigateToItems(name, undefined, undefined, false); // false: include the repo's own .d.ts files
     for (const it of items) {
       if (it.name !== name || it.kind === 'alias' || !inRepo(it.fileName)) continue;
       if (container && !(it.containerName === container || it.containerName?.endsWith('.' + container)
@@ -301,7 +317,18 @@ const tokenAt = (sf, pos) => {
 // `{ old: new }`, a destructured `{ old } = o` becomes `{ new: old } = o`. But at an import or export specifier it
 // adds an alias (`import { new as old }`, `export { new as old }`) and stops, so the names used past it keep the
 // old name. There the plain new name is written instead, and the rename continues from that specifier.
+// --at on a name imported without `as`, or on a use of it, means the exported symbol. From there TypeScript renames
+// only the local binding, which the specifier rule below would turn into a broken import.
+{
+  const prog = programOf(owners[0]), sf = prog.getSourceFile(target.file);
+  const sym = sf && prog.getTypeChecker().getSymbolAtLocation(tokenAt(sf, target.pos));
+  const plainImport = sym && sym.flags & ts.SymbolFlags.Alias && sym.declarations?.length
+    && sym.declarations.every((d) => (ts.isImportSpecifier(d) || ts.isExportSpecifier(d)) && !d.propertyName);
+  if (plainImport) target = decl;
+}
 const seenLoc = new Set();
+const renameLocs = []; // { s, file, start }: for the name-clash check
+const specFiles = new Set(); // files with an import/export specifier the rename continued through
 const queue = [{ file: target.file, pos: target.pos }];
 while (queue.length) {
   const { file, pos } = queue.shift();
@@ -310,10 +337,12 @@ while (queue.length) {
       const key = `${norm(l.fileName)}:${l.textSpan.start}`;
       if (seenLoc.has(key)) continue;
       seenLoc.add(key);
+      renameLocs.push({ s, file: l.fileName, start: l.textSpan.start });
       const sf = programOf(s).getSourceFile(l.fileName);
       const parent = sf && tokenAt(sf, l.textSpan.start).parent;
       if ((l.prefixText || l.suffixText) && parent && (ts.isExportSpecifier(parent) || ts.isImportSpecifier(parent))) {
         addEdit(l.fileName, l.textSpan.start, l.textSpan.length, opts.newName);
+        specFiles.add(norm(l.fileName));
         queue.push({ file: l.fileName, pos: l.textSpan.start });
       } else {
         addEdit(l.fileName, l.textSpan.start, l.textSpan.length, `${l.prefixText ?? ''}${opts.newName}${l.suffixText ?? ''}`);
@@ -326,6 +355,13 @@ while (queue.length) {
     }
   }
 }
+// For a member: how a mention outside the changed files must read to mean it. `recv.name`, `recv?.name`, or
+// `recv\.name` inside a regex, with a receiver the rename saw; or a distinctive container name anywhere on the line.
+const qualifiedRe = !isMember ? null : (() => {
+  const q = [...qualifiers, ...containers].map(escRe);
+  const named = [...containers].filter((w) => /^[A-Z]/.test(w) || w.length > 6).map(escRe);
+  return new RegExp([q.length && `(?<![\\w$])(?:${q.join('|')})[?\\\\]*\\.${escRe(oldName)}(?![\\w$])`, named.length && `(?<![\\w$])(?:${named.join('|')})(?![\\w$])`].filter(Boolean).join('|'));
+})();
 if (dropped) { notices.push(`Not renamed: ${dropped} references outside ${root}; run from the repo that holds them.`); process.exitCode = 1; }
 
 // ---------- file rename: a top-level declaration in <OldName>.ts(x) ----------
@@ -378,30 +414,127 @@ if (opts.fileRename) {
   }
 }
 
-// ---------- apply ----------
-// A failure partway (a read-only file, a full disk) stops with the list of what was already written.
+// ---------- the new texts ----------
 const files = [...edits.keys()].sort();
 let count = 0;
-const overlaps = [], written = [], moved = [];
+const overlaps = [], newTexts = new Map();
+const lineOf = (text, pos) => (splitLines(text.slice(0, pos)).length + 1) / 2;
+for (const f of files) {
+  // A string edit inside a module path the file rename rewrites (--in-strings) is part of that rewrite.
+  const all = [...edits.get(f).values()];
+  const specs = all.filter((e) => e.spec);
+  const list = all.filter((e) => e.spec || !specs.some((p) => e.start >= p.start && e.start + e.length <= p.start + p.length)).sort((a, b) => b.start - a.start);
+  let text;
+  try { text = fs.readFileSync(f, 'utf8'); } catch (e) { die(1, `Nothing changed: ${e.message}`); }
+  let lastStart = Infinity;
+  for (const e of list) {
+    if (e.start + e.length > lastStart) { overlaps.push(`${rel(f)}:${lineOf(text, e.start)}`); continue; }
+    text = text.slice(0, e.start) + e.text + text.slice(e.start + e.length);
+    lastStart = e.start;
+    count++;
+  }
+  newTexts.set(f, text);
+}
+
+// ---------- check the result before writing ----------
+// TypeScript's rename checks neither that the result compiles nor that the new name is free, and the agent is told
+// to trust this output. So the result is type-checked in memory first: the errors it adds (counted per file and
+// error code, against the same files before the rename) and every place where the new name is already in scope.
+// Either one writes nothing, unless --allow-errors.
+const problems = [];
+const compiled = new Map(); // file -> compiler options of a program that has it (for the leftover scan)
+for (const s of services) for (const sf of programOf(s).getSourceFiles()) if (inRepo(sf.fileName) && !compiled.has(norm(sf.fileName))) compiled.set(norm(sf.fileName), programOf(s).getCompilerOptions());
+const at = (sf, pos) => { const lc = sf.getLineAndCharacterOfPosition(pos); return `${rel(sf.fileName)}:${lc.line + 1}`; };
+try {
+  if (!isMember) {
+    // A local, parameter, function, class or import: any declaration of the new name visible at one of its
+    // references would capture it, or be shadowed by it. Library globals (DOM `name`, `status`) don't count.
+    const flags = ts.SymbolFlags.Value | ts.SymbolFlags.Type | ts.SymbolFlags.Namespace | ts.SymbolFlags.Alias;
+    const seenClash = new Set();
+    for (const { s, file, start } of renameLocs) {
+      const prog = programOf(s), sf = prog.getSourceFile(file);
+      const node = sf && tokenAt(sf, start);
+      if (!node || !ts.isIdentifier(node)) continue;
+      for (const sym of prog.getTypeChecker().getSymbolsInScope(node, flags)) {
+        if (sym.name !== opts.newName) continue;
+        const d = sym.declarations?.find((x) => inRepo(x.getSourceFile().fileName));
+        if (!d) continue;
+        const where = at(d.getSourceFile(), d.getStart());
+        if (seenClash.has(where)) continue;
+        seenClash.add(where);
+        problems.push(`${at(sf, start)}: ${opts.newName} is already declared at ${where}, so the renamed ${oldName} would clash with it`);
+      }
+    }
+  }
+  // A file where every mention of the old name was renamed breaks only if it declares the symbol, is renamed, has an
+  // import/export specifier the rename went through, or already named the new name (a duplicate key or member). So
+  // those are checked, and every file that still names the old name after the rename (a reference it missed; for a
+  // member in an unchanged file, only a qualified mention, as in the leftover list). Checked after the rename; a file
+  // with errors is checked again without it, and only the errors it adds count.
+  for (const { from, to } of fileRenames) moveTo.set(norm(from), norm(to));
+  const toCheck = new Map(); // file -> the service that checks it, after and before
+  const oldWord = new RegExp(wordRe(oldName).source), newWord = new RegExp(wordRe(opts.newName).source);
+  const declFile = norm(decl.file);
+  for (const s of services) for (const sf of programOf(s).getSourceFiles()) {
+    const f = norm(sf.fileName);
+    if (!inRepo(f) || toCheck.has(f)) continue;
+    const now = newTexts.get(f) ?? sf.text, changedHere = newTexts.has(f);
+    if (f === declFile || moveTo.has(f) || specFiles.has(f) || changedHere && newWord.test(sf.text)
+      || oldWord.test(now) && (changedHere || !qualifiedRe || qualifiedRe.test(now))) toCheck.set(f, s);
+  }
+  const errorsOf = (s, f) => [...s.ls.getSyntacticDiagnostics(f), ...s.ls.getSemanticDiagnostics(f)].filter((d) => d.category === ts.DiagnosticCategory.Error);
+  const bump = (fs_) => { for (const f of fs_) versions.set(f, (versions.get(f) ?? 0) + 1); };
+  overlay = new Map();
+  for (const [f, text] of newTexts) overlay.set(moveTo.get(f) ?? f, text);
+  for (const [from, to] of moveTo) {
+    if (!overlay.has(to)) overlay.set(to, fs.readFileSync(from, 'utf8'));
+    if (!fs.existsSync(to)) overlay.set(from, null); // `to` exists only for a case-only rename on a case-insensitive disk: the same file
+  }
+  const changedPaths = [...overlay.keys()];
+  bump(changedPaths);
+  const after = new Map();
+  for (const [f, s] of toCheck) { const e = errorsOf(s, moveTo.get(f) ?? f); if (e.length) after.set(f, e); }
+  if (after.size) {
+    const saved = overlay;
+    overlay = null; bump(changedPaths);
+    const before = new Map();
+    for (const f of after.keys()) {
+      const n = new Map();
+      for (const d of errorsOf(toCheck.get(f), f)) n.set(d.code, (n.get(d.code) ?? 0) + 1);
+      before.set(f, n);
+    }
+    overlay = saved; bump(changedPaths);
+    for (const [f, errs] of after) {
+      const prev = before.get(f), n = new Map();
+      for (const d of errs) {
+        n.set(d.code, (n.get(d.code) ?? 0) + 1);
+        if (n.get(d.code) > (prev.get(d.code) ?? 0)) problems.push(`${d.file ? at(d.file, d.start) : rel(f)}: TS${d.code} ${ts.flattenDiagnosticMessageText(d.messageText, ' ')}`);
+      }
+    }
+  }
+} catch (e) {
+  notices.push(`The type check of the result failed (${e.message.split('\n')[0]}); typecheck the changed projects yourself.`);
+  process.exitCode = 1;
+}
+if (problems.length) {
+  const list = problems.slice(0, 20).map((p) => `  ${p}`).concat(problems.length > 20 ? [`  … ${problems.length - 20} more`] : []);
+  if (!opts.allowErrors) {
+    const msg = [`Nothing changed: renaming ${oldName} -> ${opts.newName} would break the code:`, ...list,
+      'Pick another name, or rename at the declaration with --symbol; a reference the rename misses (an untyped object key, an import the',
+      'compiler can\'t resolve) needs a hand edit after the rename. --allow-errors writes it anyway.', ...notices];
+    fs.writeSync(1, msg.join('\n') + '\n');
+    process.exit(1);
+  }
+  notices.push(`Written with --allow-errors; the rename adds these problems:`, ...list);
+}
+
+// ---------- write ----------
+// A failure partway (a read-only file, a full disk) stops with the list of what was already written.
+const written = [], moved = [];
 const stop = (e) => die(1, `Stopped partway: ${e.message}\nAlready written (${written.length}): ${written.map(rel).join(', ') || 'nothing'}`
   + (moved.length ? `\nAlready moved: ${moved.join(', ')}` : '') + '\nUndo with git checkout on the written files (and move the moved ones back), or finish by hand.');
-const lineOf = (text, pos) => (splitLines(text.slice(0, pos)).length + 1) / 2;
 try {
-  for (const f of files) {
-    // A string edit inside a module path the file rename rewrites (--in-strings) is part of that rewrite.
-    const all = [...edits.get(f).values()];
-    const specs = all.filter((e) => e.spec);
-    const list = all.filter((e) => e.spec || !specs.some((p) => e.start >= p.start && e.start + e.length <= p.start + p.length)).sort((a, b) => b.start - a.start);
-    let text = fs.readFileSync(f, 'utf8');
-    let lastStart = Infinity;
-    for (const e of list) {
-      if (e.start + e.length > lastStart) { overlaps.push(`${rel(f)}:${lineOf(text, e.start)}`); continue; }
-      text = text.slice(0, e.start) + e.text + text.slice(e.start + e.length);
-      lastStart = e.start;
-      count++;
-    }
-    if (!opts.dryRun) { fs.writeFileSync(f, text); written.push(f); }
-  }
+  for (const f of files) if (!opts.dryRun) { fs.writeFileSync(f, newTexts.get(f)); written.push(f); }
   for (const { from, to } of fileRenames) {
     if (opts.dryRun) continue;
     const r = spawnSync('git', ['mv', from, to], { cwd: root, encoding: 'utf8' });
@@ -429,10 +562,10 @@ if (opts.verbose) {
 // listed. Files outside every tsconfig are scanned as text. For a member, a mention outside the changed files counts
 // only when it is qualified (`cache.current`, `SessionCache`), since a bare common word (`current`, `reset`) is almost
 // never it. Each line is listed once: --text replaces every mention on it.
-// Up to 60 lines are listed (all of tier 0 first; a further tier only when it fits whole), the rest go to a file:
+// Up to 60 lines are listed (tier 0 first, up to the limit; a further tier only when it fits whole), the rest go to a file:
 // listing costs far fewer tokens than a second model call, and after the rename a rerun can't find the old name.
 const LIMIT = opts.allLeftovers ? Infinity : 60;
-const tiers = [[], [], []]; // 0: changed files, mock keys, regexes, module paths; 1: outside every tsconfig; 2: other comments/strings
+const tiers = [[], [], []]; // 0: changed files, mock keys, regexes, module paths, unresolved imports; 1: outside every tsconfig; 2: comments, strings and JSX text in files the rename didn't change
 const outsideFiles = new Map();
 let otherIds = 0; const otherIdFiles = new Set(); let unqualified = 0;
 if (!opts.dryRun) {
@@ -441,17 +574,10 @@ if (!opts.dryRun) {
     const g = spawnSync('git', ['grep', '-z', '-c', '-I', '-F', '--untracked', '-e', oldName], { cwd: root, encoding: 'utf8', maxBuffer: 1 << 28 });
     if (g.status !== 0 && g.status !== 1) throw new Error(`git grep: ${g.error?.message ?? (g.stderr || '').trim().split('\n')[0]}`);
     const hits = g.status === 1 ? [] : g.stdout.split('\n').filter(Boolean).map((l) => l.slice(0, l.indexOf('\0')));
-    const compiled = new Map(); // file -> compiler options of a program that has it
-    for (const s of services) for (const sf of programOf(s).getSourceFiles()) if (inRepo(sf.fileName) && !compiled.has(norm(sf.fileName))) compiled.set(norm(sf.fileName), programOf(s).getCompilerOptions());
     const renamedTo = new Map(fileRenames.map((r) => [norm(r.to), norm(r.from)]));
     const changed = new Set([...files, ...fileRenames.map((r) => norm(r.to))]);
     const word = wordRe(oldName);
-    const qualified = !isMember ? null : (() => {
-      // `recv.name`, `recv?.name`, or `recv\.name` inside a regex; or a distinctive container name anywhere on the line.
-      const q = [...qualifiers, ...containers].map(escRe);
-      const named = [...containers].filter((w) => /^[A-Z]/.test(w) || w.length > 6).map(escRe);
-      return new RegExp([q.length && `(?<![\\w$])(?:${q.join('|')})[?\\\\]*\\.${escRe(oldName)}(?![\\w$])`, named.length && `(?<![\\w$])(?:${named.join('|')})(?![\\w$])`].filter(Boolean).join('|'));
-    })();
+    const qualified = qualifiedRe;
     const snippetOf = (src, character) => {
       const from = Math.max(0, character - 40);
       return (from ? '…' : '') + src.slice(from, from + 90).trim() + (src.length > from + 90 ? '…' : '');
@@ -497,6 +623,18 @@ if (!opts.dryRun) {
         continue;
       }
       const sf = ts.createSourceFile(abs, text, ts.ScriptTarget.Latest, true, /x$/.test(relPath) ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
+      // Identifiers the language service didn't rename are other symbols, with two exceptions where it can't see
+      // the reference: the file imports the old name from a module the compiler can't resolve (an alias only the
+      // bundler knows), or, for a member, a key of an object literal without a contextual type in a changed file.
+      const imported = (st) => {
+        const c = ts.isImportDeclaration(st) && st.importClause;
+        if (!c) return false;
+        const names = [c.name, ...(c.namedBindings && ts.isNamedImports(c.namedBindings) ? c.namedBindings.elements.flatMap((e) => [e.name, e.propertyName]) : [])];
+        return names.some((n) => n && n.text === oldName);
+      };
+      const unresolvedImport = sf.statements.some((st) => imported(st) && ts.isStringLiteral(st.moduleSpecifier)
+        && !ts.resolveModuleName(st.moduleSpecifier.text, abs, options, ts.sys).resolvedModule);
+      const idKind = unresolvedImport ? 'unresolved import' : isMember && changed.has(abs) ? 'identifier' : null;
       for (const m of text.matchAll(word)) {
         const pos = m.index;
         let node = sf, kind = 'comment', factory = null;
@@ -509,7 +647,7 @@ if (!opts.dryRun) {
         }
         if (node && node !== sf && node.getStart(sf) <= pos) {
           const k = node.kind, S = ts.SyntaxKind;
-          if (k === S.Identifier || k === S.PrivateIdentifier) kind = factory && isFactoryKey(node, factory) ? 'mock key' : null;
+          if (k === S.Identifier || k === S.PrivateIdentifier) kind = factory && isFactoryKey(node, factory) ? 'mock key' : idKind;
           else if (k === S.RegularExpressionLiteral) kind = 'regex';
           else if (k === S.JsxText) kind = 'jsx text';
           else if ([S.StringLiteral, S.NoSubstitutionTemplateLiteral, S.TemplateHead, S.TemplateMiddle, S.TemplateTail].includes(k)) {
@@ -523,11 +661,11 @@ if (!opts.dryRun) {
         const src = srcLines[line];
         const inChanged = changed.has(abs);
         if (!inChanged && qualified && !qualified.test(src)) { unqualified++; continue; }
-        const tier = inChanged || ['mock key', 'regex', 'module path'].includes(kind) ? 0 : 2;
+        const tier = inChanged || ['mock key', 'regex', 'module path', 'unresolved import'].includes(kind) ? 0 : 2;
         push(tier, { file: relPath, line: line + 1, kind, snippet: snippetOf(src, character) });
       }
     }
-    const order = ['mock key', 'regex', 'module path', 'string', 'jsx text', 'comment', 'not compiled'];
+    const order = ['unresolved import', 'identifier', 'mock key', 'regex', 'module path', 'string', 'jsx text', 'comment', 'not compiled'];
     for (const t of tiers) t.sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind) || a.file.localeCompare(b.file) || a.line - b.line);
   } catch (e) {
     notices.push(`Listing what is left failed (${e.message.split('\n')[0]}): the rename itself is done; search for ${oldName} yourself.`);
@@ -553,7 +691,7 @@ if (!opts.dryRun) {
       const parts = [];
       if (tiers[0].length > LIMIT) parts.push(`${tiers[0].length - LIMIT} more in changed files, mock keys, regexes and module paths`);
       if (!listOutside && tiers[1].length) parts.push(`${tiers[1].length} in ${outsideFiles.size} files outside every tsconfig`);
-      if (!listOther && tiers[2].length) parts.push(`${tiers[2].length} comments/strings in files that don't use this symbol`);
+      if (!listOther && tiers[2].length) parts.push(`${tiers[2].length} comments, strings or JSX text in files the rename didn't change`);
       rest = `Not listed: ${parts.join('; ')}. All ${all.length}: ${file}`;
     } catch (e) {
       notices.push(`Couldn't write the full list (${e.message.split('\n')[0]}), so all ${all.length} are listed.`);
@@ -570,7 +708,9 @@ if (!opts.dryRun) {
     // Only for a plain identifier: a quoted property name ("foo-bar") can't be passed safely as a word.
     if (isIdent(oldName)) {
       out.push(`One call renames the listed ones (delete the --lines entries that are something else):`);
-      out.push(`  node ${SELF} --text ${q(oldName)} --new-name ${q(opts.newName)} ${[...byFile].map(([f, ls]) => `--lines ${q(`${f}:${[...ls].join(',')}`)}`).join(' ')}`);
+      // Paths from the repo root; absolute when that is another repo than the working directory's, where --text would look.
+      const own = cwdRoot && norm(cwdRoot) === norm(root);
+      out.push(`  node ${SELF} --text ${q(oldName)} --new-name ${q(opts.newName)} ${[...byFile].map(([f, ls]) => `--lines ${q(`${own ? f : norm(path.join(root, f))}:${[...ls].join(',')}`)}`).join(' ')}`);
     }
   }
   if (rest) out.push(rest);

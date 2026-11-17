@@ -23,33 +23,36 @@ Run from the repo root (it finds the single `.sln`/`.slnx` upwards, or pass `--s
 bash "${CLAUDE_SKILL_DIR}/run.sh" --symbol <Name> --new-name <NewName>
 ```
 
-Success prints one summary line, `Renamed <symbol> -> <NewName>: 25 files, 0 file renames, 5s.`, followed by any `warning:` lines (below).
+Before writing, the tool compiles the renamed files in memory. If the rename would add a compile error (a new name that clashes with a member, a reference it couldn't rebind), it writes nothing and lists the errors (exit 1). Success prints one summary line, `Renamed <display name> -> <NewName>: 25 files, 0 file renames, 5s.`, where the display name is the compiler's (`Ns.OrderService.Cancel()`), followed by any `warning:` lines (below).
 
 | Argument | Meaning |
 |---|---|
 | `--symbol <q>` | Simple name (`OrderSummary`), dotted suffix (`OrderService.Cancel`), or the exact display string from an ambiguity list (`Ns.Handler<TIn, TOut>`, `Ns.Handler.Run(int)`) |
-| `--solution <path>` | The `.sln`/`.slnx` to load, when there isn't exactly one in the working directory or its parents |
+| `--solution <path>` | The `.sln`/`.slnx` to load; by default the one in the nearest directory upwards that has any (pass this when that directory has several) |
 | `--at <file>:<line>:<col>` | 1-based position instead of `--symbol` (same positions as the LSP tool); use for locals, parameters, namespaces |
 | `--overloads` | Rename every overload of a method; with `--symbol`, a name that matches only overloads of one method is then not ambiguous |
 | `--in-comments` / `--in-strings` | Also rename the name inside comments / string literals (off by default) |
 | `--no-file-rename` | Keep `Old.cs` file name (by default a type declared in `Old.cs` is `git mv`'d to `New.cs`) |
 | `--allow-load-failures` | Rename even though some projects failed to load; references in those projects stay unrenamed |
+| `--allow-errors` | Write even when the check finds compile errors the rename adds (they are listed) |
 | `--dry-run` | List the files it would change, write nothing |
 | `--verbose` | Also list each changed file (implied by `--dry-run`) |
 
-Exit codes: `0` done, `1` error, `2` not found, `3` ambiguous — stderr lists each candidate with its exact display string and `file:line:col`; rerun with one of them.
+Exit codes: `0` done, `1` error (also: nothing written because the rename would break the build; a malformed `--at` or a line or column out of range), `2` not found (also an `--at` file outside the solution, or no symbol at that position), `3` ambiguous — stderr lists each candidate with its exact display string and `file:line:col`; rerun with one of them.
 
 The first run builds the tool into `${XDG_CACHE_HOME:-~/.cache}/csharp-rename/` (~30s, once per version of `rename.cs`). After that a rename takes ~5s, almost all of it loading the solution.
 
 ## Errors and warnings
 
 - **Exit 2, not found** — check the spelling and the case, try the containing type (`Type.Member`), or use `--at` on the declaration. A symbol from a NuGet package or the framework has no source declaration, so by name it is not found; with `--at` it reports `... is defined in metadata` (exit 1). Neither can be renamed.
-- **`warning: git mv failed (…)`** — the file was moved on disk but git didn't record it; stage it with `git add -A`.
+- **`Nothing changed: renaming Old -> New would break the build:`** (exit 1), then `file:line: CSxxxx message` lines — pick another name, or fix the conflict first. Use `--allow-errors` only when the user wants the rename anyway.
+- **`Nothing changed: the target frameworks disagree on the edit at file:line`** (exit 1) — a multi-targeted project where the frameworks' `#if` branches rename the same spot differently; rename that file by hand.
+- **`warning: git mv failed (…)`** — the file was moved on disk but git didn't record it; stage it with `git add -A`. (Outside a git repo, or for an untracked file, the file is moved quietly.)
 - **`N project load failures` (exit 1)** — nothing was changed. Run `dotnet restore` and retry. If a project can never load here (for example a non-SDK project type), ask the user before rerunning with `--allow-load-failures`.
 - **`Cannot rename Old.cs: New.cs already exists` (exit 1)** — nothing was changed. Ask the user, or rerun with `--no-file-rename`.
 - **`warning: kept Old.cs, because a <Compile Include> in its project file names it`** — the code was renamed but the file wasn't. Rename the file and its `Compile` entry by hand.
-- **`warning: N project load failures; references in those projects were NOT renamed`** (only with `--allow-load-failures`) — tell the user which projects; their references to the old name stay.
-- **`Stopped partway: …` (exit 1)** — a write failed. It lists the files already written; undo them with `git checkout` or finish by hand.
+- **`warning: N project load failures; references in those projects were NOT renamed`** (only with `--allow-load-failures`), followed by each load message — tell the user which projects; their references to the old name stay.
+- **`Stopped partway: …` (exit 1)** — a write failed. `Nothing was changed.`, or `Already written (N): …` with the edited files and `Old.cs -> New.cs` moves: undo the edits with `git checkout`, move the moved files back, or finish by hand.
 - **The first build fails** (run.sh prints the `dotnet publish` log) — usually a missing requirement below. Tell the user which one; don't work around it.
 
 ## Requirements

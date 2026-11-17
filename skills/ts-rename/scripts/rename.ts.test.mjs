@@ -186,6 +186,8 @@ if (TS) {
       const out = r.run('--at', at, '--new-name', 'Gadget');
       assert.equal(out.status, 0, out.stderr);
       assert.match(out.stdout, /1 file renames/, at);
+      assert.equal(r.read('src/Gadget.tsx'), 'export const Gadget = () => null;\n', at);
+      assert.equal(r.read('src/main.ts'), "import { Gadget } from './Gadget';\nexport const w = Gadget;\n", at);
     }
   });
 
@@ -348,4 +350,123 @@ if (TS) {
       assert.ok(fs.readdirSync(path.join(r.dir, 'src')).includes('WIDGET.tsx'));
     });
   }
+
+  // The check before writing: a rename that would break the code writes nothing.
+  const unchanged = (r) => assert.equal(r.git('status', '--porcelain').stdout, '');
+
+  test('a new name already in scope writes nothing: it would capture or shadow a declaration', (t) => {
+    const r = repo(t, { 'src/a.ts': 'const bar = 1;\nexport function f() {\n  const foo = 2;\n  return foo + bar;\n}\n' });
+    const out = r.run('--at', 'src/a.ts:3:9', '--new-name', 'bar');
+    assert.equal(out.status, 1);
+    assert.match(out.stdout, /^Nothing changed: renaming foo -> bar would break the code:\n {2}src\/a\.ts:\d+: bar is already declared at src\/a\.ts:1/);
+    unchanged(r);
+  });
+
+  test('a library global with the new name is not a clash', (t) => {
+    const r = repo(t, { 'src/a.ts': 'export function f() {\n  const foo = 2;\n  return foo;\n}\n' });
+    const out = r.run('--at', 'src/a.ts:2:9', '--new-name', 'parseInt');
+    assert.equal(out.status, 0, out.stdout + out.stderr);
+    assert.match(r.read('src/a.ts'), /const parseInt = 2;\n {2}return parseInt;/);
+  });
+
+  test('a member renamed onto an existing member writes nothing and names the type error', (t) => {
+    const r = repo(t, { 'src/c.ts': 'export class C {\n  alpha() { return 1; }\n  beta() { return 2; }\n}\n' });
+    const out = r.run('--symbol', 'C.alpha', '--new-name', 'beta');
+    assert.equal(out.status, 1);
+    assert.match(out.stdout, /src\/c\.ts:2: TS2393 /);
+    unchanged(r);
+  });
+
+  test('a key the rename misses (an object literal without a contextual type) fails the check', (t) => {
+    const r = repo(t, { 'src/o.ts': 'export interface Opts { timeoutMs: number }\nexport function run(o: Opts) { return o.timeoutMs; }\nconst cfg = { timeoutMs: 5 };\nrun(cfg);\n' });
+    const out = r.run('--symbol', 'Opts.timeoutMs', '--new-name', 'waitMs');
+    assert.equal(out.status, 1);
+    assert.match(out.stdout, /src\/o\.ts:4: TS2345 /);
+    unchanged(r);
+  });
+
+  test('--allow-errors writes anyway and lists what the rename broke', (t) => {
+    const r = repo(t, { 'src/o.ts': 'export interface Opts { timeoutMs: number }\nexport function run(o: Opts) { return o.timeoutMs; }\nconst cfg = { timeoutMs: 5 };\nrun(cfg);\n' });
+    const out = r.run('--symbol', 'Opts.timeoutMs', '--new-name', 'waitMs', '--allow-errors');
+    assert.equal(out.status, 0, out.stderr);
+    assert.match(out.stdout, /Written with --allow-errors; the rename adds these problems:\n {2}src\/o\.ts:4: TS2345 /);
+    assert.match(out.stdout, /src\/o\.ts:3 identifier: const cfg = \{ timeoutMs: 5 \};/);
+    assert.match(r.read('src/o.ts'), /interface Opts \{ waitMs: number \}/);
+  });
+
+  test('a member renamed onto a key another file already uses fails the check there', (t) => {
+    const r = repo(t, {
+      'src/i.ts': 'export interface I { alpha: number; beta?: number }\n',
+      'src/use.ts': "import type { I } from './i';\nexport const x: I = { alpha: 1, beta: 2 };\n",
+    });
+    const out = r.run('--symbol', 'I.alpha', '--new-name', 'beta');
+    assert.equal(out.status, 1);
+    assert.match(out.stdout, /src\/use\.ts:2: TS1117 /);
+    unchanged(r);
+  });
+
+  test('errors that were there before the rename are not counted', (t) => {
+    const r = repo(t, { 'src/a.ts': 'export function foo() { return 1; }\nconst x: string = 1;\nexport const y = foo() + x;\n' });
+    const out = r.run('--symbol', 'foo', '--new-name', 'bar');
+    assert.equal(out.status, 0, out.stdout + out.stderr);
+    assert.match(r.read('src/a.ts'), /function bar\(\)/);
+  });
+
+  test('uses of a name imported from a module the compiler cannot resolve are listed, not ignored', (t) => {
+    const r = repo(t, {
+      'src/d.ts': 'export function parseDate(s: string) { return s; }\n',
+      'src/use.ts': "// @ts-ignore\nimport { parseDate } from '~/d';\nexport const x = parseDate('1');\n",
+    });
+    const out = r.run('--symbol', 'd.parseDate', '--new-name', 'readDate');
+    assert.equal(out.status, 0, out.stdout + out.stderr);
+    assert.match(out.stdout, /src\/use\.ts:2 unresolved import: import \{ parseDate \} from '~\/d';/);
+    assert.match(out.stdout, /src\/use\.ts:3 unresolved import: /);
+  });
+
+  test('a reference that only a second tsconfig sees is renamed', (t) => {
+    const r = repo(t, {
+      'tsconfig.test.json': '{"compilerOptions":{"strict":true,"noEmit":true,"module":"esnext","moduleResolution":"bundler"},"include":["test"]}\n',
+      'src/h.ts': 'export function helper() { return 1; }\n',
+      'test/h.test.ts': "import { helper } from '../src/h';\nexport const t = helper();\n",
+    });
+    const out = r.run('--symbol', 'helper', '--new-name', 'assist');
+    assert.equal(out.status, 0, out.stdout + out.stderr);
+    assert.match(out.stdout, /2\/2 projects/);
+    assert.equal(r.read('test/h.test.ts'), "import { assist } from '../src/h';\nexport const t = assist();\n");
+  });
+
+  test('references in files outside the repo are reported and exit 1', (t) => {
+    const r = repo(t, {});
+    const shared = fs.mkdtempSync(path.join(os.tmpdir(), 'ts-rename-shared-'));
+    t.after(() => fs.rmSync(shared, { recursive: true, force: true }));
+    fs.writeFileSync(path.join(shared, 's.ts'), "import { helper } from '" + path.relative(shared, path.join(r.dir, 'src/h')) + "';\nexport const s = helper();\n");
+    fs.mkdirSync(path.join(r.dir, 'src'));
+    fs.writeFileSync(path.join(r.dir, 'src/h.ts'), 'export function helper() { return 1; }\n');
+    fs.writeFileSync(path.join(r.dir, 'tsconfig.json'), JSON.stringify({ compilerOptions: { strict: true, noEmit: true, module: 'esnext', moduleResolution: 'bundler' }, include: ['src', path.relative(r.dir, shared)] }));
+    const out = r.run('--symbol', 'helper', '--new-name', 'assist');
+    assert.equal(out.status, 1, out.stdout + out.stderr);
+    assert.match(out.stdout, /Not renamed: 2 references outside /);
+    assert.match(fs.readFileSync(path.join(shared, 's.ts'), 'utf8'), /helper\(\)/);
+  });
+
+  test('a file rename onto an existing file is refused before anything is written', (t) => {
+    const r = repo(t, { 'src/Widget.tsx': 'export const Widget = () => null;\n', 'src/Gadget.tsx': 'export const other = 1;\n' });
+    const out = r.run('--symbol', 'Widget', '--new-name', 'Gadget');
+    assert.equal(out.status, 1);
+    assert.match(out.stderr, /Nothing changed: cannot rename src\/Widget\.tsx: src\/Gadget\.tsx already exists/);
+    unchanged(r);
+  });
+
+  test('the printed --text command uses absolute paths when the repo is not the working directory\'s', (t) => {
+    const r = repo(t, { 'src/Widget.ts': 'export const Widget = 1;\n', 'src/note.ts': '// Widget is used here\nexport {};\n' });
+    const other = repo(t, { 'src/note.ts': '// Widget elsewhere\n' });
+    const out = spawnSync(process.execPath, [script, '--at', path.join(r.dir, 'src/Widget.ts:1:14'), '--new-name', 'Gadget', '--no-file-rename'], { cwd: other.dir, encoding: 'utf8' });
+    assert.equal(out.status, 0, out.stderr);
+    const cmd = out.stdout.split('\n').find((l) => l.includes('--text')).trim();
+    const args = [...cmd.matchAll(/'([^']*)'|(\S+)/g)].map((m) => m[1] ?? m[2]).slice(2); // drop `node` and the script
+    const run2 = spawnSync(process.execPath, [script, ...args], { cwd: other.dir, encoding: 'utf8' });
+    assert.equal(run2.status, 0, run2.stdout + run2.stderr);
+    assert.equal(r.read('src/note.ts'), '// Gadget is used here\nexport {};\n');
+    assert.equal(other.read('src/note.ts'), '// Widget elsewhere\n');
+  });
 }

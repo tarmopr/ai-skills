@@ -7,10 +7,10 @@
 // Semantic C# rename with Roslyn: one call renames a symbol and every reference to it across a solution.
 // Run it through run.sh, which builds it once into a per-user cache.
 // Usage:
-//   run.sh --new-name <Name> (--symbol <Name|Namespace.Type[.Member]> | --at <file>:<line>:<col>)
-//          [--solution <path>] [--overloads] [--in-comments] [--in-strings] [--no-file-rename] [--allow-load-failures] [--dry-run] [--verbose]
+//   run.sh --new-name <Name> (--symbol <Name|dotted suffix of the qualified name|exact display string> | --at <file>:<line>:<col>)
+//          [--solution <path>] [--overloads] [--in-comments] [--in-strings] [--no-file-rename] [--allow-load-failures] [--allow-errors] [--dry-run] [--verbose]
 // Prints one summary line plus any warning lines; --verbose (or --dry-run) also lists each changed file.
-// Exit codes: 0 renamed (or dry run), 1 error, 2 symbol not found, 3 ambiguous symbol.
+// Exit codes: 0 renamed (or dry run), 1 error (also: nothing written because the rename would break the build), 2 symbol not found, 3 ambiguous symbol.
 
 using System.Diagnostics;
 using System.Text.RegularExpressions;
@@ -38,13 +38,14 @@ internal sealed record RenameArguments(
     bool InStrings,
     bool RenameFile,
     bool AllowLoadFailures,
+    bool AllowErrors,
     bool DryRun,
     bool Verbose)
 {
     public static RenameArguments? Parse(string[] args)
     {
         string? newName = null, symbol = null, at = null, solution = null;
-        bool overloads = false, inComments = false, inStrings = false, renameFile = true, allowLoadFailures = false, dryRun = false, verbose = false;
+        bool overloads = false, inComments = false, inStrings = false, renameFile = true, allowLoadFailures = false, allowErrors = false, dryRun = false, verbose = false;
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -65,6 +66,7 @@ internal sealed record RenameArguments(
                 case "--in-strings": inStrings = true; break;
                 case "--no-file-rename": renameFile = false; break;
                 case "--allow-load-failures": allowLoadFailures = true; break;
+                case "--allow-errors": allowErrors = true; break;
                 case "--dry-run": dryRun = true; break;
                 case "--verbose": verbose = true; break;
                 default:
@@ -79,7 +81,7 @@ internal sealed record RenameArguments(
             return null;
         }
 
-        return new RenameArguments(newName, symbol, at, solution, overloads, inComments, inStrings, renameFile, allowLoadFailures, dryRun, verbose || dryRun);
+        return new RenameArguments(newName, symbol, at, solution, overloads, inComments, inStrings, renameFile, allowLoadFailures, allowErrors, dryRun, verbose || dryRun);
     }
 }
 
@@ -90,26 +92,25 @@ internal static class RenameCommand
         var solutionPath = arguments.Solution ?? FindSolution(Directory.GetCurrentDirectory());
         if (solutionPath is null)
         {
-            Console.Error.WriteLine("No .sln/.slnx found in the current directory or its parents; pass --solution.");
             return 1;
         }
 
         var stopwatch = Stopwatch.StartNew();
         using var workspace = MSBuildWorkspace.Create();
-        var loadFailures = 0;
+        var loadFailures = new List<string>();
         workspace.RegisterWorkspaceFailedHandler(e =>
         {
             if (e.Diagnostic.Kind == WorkspaceDiagnosticKind.Failure)
             {
-                loadFailures++;
-                Console.Error.WriteLine($"warning: {e.Diagnostic.Message}");
+                loadFailures.Add(e.Diagnostic.Message);
             }
         });
 
         var solution = await workspace.OpenSolutionAsync(solutionPath);
-        if (loadFailures > 0 && !arguments.AllowLoadFailures)
+        if (loadFailures.Count > 0 && !arguments.AllowLoadFailures)
         {
-            Console.Error.WriteLine($"{loadFailures} project load failures (see the warnings above); nothing was changed, because references in those projects would not be renamed. Run `dotnet restore` and retry, or pass --allow-load-failures to rename only the projects that loaded.");
+            loadFailures.ForEach(message => Console.Error.WriteLine($"warning: {message}"));
+            Console.Error.WriteLine($"{loadFailures.Count} project load failures (see the warnings above); nothing was changed, because references in those projects would not be renamed. Run `dotnet restore` and retry, or pass --allow-load-failures to rename only the projects that loaded.");
             return 1;
         }
 
@@ -140,14 +141,38 @@ internal static class RenameCommand
             RenameFile: false);
         var renamedSolution = await Renamer.RenameSymbolAsync(solution, symbol, renameOptions, arguments.NewName);
 
-        var changedDocuments = renamedSolution.GetChanges(solution)
+        // One new text per file. A multi-targeted project holds each file once per target framework, and each copy
+        // carries only the edits its own #if branches see, so the edits of every copy are merged.
+        var newTexts = new Dictionary<string, SourceText>();
+        var editCounts = new Dictionary<string, int>();
+        var changedGroups = renamedSolution.GetChanges(solution)
             .GetProjectChanges()
             .SelectMany(project => project.GetChangedDocuments())
             .Distinct()
-            // A multi-targeted project holds each file once per target framework: write each file once.
-            .GroupBy(documentId => solution.GetDocument(documentId)!.FilePath)
-            .Select(group => group.First())
-            .ToList();
+            .GroupBy(documentId => solution.GetDocument(documentId)!.FilePath!);
+        foreach (var group in changedGroups)
+        {
+            var oldText = await solution.GetDocument(group.First())!.GetTextAsync();
+            var changes = new List<TextChange>();
+            foreach (var documentId in group)
+            {
+                changes.AddRange(await renamedSolution.GetDocument(documentId)!.GetTextChangesAsync(solution.GetDocument(documentId)!));
+            }
+
+            var merged = changes.DistinctBy(change => (change.Span, change.NewText)).OrderBy(change => change.Span.Start).ToList();
+            for (var i = 1; i < merged.Count; i++)
+            {
+                if (merged[i].Span.Start < merged[i - 1].Span.End || merged[i].Span.Start == merged[i - 1].Span.Start)
+                {
+                    var line = oldText.Lines.GetLineFromPosition(merged[i].Span.Start).LineNumber + 1;
+                    Console.WriteLine($"Nothing changed: the target frameworks disagree on the edit at {Relative(group.Key)}:{line}; rename with --at in that file or by hand.");
+                    return 1;
+                }
+            }
+
+            newTexts[group.Key] = oldText.WithChanges(merged);
+            editCounts[group.Key] = merged.Count;
+        }
 
         var keptFiles = new List<string>();
         var fileMoves = arguments.RenameFile ? PlanFileMoves(solution, symbol, arguments.NewName, keptFiles) : [];
@@ -158,27 +183,44 @@ internal static class RenameCommand
             return 1;
         }
 
+        // Renamer.RenameSymbolAsync drops the conflicts it can't resolve (a new name that clashes, a reference it can't
+        // rebind) without a word, and the agent is told to trust this output. So the result is compiled in memory
+        // first: the errors it adds, counted per document and error id against the same documents before the rename.
+        // Any one writes nothing, unless --allow-errors.
+        var problems = await FindNewErrors(solution, newTexts, symbol);
+        if (problems.Count > 0)
+        {
+            var list = problems.Take(20).Select(problem => $"  {problem}").ToList();
+            if (problems.Count > 20)
+            {
+                list.Add($"  … {problems.Count - 20} more");
+            }
+
+            if (!arguments.AllowErrors)
+            {
+                Console.WriteLine($"Nothing changed: renaming {symbol.Name} -> {arguments.NewName} would break the build:");
+                list.ForEach(Console.WriteLine);
+                Console.WriteLine("Pick another name, or fix the conflict first; --allow-errors writes it anyway.");
+                return 1;
+            }
+        }
+
         // A failure partway (a read-only file, a full disk) stops with the list of what was already written.
         var written = new List<string>();
         var moveWarnings = new List<string>();
         try
         {
-            foreach (var documentId in changedDocuments)
+            foreach (var (path, newText) in newTexts)
             {
-                var oldDocument = solution.GetDocument(documentId)!;
-                var newDocument = renamedSolution.GetDocument(documentId)!;
-                var relativePath = Path.GetRelativePath(Directory.GetCurrentDirectory(), oldDocument.FilePath!);
                 if (arguments.Verbose)
                 {
-                    var edits = (await newDocument.GetTextChangesAsync(oldDocument)).Count();
-                    Console.WriteLine($"  {relativePath} ({edits} edits)");
+                    Console.WriteLine($"  {Relative(path)} ({editCounts[path]} edits)");
                 }
 
                 if (!arguments.DryRun)
                 {
-                    var newText = await newDocument.GetTextAsync();
-                    await WriteText(oldDocument.FilePath!, newText);
-                    written.Add(relativePath);
+                    await WriteText(path, newText);
+                    written.Add(Relative(path));
                 }
             }
 
@@ -186,7 +228,7 @@ internal static class RenameCommand
             {
                 if (arguments.Verbose)
                 {
-                    Console.WriteLine($"  file: {Path.GetRelativePath(Directory.GetCurrentDirectory(), from)} -> {Path.GetFileName(to)}");
+                    Console.WriteLine($"  file: {Relative(from)} -> {Path.GetFileName(to)}");
                 }
 
                 if (!arguments.DryRun)
@@ -202,14 +244,19 @@ internal static class RenameCommand
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            Console.Error.WriteLine($"Stopped partway: {exception.Message}");
-            Console.Error.WriteLine(written.Count == 0
+            Console.WriteLine($"Stopped partway: {exception.Message}");
+            Console.WriteLine(written.Count == 0
                 ? "Nothing was changed."
-                : $"Already written ({written.Count}): {string.Join(", ", written)}. Undo them with git checkout, or finish by hand.");
+                : $"Already written ({written.Count}): {string.Join(", ", written)}. Undo the edits with git checkout and move the moved files back, or finish by hand.");
             return 1;
         }
 
-        Console.WriteLine($"{(arguments.DryRun ? "Would rename" : "Renamed")} {symbol.ToDisplayString()} -> {arguments.NewName}: {changedDocuments.Count} files, {fileMoves.Count} file renames, {stopwatch.Elapsed.TotalSeconds:F0}s.");
+        Console.WriteLine($"{(arguments.DryRun ? "Would rename" : "Renamed")} {symbol.ToDisplayString()} -> {arguments.NewName}: {newTexts.Count} files, {fileMoves.Count} file renames, {stopwatch.Elapsed.TotalSeconds:F0}s.");
+        if (problems.Count > 0)
+        {
+            Console.WriteLine("Written with --allow-errors; the rename adds these errors:");
+            problems.Take(20).ToList().ForEach(problem => Console.WriteLine($"  {problem}"));
+        }
         foreach (var warning in moveWarnings)
         {
             Console.WriteLine(warning);
@@ -220,12 +267,73 @@ internal static class RenameCommand
             Console.WriteLine($"warning: kept {Path.GetRelativePath(Directory.GetCurrentDirectory(), keptFile)}, because a <Compile Include> in its project file names it; rename the file and that entry by hand.");
         }
 
-        if (loadFailures > 0)
+        if (loadFailures.Count > 0)
         {
-            Console.WriteLine($"warning: {loadFailures} project load failures; references in those projects were NOT renamed. Run `dotnet restore` and retry.");
+            Console.WriteLine($"warning: {loadFailures.Count} project load failures; references in those projects were NOT renamed. Run `dotnet restore` and retry:");
+            loadFailures.ForEach(message => Console.WriteLine($"  {message}"));
         }
 
         return 0;
+    }
+
+    private static string Relative(string path) => Path.GetRelativePath(Directory.GetCurrentDirectory(), path);
+
+    // The documents to compile: every copy (one per target framework) of each changed file, and every other document
+    // that still names the old name after the rename (a reference the rename missed), for a member only where the
+    // containing type is named too. Documents with errors after the rename are compiled again without it, and only
+    // the errors it adds (per error id) count.
+    private static async Task<List<string>> FindNewErrors(Solution solution, Dictionary<string, SourceText> newTexts, ISymbol symbol)
+    {
+        var oldWord = new Regex($@"(?<![\w@]){Regex.Escape(symbol.Name)}(?!\w)");
+        var isMember = symbol.ContainingType is not null && symbol is not INamedTypeSymbol;
+        var renamed = solution;
+        var toCheck = new List<DocumentId>();
+        foreach (var document in solution.Projects.SelectMany(project => project.Documents))
+        {
+            if (document.FilePath is { } path && newTexts.TryGetValue(path, out var newText))
+            {
+                renamed = renamed.WithDocumentText(document.Id, newText);
+                toCheck.Add(document.Id);
+                continue;
+            }
+
+            var text = (await document.GetTextAsync()).ToString();
+            if (oldWord.IsMatch(text) && (!isMember || text.Contains(symbol.ContainingType!.Name, StringComparison.Ordinal)))
+            {
+                toCheck.Add(document.Id);
+            }
+        }
+
+        var problems = new List<string>();
+        foreach (var documentId in toCheck)
+        {
+            var after = await ErrorsOf(renamed.GetDocument(documentId)!);
+            if (after.Count == 0)
+            {
+                continue;
+            }
+
+            var before = (await ErrorsOf(solution.GetDocument(documentId)!)).CountBy(diagnostic => diagnostic.Id).ToDictionary();
+            var seen = new Dictionary<string, int>();
+            foreach (var diagnostic in after)
+            {
+                seen[diagnostic.Id] = seen.GetValueOrDefault(diagnostic.Id) + 1;
+                if (seen[diagnostic.Id] > before.GetValueOrDefault(diagnostic.Id))
+                {
+                    var span = diagnostic.Location.GetLineSpan();
+                    problems.Add($"{Relative(span.Path)}:{span.StartLinePosition.Line + 1}: {diagnostic.Id} {diagnostic.GetMessage()}");
+                }
+            }
+        }
+
+        // Each copy of a multi-targeted file reports the same error.
+        return problems.Distinct().ToList();
+    }
+
+    private static async Task<List<Diagnostic>> ErrorsOf(Document document)
+    {
+        var model = await document.GetSemanticModelAsync();
+        return model is null ? [] : model.GetDiagnostics().Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error).ToList();
     }
 
     private static string? FindSolution(string directory)
@@ -245,6 +353,7 @@ internal static class RenameCommand
             }
         }
 
+        Console.Error.WriteLine("No .sln/.slnx found in the current directory or its parents; pass --solution.");
         return null;
     }
 
@@ -291,8 +400,8 @@ internal static class RenameCommand
 
     // The items of every <Compile Include="a;b"> in a project file (a glob like **/*.cs names no file).
     private static IEnumerable<string> CompileIncludes(string projectFile) =>
-        Regex.Matches(File.ReadAllText(projectFile), "<Compile\\s[^>]*?\\bInclude\\s*=\\s*\"([^\"]*)\"")
-            .SelectMany(match => match.Groups[1].Value.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries));
+        Regex.Matches(File.ReadAllText(projectFile), """<Compile\s[^>]*?\bInclude\s*=\s*(["'])(.*?)\1""")
+            .SelectMany(match => match.Groups[2].Value.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries));
 
     // A case-only rename (Foo.cs -> foo.cs) finds the source file itself on case-insensitive file systems.
     private static bool IsOccupied(string from, string to) =>
@@ -314,10 +423,11 @@ internal static class RenameCommand
             return null;
         }
 
-        // Asked before the move, while the old path is still on disk. Exit 1 means git runs and the file is untracked.
-        var untracked = Git(from, "ls-files", "--error-unmatch", "--", from).ExitCode == 1;
+        // Asked before the move, while the old path is still on disk. Only a tracked file (exit 0), or git not starting
+        // (-1), is worth a warning; an untracked file or no repo at all is a plain move.
+        var tracked = Git(from, "ls-files", "--error-unmatch", "--", from).ExitCode is 0 or -1;
         File.Move(from, to);
-        return untracked
+        return !tracked
             ? null
             : $"warning: git mv failed ({error.Trim().Split('\n')[0]}); moved {Path.GetFileName(from)} -> {Path.GetFileName(to)} on disk only, stage it with git add -A.";
     }

@@ -107,3 +107,19 @@ test('--text refuses a file outside the repo before writing any file', (t) => {
   assert.equal(read(outside, 'b.ts'), 'current\n');
   assert.equal(read(dir, 'a.ts'), 'current\n');
 });
+
+test('--text stops at a write failure and lists what was already written', (t) => {
+  const dir = scratch(t, { 'a.ts': 'current\n', 'b.ts': 'current\n' });
+  fs.chmodSync(path.join(dir, 'b.ts'), 0o444);
+  const r = run(dir, '--text', 'current', '--new-name', 'snapshot', '--lines', 'a.ts:1', '--lines', 'b.ts:1');
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /Stopped partway: .*\nAlready written \(1\): a\.ts/);
+  assert.equal(read(dir, 'a.ts'), 'snapshot\n');
+});
+
+test('--text names a listed file that does not exist', (t) => {
+  const dir = scratch(t, { 'a.ts': 'current\n' });
+  const r = run(dir, '--text', 'current', '--new-name', 'snapshot', '--lines', 'a.ts:1', '--lines', 'gone.ts:1');
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /No current on \(nothing changed there\): gone\.ts \(no such file\)/);
+});
