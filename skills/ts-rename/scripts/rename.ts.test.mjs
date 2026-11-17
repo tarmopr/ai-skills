@@ -24,9 +24,10 @@ function repo(t, files) {
   for (const [f, text] of Object.entries(all)) { fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true }); fs.writeFileSync(path.join(dir, f), text); }
   git('add', '-A');
   git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'base');
-  const run = (...args) => spawnSync(process.execPath, [script, ...args], { cwd: dir, encoding: 'utf8' });
+  assert.equal(git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'again', '--allow-empty').status, 0, 'git works');
+  const run = (...args) => spawnSync(process.execPath, [script, ...args], { cwd: dir, encoding: 'utf8', env: { ...process.env, TMPDIR: dir } });
   const read = (f) => fs.readFileSync(path.join(dir, f), 'utf8');
-  return { dir, run, read };
+  return { dir, run, read, git };
 }
 
 if (TS) {
@@ -136,4 +137,215 @@ if (TS) {
     assert.equal(out.status, 0, out.stderr);
     assert.match(out.stdout, /Skipped tsconfig: tools\/tsconfig\.json/);
   });
+
+  test('a property used through shorthand destructuring keeps the local name', (t) => {
+    const r = repo(t, {
+      'src/p.ts': 'export interface P { total: number }\n',
+      'src/use.ts': "import type { P } from './p';\nexport function f({ total }: P) { return total; }\nexport function g(p: P) { const { total } = p; return total + 1; }\nexport const o: P = { total: 1 };\n",
+    });
+    const out = r.run('--symbol', 'P.total', '--new-name', 'sum');
+    assert.equal(out.status, 0, out.stderr);
+    assert.equal(r.read('src/p.ts'), 'export interface P { sum: number }\n');
+    assert.equal(r.read('src/use.ts'), "import type { P } from './p';\nexport function f({ sum: total }: P) { return total; }\nexport function g(p: P) { const { sum: total } = p; return total + 1; }\nexport const o: P = { sum: 1 };\n");
+  });
+
+  test('renaming a destructured local does not touch the property it came from', (t) => {
+    const r = repo(t, {
+      'src/p.ts': 'export interface P { total: number }\nexport const def: P = { total: 1 };\n',
+      'src/use.ts': "import { def } from './p';\nconst { total } = def;\nexport const v = total;\n",
+    });
+    const out = r.run('--at', 'src/use.ts:2:9', '--new-name', 'amount');
+    assert.equal(out.status, 0, out.stderr);
+    assert.equal(r.read('src/p.ts'), 'export interface P { total: number }\nexport const def: P = { total: 1 };\n');
+    assert.equal(r.read('src/use.ts'), "import { def } from './p';\nconst { total: amount } = def;\nexport const v = amount;\n");
+  });
+
+  test('through an import and a local re-export, a shorthand property keeps its key', (t) => {
+    const r = repo(t, {
+      'src/a.ts': 'export const w = 1;\n',
+      'src/f.ts': "import { w } from './a';\nexport { w };\n",
+      'src/g.ts': "import { w } from './f';\nexport const o = { w };\n",
+    });
+    const out = r.run('--symbol', 'a.w', '--new-name', 'sumAll');
+    assert.equal(out.status, 0, out.stderr);
+    assert.equal(r.read('src/f.ts'), "import { sumAll } from './a';\nexport { sumAll };\n");
+    assert.equal(r.read('src/g.ts'), "import { sumAll } from './f';\nexport const o = { w: sumAll };\n");
+  });
+
+  test('the file rename is a git rename', (t) => {
+    const r = repo(t, { 'src/Widget.tsx': 'export const Widget = () => null;\n', 'src/main.ts': "import { Widget } from './Widget';\nexport const w = Widget;\n" });
+    const out = r.run('--symbol', 'Widget', '--new-name', 'Gadget');
+    assert.equal(out.status, 0, out.stderr);
+    assert.match(r.git('status', '--porcelain').stdout, /^R. src\/Widget\.tsx -> src\/Gadget\.tsx$/m);
+    assert.ok(!fs.existsSync(path.join(r.dir, 'src/Widget.tsx')));
+  });
+
+  test('--at mid-word or at a use site still renames the file', (t) => {
+    for (const at of ['src/Widget.tsx:1:16', 'src/main.ts:2:18']) {
+      const r = repo(t, { 'src/Widget.tsx': 'export const Widget = () => null;\n', 'src/main.ts': "import { Widget } from './Widget';\nexport const w = Widget;\n" });
+      const out = r.run('--at', at, '--new-name', 'Gadget');
+      assert.equal(out.status, 0, out.stderr);
+      assert.match(out.stdout, /1 file renames/, at);
+    }
+  });
+
+  test('a git mv that fails on a tracked file is reported; an untracked file is moved quietly', (t) => {
+    const r = repo(t, { 'src/Widget.tsx': 'export const Widget = () => null;\n', 'src/main.ts': "import { Widget } from './Widget';\nexport const w = Widget;\n" });
+    fs.writeFileSync(path.join(r.dir, '.git/index.lock'), '');
+    const out = r.run('--symbol', 'Widget', '--new-name', 'Gadget');
+    fs.rmSync(path.join(r.dir, '.git/index.lock'));
+    assert.equal(out.status, 0, out.stderr);
+    assert.match(out.stdout, /git mv failed .* on disk only: stage it with git add -A/);
+    assert.ok(fs.existsSync(path.join(r.dir, 'src/Gadget.tsx')));
+    assert.doesNotMatch(out.stdout, /Nothing else to check/);
+    const u = repo(t, { 'src/main.ts': 'export const x = 1;\n' });
+    fs.writeFileSync(path.join(u.dir, 'src/Thing.ts'), 'export const Thing = 1;\n');
+    const out2 = u.run('--symbol', 'Thing', '--new-name', 'Item');
+    assert.equal(out2.status, 0, out2.stderr);
+    assert.doesNotMatch(out2.stdout, /git mv failed/);
+    assert.ok(fs.existsSync(path.join(u.dir, 'src/Item.ts')));
+  });
+
+  test('configs with errors, configs matching no files and solution configs', (t) => {
+    const r = repo(t, {
+      'src/a.ts': 'export const one = 1;\n',
+      'tsconfig.bad.json': '{"compilerOptions":{"bogusOption":true},"include":["src"]}\n',
+      'tsconfig.ext.json': '{"extends":"./missing.json","include":["src"]}\n',
+      'tsconfig.empty.json': '{"include":["nothing"]}\n',
+      'tsconfig.solution.json': '{"files":[],"references":[{"path":"./tsconfig.json"}]}\n',
+      'packages/tsconfig-utils/package.json': '{"name":"tsconfig-utils"}\n',
+    });
+    const out = r.run('--symbol', 'one', '--new-name', 'uno');
+    assert.equal(out.status, 0, out.stderr);
+    assert.equal(r.read('src/a.ts'), 'export const uno = 1;\n');
+    assert.match(out.stdout, /tsconfig\.bad\.json loaded with errors/);
+    assert.match(out.stdout, /tsconfig\.ext\.json loaded with errors/);
+    assert.match(out.stdout, /Skipped tsconfig: tsconfig\.empty\.json \(matches no files\)/);
+    assert.doesNotMatch(out.stdout, /solution|package\.json/);
+    assert.doesNotMatch(out.stdout, /Nothing else to check/);
+  });
+
+  test('a not-found symbol still shows a skipped tsconfig', (t) => {
+    const r = repo(t, { 'src/a.ts': 'export const one = 1;\n', 'tools/tsconfig.json': '{ not json' });
+    const out = r.run('--symbol', 'nope', '--new-name', 'x');
+    assert.equal(out.status, 2);
+    assert.match(out.stderr, /not found: nope/);
+    assert.match(out.stderr, /Skipped tsconfig: tools\/tsconfig\.json/);
+  });
+
+  test('more than 60 leftovers: 60 listed, all in a file; --all-leftovers lists all', (t) => {
+    const lines = Array.from({ length: 70 }, (_, i) => `// counter ${i}`).join('\n');
+    const r = repo(t, { 'src/a.ts': `export const counter = 1;\n${lines}\n` });
+    const out = r.run('--symbol', 'counter', '--new-name', 'tally');
+    assert.equal(out.status, 0, out.stderr);
+    assert.equal(out.stdout.split('\n').filter((l) => / comment: /.test(l)).length, 60);
+    const m = /Not listed: 10 more in changed files, mock keys, regexes and module paths\. All 70: (\S+)/.exec(out.stdout);
+    assert.ok(m, out.stdout);
+    assert.equal(fs.readFileSync(m[1], 'utf8').trim().split('\n').length, 70);
+    const r2 = repo(t, { 'src/a.ts': `export const counter = 1;\n${lines}\n` });
+    const out2 = r2.run('--symbol', 'counter', '--new-name', 'tally', '--all-leftovers');
+    assert.equal(out2.stdout.split('\n').filter((l) => / comment: /.test(l)).length, 70);
+    assert.doesNotMatch(out2.stdout, /Not listed/);
+  });
+
+  test('vi.mock and require paths follow a file rename; the factory key is listed', (t) => {
+    const r = repo(t, {
+      'src/Widget.ts': 'export const Widget = 1;\n',
+      'src/w.test.ts': "declare const vi: { mock(p: string, f: () => unknown): void };\ndeclare function require(p: string): unknown;\nvi.mock('./Widget', () => ({ Widget: 2 }));\nexport const x = require('./Widget');\n",
+    });
+    const out = r.run('--symbol', 'Widget', '--new-name', 'Gadget');
+    assert.equal(out.status, 0, out.stderr);
+    assert.match(r.read('src/w.test.ts'), /vi\.mock\('\.\/Gadget'.*\nexport const x = require\('\.\/Gadget'\);/);
+    assert.match(out.stdout, /src\/w\.test\.ts:3 mock key/);
+  });
+
+  test('an import path that does not resolve is listed, not dropped', (t) => {
+    const r = repo(t, {
+      'src/Widget.ts': 'export const Widget = 1;\n',
+      'src/w.test.ts': "declare const vi: { mock(p: string): void };\nvi.mock('@app/Widget');\nexport {};\n",
+    });
+    const out = r.run('--symbol', 'Widget', '--new-name', 'Gadget');
+    assert.equal(out.status, 0, out.stderr);
+    assert.match(out.stdout, /src\/w\.test\.ts:2 module path: vi\.mock\('@app\/Widget'\)/);
+  });
+
+  test('--in-strings with a file rename is not an overlap', (t) => {
+    const r = repo(t, { 'src/Widget.tsx': 'export const Widget = () => null;\n', 'src/main.ts': "import { Widget } from './Widget';\nexport const w = Widget;\n" });
+    const out = r.run('--symbol', 'Widget', '--new-name', 'Gadget', '--in-strings');
+    assert.equal(out.status, 0, out.stdout + out.stderr);
+    assert.equal(r.read('src/main.ts'), "import { Gadget } from './Gadget';\nexport const w = Gadget;\n");
+  });
+
+  test('a write failure partway lists what was already written', (t) => {
+    if (process.getuid?.() === 0) return; // root ignores the read-only bit
+    const r = repo(t, { 'src/Widget.tsx': 'export const Widget = () => null;\n', 'src/main.ts': "import { Widget } from './Widget';\nexport const w = Widget;\n" });
+    fs.chmodSync(path.join(r.dir, 'src/main.ts'), 0o444);
+    const out = r.run('--symbol', 'Widget', '--new-name', 'Gadget');
+    assert.equal(out.status, 1);
+    assert.match(out.stderr, /Stopped partway: .*\nAlready written \(1\): src\/Widget\.tsx/);
+  });
+
+  test('exit codes: 3 ambiguous (nothing written, the printed --at works), 2 not found, 1 not renamable', (t) => {
+    const r = repo(t, { 'src/a.ts': 'export const one = 1;\n', 'src/b.ts': 'export const one = 2;\n' });
+    const amb = r.run('--symbol', 'one', '--new-name', 'uno');
+    assert.equal(amb.status, 3);
+    assert.equal(r.git('status', '--porcelain').stdout, '');
+    const at = /--at (src\/a\.ts:\d+:\d+)/.exec(amb.stderr)[1];
+    assert.equal(r.run('--at', at, '--new-name', 'uno').status, 0);
+    assert.equal(r.read('src/a.ts'), 'export const uno = 1;\n');
+    assert.equal(r.run('--symbol', 'nope', '--new-name', 'x').status, 2);
+    const kw = r.run('--at', 'src/b.ts:1:1', '--new-name', 'x');
+    assert.equal(kw.status, 1);
+    assert.match(kw.stderr, /cannot rename/);
+  });
+
+  test('the printed --text command renames the listed lines, also after CR and U+2028 line breaks', (t) => {
+    const r = repo(t, { 'src/a.ts': 'export const counter = 1;\r\n// a\r// b // counter here\n' });
+    const out = r.run('--symbol', 'counter', '--new-name', 'tally');
+    const cmd = /^ {2}node (".*?") --text (\S+) --new-name (\S+) --lines '?([^' ]+)'?$/m.exec(out.stdout);
+    assert.ok(cmd, out.stdout);
+    const res = spawnSync(process.execPath, [JSON.parse(cmd[1]), '--text', cmd[2], '--new-name', cmd[3], '--lines', cmd[4]], { cwd: r.dir, encoding: 'utf8' });
+    assert.equal(res.status, 0, res.stderr);
+    assert.equal(r.read('src/a.ts'), 'export const tally = 1;\r\n// a\r// b // tally here\n');
+  });
+
+  test('a rename --dry-run writes nothing', (t) => {
+    const r = repo(t, { 'src/Widget.tsx': 'export const Widget = () => null;\n', 'src/main.ts': "import { Widget } from './Widget';\nexport const w = Widget;\n" });
+    const out = r.run('--symbol', 'Widget', '--new-name', 'Gadget', '--dry-run');
+    assert.equal(out.status, 0, out.stderr);
+    assert.match(out.stdout, /^Would rename Widget -> Gadget/m);
+    assert.equal(r.git('status', '--porcelain').stdout, '');
+  });
+
+  test('a member rename lists qualified mentions only, one line per line', (t) => {
+    const r = repo(t, {
+      'src/SessionCache.ts': 'export class SessionCache { current() { return 1; } }\nexport const cache = new SessionCache();\nexport const v = cache.current();\n',
+      'docs/n.md': 'Call cache.current and current.\nThe current state.\nSessionCache current docs.\n',
+    });
+    const out = r.run('--symbol', 'SessionCache.current', '--new-name', 'snapshot');
+    assert.equal(out.status, 0, out.stderr);
+    assert.equal(out.stdout.split('\n').filter((l) => /^ {2}docs\/n\.md:1 /.test(l)).length, 1);
+    assert.match(out.stdout, /^ {2}docs\/n\.md:3 /m);
+    assert.match(out.stdout, /Ignore: .*1 unqualified mentions/);
+  });
+
+  test('run from another repo with absolute paths, the target repo is used', (t) => {
+    const r = repo(t, { 'src/Widget.ts': 'export const Widget = 1;\n', 'src/use.ts': "import { Widget } from './Widget';\nexport const w = Widget;\n" });
+    const other = repo(t, {});
+    const out = spawnSync(process.execPath, [script, '--project', path.join(r.dir, 'tsconfig.json'), '--at', path.join(r.dir, 'src/Widget.ts:1:14'), '--new-name', 'Gadget'], { cwd: other.dir, encoding: 'utf8' });
+    assert.equal(out.status, 0, out.stderr);
+    assert.equal(r.read('src/use.ts'), "import { Gadget } from './Gadget';\nexport const w = Gadget;\n");
+    assert.match(r.git('status', '--porcelain').stdout, /^R. src\/Widget\.ts -> src\/Gadget\.ts$/m);
+  });
+
+  // Only where the file system ignores case (macOS, Windows by default).
+  if (fs.existsSync(path.join(os.tmpdir().toUpperCase() === os.tmpdir() ? os.tmpdir().toLowerCase() : os.tmpdir().toUpperCase()))) {
+    test('a case-only rename renames the file', (t) => {
+      const r = repo(t, { 'src/Widget.tsx': 'export const Widget = () => null;\n', 'src/main.ts': "import { Widget } from './Widget';\nexport const w = Widget;\n" });
+      const out = r.run('--symbol', 'Widget', '--new-name', 'WIDGET');
+      assert.equal(out.status, 0, out.stderr);
+      assert.match(out.stdout, /1 file renames/);
+      assert.ok(fs.readdirSync(path.join(r.dir, 'src')).includes('WIDGET.tsx'));
+    });
+  }
 }

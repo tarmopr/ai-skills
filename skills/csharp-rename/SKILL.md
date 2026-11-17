@@ -13,7 +13,7 @@ One Bash call renames a symbol and every reference to it across the whole soluti
 1. **Check the contract.** If the symbol is serialized (a JSON/API DTO property, a message contract, a workflow job variable such as a Zeebe worker `TInput` property, an EF entity column), renaming it changes the wire or database name — a breaking change. Stop and ask before renaming one.
 2. **Rename** with the command below. On exit 3, pick the intended candidate from the list and rerun. Use `--dry-run` only when the user wants to see the scope before anything is written.
 3. **Find string usages** the compiler can't see: `rg -nw <OldName>` across the repo, including non-C# files (BPMN, appsettings, YAML, JSON, Markdown). Fix these with Edit only where the string really refers to the symbol.
-4. **Build**: `dotnet build`. Report the summary line and the build result; show `git diff --stat` only if asked. If the build fails, treat every error as possibly caused by the rename, including errors in files it didn't change: a consumer in a project that failed to load, or a file a project lists explicitly. Call an error pre-existing only after building without the rename (`git stash`, build, `git stash pop`) shows the same error.
+4. **Build**: `dotnet build`. Report the summary line and the build result; show `git diff --stat` only if asked. If the build fails, treat every error as possibly caused by the rename, including errors in files it didn't change: a consumer in a project that failed to load, or a file a project names in a `<Compile Include>`. Call an error pre-existing only after building without the rename (`git stash`, build, `git stash pop`) shows the same error.
 
 ## Command
 
@@ -23,7 +23,7 @@ Run from the repo root (it finds the single `.sln`/`.slnx` upwards, or pass `--s
 bash "${CLAUDE_SKILL_DIR}/run.sh" --symbol <Name> --new-name <NewName>
 ```
 
-Success prints one line: `Renamed <symbol> -> <NewName>: 25 files, 0 file renames, 5s.`
+Success prints one summary line, `Renamed <symbol> -> <NewName>: 25 files, 0 file renames, 5s.`, followed by any `warning:` lines (below).
 
 | Argument | Meaning |
 |---|---|
@@ -47,7 +47,9 @@ The first run builds the tool into `${XDG_CACHE_HOME:-~/.cache}/csharp-rename/` 
 - **`warning: git mv failed (…)`** — the file was moved on disk but git didn't record it; stage it with `git add -A`.
 - **`N project load failures` (exit 1)** — nothing was changed. Run `dotnet restore` and retry. If a project can never load here (for example a non-SDK project type), ask the user before rerunning with `--allow-load-failures`.
 - **`Cannot rename Old.cs: New.cs already exists` (exit 1)** — nothing was changed. Ask the user, or rerun with `--no-file-rename`.
-- **`warning: kept Old.cs, because its project file lists it explicitly`** — the code was renamed but the file wasn't. Rename the file and its `Compile` entry by hand.
+- **`warning: kept Old.cs, because a <Compile Include> in its project file names it`** — the code was renamed but the file wasn't. Rename the file and its `Compile` entry by hand.
+- **`warning: N project load failures; references in those projects were NOT renamed`** (only with `--allow-load-failures`) — tell the user which projects; their references to the old name stay.
+- **`Stopped partway: …` (exit 1)** — a write failed. It lists the files already written; undo them with `git checkout` or finish by hand.
 - **The first build fails** (run.sh prints the `dotnet publish` log) — usually a missing requirement below. Tell the user which one; don't work around it.
 
 ## Requirements

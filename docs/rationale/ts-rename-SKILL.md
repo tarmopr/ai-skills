@@ -19,17 +19,17 @@ Every approach was correct by typecheck and tests. But one leftover was missed b
 - **Member mentions must be qualified.** For a member named with a common word (`current`, `reset`), hundreds of bare mentions in files the rename didn't touch were listed, and agents grepped to dismiss them. Outside the changed files, a mention is listed only when it reads `receiver.name` with a receiver the rename saw or the container as receiver, or when the line names the container itself (a capitalised name, or one longer than 6 characters).
 - **A regex escape before the name counts as a word boundary.** `\b` puts a word character in front of the name, so a plain whole-word match skipped `/\bname\(/`.
 - **Tool's own files skipped** when scanning for leftovers.
-- **Re-exports renamed through.** With prefix/suffix text on, TypeScript stops at `export { old }` and writes `export { old as new }`, so importers of a barrel keep the old name. The full set of locations comes from the plain call; the prefix/suffix text is used only for shorthand properties and bindings, where it keeps the object key.
+- **Re-exports renamed through.** With prefix/suffix text on, TypeScript stops at `export { old }` and writes `export { old as new }`, so importers of a barrel keep the old name. With it off, shorthand properties and destructuring lose their key, and a destructured local leaks the rename into the interface. So the script keeps it on, writes the plain new name at an import or export specifier, and continues the rename from that specifier.
 - **What wasn't covered is printed on stdout**, never only on stderr: a tsconfig that failed to load or matched no files, one loaded with errors, skipped overlapping edits, a failed `git mv`. The agent acts on stdout and is told not to double-check, so a silent gap becomes a wrong rename.
 
 ## Why a skill and not a line in CLAUDE.md
 
-A separate set of 12 runs (a method rename, the large rename and a common-word member rename, 2 runs each per variant) gave no hint in the task prompt. Both were found every time. The skill averaged 223k tokens and 3.2 tool calls; a one-line pointer in CLAUDE.md averaged 290k and 4.7. Without the workflow rules ("act on the output only, don't grep to double-check"), agents ran `--help`, `git diff` and grep to verify. That cost about one more model call per rename, more than the `Skill` call itself.
+A separate set of 12 runs (a method rename, the large rename and a common-word member rename, 2 runs each per variant) gave no hint in the task prompt. Both variants found the tool every time. The skill averaged 223k tokens and 3.2 tool calls; a one-line pointer in CLAUDE.md averaged 290k and 4.7. Without the workflow rules ("act on the output only, don't grep to double-check"), agents ran `--help`, `git diff` and grep to verify. That cost about one more model call per rename, more than the `Skill` call itself.
 
-When the prompt names the tool, the two tie (median 207k for the skill, 204k for the pointer). That's because the `Skill` call is one model call of its own.
+When the prompt names the tool, the two tie (10 runs each: an average of 204k for the skill and 211k for the pointer; medians 207k and 178k). That's because the `Skill` call is one model call of its own.
 
 ## Rejected
 
 - **`getEditsForFileRename`** from the language service, for import paths after a file rename: it took over 5 minutes on a large program. The script resolves each module specifier whose last segment is the old name with `ts.resolveModuleName` instead.
-- **The LSP tool (findReferences + Edit):** 448k tokens and about 16 model calls per rename.
+- **The LSP tool (findReferences + Edit):** 448k tokens and about 16 model calls per rename, on the first benchmark's small renames.
 - **ast-grep or sed alone:** cheap on unique names, but they can't tell same-name symbols apart.

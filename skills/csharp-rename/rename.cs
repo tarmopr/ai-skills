@@ -9,7 +9,7 @@
 // Usage:
 //   run.sh --new-name <Name> (--symbol <Name|Namespace.Type[.Member]> | --at <file>:<line>:<col>)
 //          [--solution <path>] [--overloads] [--in-comments] [--in-strings] [--no-file-rename] [--allow-load-failures] [--dry-run] [--verbose]
-// Prints one summary line by default; --verbose (or --dry-run) also lists each changed file.
+// Prints one summary line plus any warning lines; --verbose (or --dry-run) also lists each changed file.
 // Exit codes: 0 renamed (or dry run), 1 error, 2 symbol not found, 3 ambiguous symbol.
 
 using System.Diagnostics;
@@ -144,6 +144,9 @@ internal static class RenameCommand
             .GetProjectChanges()
             .SelectMany(project => project.GetChangedDocuments())
             .Distinct()
+            // A multi-targeted project holds each file once per target framework: write each file once.
+            .GroupBy(documentId => solution.GetDocument(documentId)!.FilePath)
+            .Select(group => group.First())
             .ToList();
 
         var keptFiles = new List<string>();
@@ -155,40 +158,66 @@ internal static class RenameCommand
             return 1;
         }
 
-        foreach (var documentId in changedDocuments)
+        // A failure partway (a read-only file, a full disk) stops with the list of what was already written.
+        var written = new List<string>();
+        var moveWarnings = new List<string>();
+        try
         {
-            var oldDocument = solution.GetDocument(documentId)!;
-            var newDocument = renamedSolution.GetDocument(documentId)!;
-            if (arguments.Verbose)
+            foreach (var documentId in changedDocuments)
             {
-                var edits = (await newDocument.GetTextChangesAsync(oldDocument)).Count();
-                Console.WriteLine($"  {Path.GetRelativePath(Directory.GetCurrentDirectory(), oldDocument.FilePath!)} ({edits} edits)");
+                var oldDocument = solution.GetDocument(documentId)!;
+                var newDocument = renamedSolution.GetDocument(documentId)!;
+                var relativePath = Path.GetRelativePath(Directory.GetCurrentDirectory(), oldDocument.FilePath!);
+                if (arguments.Verbose)
+                {
+                    var edits = (await newDocument.GetTextChangesAsync(oldDocument)).Count();
+                    Console.WriteLine($"  {relativePath} ({edits} edits)");
+                }
+
+                if (!arguments.DryRun)
+                {
+                    var newText = await newDocument.GetTextAsync();
+                    await WriteText(oldDocument.FilePath!, newText);
+                    written.Add(relativePath);
+                }
             }
 
-            if (!arguments.DryRun)
+            foreach (var (from, to) in fileMoves)
             {
-                var newText = await newDocument.GetTextAsync();
-                await WriteText(oldDocument.FilePath!, newText);
+                if (arguments.Verbose)
+                {
+                    Console.WriteLine($"  file: {Path.GetRelativePath(Directory.GetCurrentDirectory(), from)} -> {Path.GetFileName(to)}");
+                }
+
+                if (!arguments.DryRun)
+                {
+                    if (MoveFile(from, to) is { } warning)
+                    {
+                        moveWarnings.Add(warning);
+                    }
+
+                    written.Add($"{Path.GetFileName(from)} -> {Path.GetFileName(to)}");
+                }
             }
         }
-
-        foreach (var (from, to) in fileMoves)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            if (arguments.Verbose)
-            {
-                Console.WriteLine($"  file: {Path.GetRelativePath(Directory.GetCurrentDirectory(), from)} -> {Path.GetFileName(to)}");
-            }
-
-            if (!arguments.DryRun)
-            {
-                MoveFile(from, to);
-            }
+            Console.Error.WriteLine($"Stopped partway: {exception.Message}");
+            Console.Error.WriteLine(written.Count == 0
+                ? "Nothing was changed."
+                : $"Already written ({written.Count}): {string.Join(", ", written)}. Undo them with git checkout, or finish by hand.");
+            return 1;
         }
 
         Console.WriteLine($"{(arguments.DryRun ? "Would rename" : "Renamed")} {symbol.ToDisplayString()} -> {arguments.NewName}: {changedDocuments.Count} files, {fileMoves.Count} file renames, {stopwatch.Elapsed.TotalSeconds:F0}s.");
+        foreach (var warning in moveWarnings)
+        {
+            Console.WriteLine(warning);
+        }
+
         foreach (var keptFile in keptFiles)
         {
-            Console.WriteLine($"warning: kept {Path.GetRelativePath(Directory.GetCurrentDirectory(), keptFile)}, because its project file lists it explicitly; rename the file and that entry by hand.");
+            Console.WriteLine($"warning: kept {Path.GetRelativePath(Directory.GetCurrentDirectory(), keptFile)}, because a <Compile Include> in its project file names it; rename the file and that entry by hand.");
         }
 
         if (loadFailures > 0)
@@ -220,7 +249,7 @@ internal static class RenameCommand
     }
 
     // A type declared in OldName.cs moves to NewName.cs so the file keeps matching its type (StyleCop SA1649).
-    // Files a project file names explicitly (default compile items off) are kept, since moving them would drop them from the build.
+    // A file a <Compile Include> in its project file names is kept, since moving it would drop it from the build.
     private static List<(string From, string To)> PlanFileMoves(Solution solution, ISymbol symbol, string newName, List<string> keptFiles)
     {
         if (symbol is not INamedTypeSymbol)
@@ -256,8 +285,14 @@ internal static class RenameCommand
             .Select(documentId => solution.GetProject(documentId.ProjectId)?.FilePath)
             .OfType<string>()
             .Distinct()
-            .Any(projectFile => File.ReadAllText(projectFile).Contains(fileName, StringComparison.OrdinalIgnoreCase));
+            .Any(projectFile => CompileIncludes(projectFile)
+                .Any(item => string.Equals(Path.GetFileName(item.Replace('\\', '/')), fileName, StringComparison.OrdinalIgnoreCase)));
     }
+
+    // The items of every <Compile Include="a;b"> in a project file (a glob like **/*.cs names no file).
+    private static IEnumerable<string> CompileIncludes(string projectFile) =>
+        Regex.Matches(File.ReadAllText(projectFile), "<Compile\\s[^>]*?\\bInclude\\s*=\\s*\"([^\"]*)\"")
+            .SelectMany(match => match.Groups[1].Value.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries));
 
     // A case-only rename (Foo.cs -> foo.cs) finds the source file itself on case-insensitive file systems.
     private static bool IsOccupied(string from, string to) =>
@@ -270,24 +305,42 @@ internal static class RenameCommand
     }
 
     // git mv keeps history when the file is tracked; otherwise a plain move. A tracked file that git can't move
-    // (index.lock, a conflict) is still moved on disk, and the reason is printed so it can be staged by hand.
-    private static void MoveFile(string from, string to)
+    // (index.lock, a conflict), or a repo where git doesn't start, still moves on disk and returns a warning.
+    private static string? MoveFile(string from, string to)
     {
-        var git = Process.Start(new ProcessStartInfo("git", ["mv", from, to])
+        var (exitCode, error) = Git(from, "mv", "--", from, to);
+        if (exitCode == 0)
         {
-            WorkingDirectory = Path.GetDirectoryName(from)!,
-            RedirectStandardError = true,
-            RedirectStandardOutput = true,
-        })!;
-        var error = git.StandardError.ReadToEnd();
-        git.WaitForExit();
-        if (git.ExitCode != 0)
+            return null;
+        }
+
+        // Asked before the move, while the old path is still on disk. Exit 1 means git runs and the file is untracked.
+        var untracked = Git(from, "ls-files", "--error-unmatch", "--", from).ExitCode == 1;
+        File.Move(from, to);
+        return untracked
+            ? null
+            : $"warning: git mv failed ({error.Trim().Split('\n')[0]}); moved {Path.GetFileName(from)} -> {Path.GetFileName(to)} on disk only, stage it with git add -A.";
+    }
+
+    // Exit code and the first stderr text; -1 when git can't be started.
+    private static (int ExitCode, string Error) Git(string fileInRepo, params string[] arguments)
+    {
+        try
         {
-            File.Move(from, to);
-            if (!error.Contains("not under version control"))
+            using var git = Process.Start(new ProcessStartInfo("git", arguments)
             {
-                Console.WriteLine($"warning: git mv failed ({error.Trim().Split('\n')[0]}); moved {Path.GetFileName(from)} -> {Path.GetFileName(to)} on disk only, stage it with git add -A.");
-            }
+                WorkingDirectory = Path.GetDirectoryName(fileInRepo)!,
+                RedirectStandardError = true,
+                RedirectStandardOutput = true,
+            })!;
+            var error = git.StandardError.ReadToEnd();
+            git.StandardOutput.ReadToEnd();
+            git.WaitForExit();
+            return (git.ExitCode, error);
+        }
+        catch (System.ComponentModel.Win32Exception exception)
+        {
+            return (-1, $"git did not start: {exception.Message}");
         }
     }
 }
@@ -304,9 +357,12 @@ internal static class SymbolResolver
             name => name == simpleName,
             SymbolFilter.TypeAndMember);
 
+        // A multi-targeted project is one compilation per target framework, so each declaration comes back once
+        // per framework, as symbols that don't compare equal: one candidate per declaration location.
         var candidates = declarations
             .Where(symbol => Matches(symbol, query))
-            .Distinct<ISymbol>(SymbolEqualityComparer.Default)
+            .GroupBy(FormatLocation)
+            .Select(group => group.First())
             .ToList();
 
         if (candidates.Count == 0)
@@ -317,7 +373,7 @@ internal static class SymbolResolver
 
         // With --overloads, candidates that are all overloads of one method are one rename: Roslyn renames the rest.
         if (overloads && candidates.Count > 1 && candidates.All(c => c is IMethodSymbol)
-            && candidates.Select(c => (c.ContainingType, c.Name)).Distinct().Count() == 1)
+            && candidates.Select(c => (c.ContainingType.ToDisplayString(), c.Name)).Distinct().Count() == 1)
         {
             return new SymbolResolution(candidates[0], 0);
         }
