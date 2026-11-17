@@ -12,12 +12,15 @@ const t0 = Date.now();
 // What the agent must know was not covered (skipped tsconfigs, failed git mv, …): printed with the summary, and
 // with any error, so a "not found" never hides that the project defining the symbol didn't load.
 const notices = [];
-const die = (code, msg) => {
+// Usage errors and lookups that found nothing go to stderr; a refusal ("Nothing changed", "Stopped partway") is an
+// outcome the agent acts on, and goes to stdout with every other outcome.
+const die = (code, msg, fd = 2) => {
   const text = [msg.replace(/\n$/, ''), ...notices].join('\n');
   // writeSync: process.exit right after an async write cuts a pipe's output at 64 KB.
-  fs.writeSync(2, text + '\n');
+  fs.writeSync(fd, text + '\n');
   process.exit(code);
 };
+const refuse = (msg) => die(1, msg, 1);
 
 // ---------- args ----------
 const SELF = `"${process.argv[1]}"`; // absolute and double-quoted, like SKILL.md's allowed-tools pattern after ${CLAUDE_SKILL_DIR} expands
@@ -29,7 +32,8 @@ Options: --project <tsconfig> (repeatable)  --in-comments  --in-strings  --no-fi
   --allow-errors (write even when the check finds type errors the rename adds in the changed files, or fails to run)
 Replace a word on given lines only (for the leftovers a rename lists; no type checking):
   node ${SELF} --text <Old> --new-name <New> --lines <file>:<line>,<line> [--lines <file>:<line>]...
-Exit codes: 0 done, 1 error (also: nothing written because the rename would break the code), 2 not found, 3 ambiguous (stderr lists --at candidates).
+Exit codes: 0 done, 1 error (also: nothing written because the rename would add type errors in the changed files, or the
+check failed; refusals print on stdout), 2 not found, 3 ambiguous (stderr lists --at candidates).
 --text exits 1 when no listed line had the word; lines without it are named on stdout.`;
 const argv = process.argv.slice(2);
 const opts = { inComments: false, inStrings: false, fileRename: true, dryRun: false, verbose: false, projects: [], lines: [] };
@@ -98,7 +102,7 @@ if (opts.text !== undefined) {
     if (!m) die(1, `--lines must be <file>:<line>,<line>: ${spec}`);
     const abs = path.resolve(root, m[1]); // the paths a rename prints are relative to the repo root
     if (!fs.existsSync(abs)) { missed.push(`${m[1]} (no such file)`); continue; }
-    if (!fs.realpathSync(abs).startsWith(realRoot + path.sep)) die(1, `Nothing changed: ${m[1]} is outside the repo (${root})`);
+    if (!fs.realpathSync(abs).startsWith(realRoot + path.sep)) refuse(`Nothing changed: ${m[1]} is outside the repo (${root})`);
     if (!plan.has(abs)) plan.set(abs, { name: m[1], lines: new Set() });
     for (const ln of m[2].split(',')) plan.get(abs).lines.add(Number(ln));
   }
@@ -116,12 +120,12 @@ if (opts.text !== undefined) {
   }
   const out = `${opts.dryRun ? 'Would replace' : 'Replaced'} ${opts.text} -> ${opts.newName}: ${n} mentions on ${nLines} lines in ${writes.length} files.`;
   const miss = missed.length ? `\nNo ${opts.text} on (nothing changed there): ${missed.join(', ')}` : '';
-  if (!n) die(1, out + miss);
+  if (!n) refuse(out + miss);
   const done = [];
   if (!opts.dryRun) {
     for (const [abs, text] of writes) {
       try { fs.writeFileSync(abs, text); done.push(rel(abs)); }
-      catch (e) { die(1, `Stopped partway: ${e.message}\nAlready written (${done.length}): ${done.join(', ') || 'nothing'}`); }
+      catch (e) { refuse(`Stopped partway: ${e.message}\nAlready written (${done.length}): ${done.join(', ') || 'nothing'}`); }
     }
   }
   process.stdout.write(out + miss + '\n');
@@ -375,7 +379,7 @@ if (opts.fileRename) {
       const to = path.join(path.dirname(decl.file), opts.newName + ext);
       // On a case-insensitive file system a case-only rename finds the same file under the new name.
       const sameFile = fs.existsSync(to) && fs.statSync(to).ino === fs.statSync(decl.file).ino;
-      if (fs.existsSync(to) && !sameFile) die(1, `Nothing changed: cannot rename ${rel(decl.file)}: ${rel(to)} already exists (rerun with --no-file-rename)`);
+      if (fs.existsSync(to) && !sameFile) refuse(`Nothing changed: cannot rename ${rel(decl.file)}: ${rel(to)} already exists (rerun with --no-file-rename)`);
       fileRenames.push({ from: decl.file, to });
       // ts' getEditsForFileRename is minutes on a large program; instead rewrite every module specifier
       // (import/export, import type, and the first string argument of any call: import(), require, vi.mock, …)
@@ -423,7 +427,7 @@ for (const f of files) {
   const specs = all.filter((e) => e.spec);
   const list = all.filter((e) => e.spec || !specs.some((p) => e.start >= p.start && e.start + e.length <= p.start + p.length)).sort((a, b) => b.start - a.start);
   let text;
-  try { text = fs.readFileSync(f, 'utf8'); } catch (e) { die(1, `Nothing changed: ${e.message}`); }
+  try { text = fs.readFileSync(f, 'utf8'); } catch (e) { refuse(`Nothing changed: ${e.message}`); }
   let lastStart = Infinity;
   for (const e of list) {
     if (e.start + e.length > lastStart) { overlaps.push(`${rel(f)}:${lineOf(text, e.start)}`); continue; }
@@ -437,9 +441,9 @@ for (const f of files) {
 // ---------- check the result before writing ----------
 // TypeScript's rename doesn't check that the result compiles, and the agent is told to trust this output. So the
 // changed files are type-checked in memory first, through the language service reading the new texts from an
-// overlay. A file that has more errors of some code than before the rename is a problem, and any problem writes
-// nothing, unless --allow-errors; a check that fails to run writes nothing either. Counting per code means an error
-// that was there before never blocks a valid rename, even when the rename rewrites its line or its message.
+// overlay. An error on a line that had no error of that code before the rename is a problem, and any problem writes
+// nothing, unless --allow-errors; a check that fails to run writes nothing either. Matching by code and line means an
+// error that was there before never blocks a valid rename, even when the rename rewrites its line or its message.
 // Not covered: a break in a file the rename didn't change (an untyped object passed to the renamed type elsewhere, a
 // subclass in another file, a clashing `export *`), and a rename that compiles but means something else (a capture,
 // an override). The repo's own typecheck and tests find those.
@@ -456,7 +460,10 @@ try {
     if (s && inRepo(f)) toCheck.set(f, s);
   }
   const errorsOf = (s, f) => [...s.ls.getSyntacticDiagnostics(f), ...s.ls.getSemanticDiagnostics(f)].filter((d) => d.category === ts.DiagnosticCategory.Error);
-  const lineText = (d) => (d.file ? splitLines(d.file.text)[2 * d.file.getLineAndCharacterOfPosition(d.start).line].trim() : '');
+  // An error is matched to one from before by its code and line. A rename never adds or removes a line, and a
+  // "did you mean" error counts as its plain code: the rename can make or drop the suggestion.
+  const plainCode = { 2551: 2339, 2568: 2339, 2576: 2339, 2552: 2304, 2570: 2304, 2662: 2304, 2663: 2304, 2561: 2353, 2724: 2305, 2820: 2322, 2833: 2503, 4117: 4113 };
+  const errorKey = (d) => `${plainCode[d.code] ?? d.code}:${d.file ? d.file.getLineAndCharacterOfPosition(d.start).line : -1}`;
   const bump = (list) => { for (const f of list) versions.set(f, (versions.get(f) ?? 0) + 1); };
   overlay = new Map();
   for (const [f, text] of newTexts) overlay.set(moveTo.get(f) ?? f, text);
@@ -471,26 +478,19 @@ try {
   if (after.size) {
     const saved = overlay;
     overlay = null; bump(changedPaths);
-    const before = new Map(); // file -> code -> the trimmed text of each error's line
+    const before = new Map(); // file -> error key -> count
     for (const f of after.keys()) {
-      const byCode = new Map();
-      for (const d of errorsOf(toCheck.get(f), f)) { if (!byCode.has(d.code)) byCode.set(d.code, []); byCode.get(d.code).push(lineText(d)); }
-      before.set(f, byCode);
+      const n = new Map();
+      for (const d of errorsOf(toCheck.get(f), f)) n.set(errorKey(d), (n.get(errorKey(d)) ?? 0) + 1);
+      before.set(f, n);
     }
     overlay = saved; bump(changedPaths);
-    const asOld = (text) => text.replace(wordRe(opts.newName), oldName);
     for (const [f, errs] of after) {
-      const byCode = new Map();
-      for (const d of errs) { if (!byCode.has(d.code)) byCode.set(d.code, []); byCode.get(d.code).push(d); }
-      for (const [code, list] of byCode) {
-        const was = [...(before.get(f).get(code) ?? [])];
-        if (list.length <= was.length) continue;
-        // Show the errors whose line had no error of this code before (the new name read as the old one); when
-        // that doesn't single them out, the last ones.
-        const fresh = list.filter((d) => { const i = was.findIndex((w) => asOld(w) === asOld(lineText(d))); if (i < 0) return true; was.splice(i, 1); return false; });
-        for (const d of (fresh.length ? fresh : list).slice(-(list.length - (before.get(f).get(code)?.length ?? 0)))) {
-          problems.push(`${d.file ? at(d.file, d.start) : rel(f)}: TS${d.code} ${ts.flattenDiagnosticMessageText(d.messageText, ' ')}`);
-        }
+      const left = before.get(f);
+      for (const d of errs) {
+        const k = errorKey(d);
+        if (left.get(k)) { left.set(k, left.get(k) - 1); continue; }
+        problems.push(`${d.file ? at(d.file, d.start) : rel(f)}: TS${d.code} ${ts.flattenDiagnosticMessageText(d.messageText, ' ')}`);
       }
     }
   }
@@ -506,8 +506,8 @@ if (problems.length) {
   const list = problems.slice(0, 20).map((p) => `  ${p}`).concat(problems.length > 20 ? [`  … ${problems.length - 20} more`] : []);
   if (!opts.allowErrors) {
     const msg = [`Nothing changed: renaming ${oldName} -> ${opts.newName} would add type errors:`, ...list,
-      'Pick another name, or rename at the declaration with --symbol; a reference the rename misses (an untyped object key, an import the',
-      'compiler can\'t resolve) needs a hand edit after the rename. --allow-errors writes it anyway.', ...notices];
+      'Pick another name, or rename at the declaration with --symbol. A reference the rename misses (an untyped object key) is',
+      'for the user: --allow-errors writes the rename anyway, and the key is then edited by hand.', ...notices];
     fs.writeSync(1, msg.join('\n') + '\n');
     process.exit(1);
   }
@@ -517,7 +517,7 @@ if (problems.length) {
 // ---------- write ----------
 // A failure partway (a read-only file, a full disk) stops with the list of what was already written.
 const written = [], moved = [];
-// On stdout like every other outcome the agent acts on (die writes stderr).
+// On stdout, like refuse().
 const stop = (e) => {
   const msg = [`Stopped partway: ${e.message}`, `Already written (${written.length}): ${written.map(rel).join(', ') || 'nothing'}`,
     ...(moved.length ? [`Already moved: ${moved.join(', ')}`] : []), 'Undo with git checkout on the written files (and move the moved ones back), or finish by hand.', ...notices];

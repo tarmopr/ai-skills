@@ -445,7 +445,7 @@ if (TS) {
     const r = repo(t, { 'src/Widget.tsx': 'export const Widget = () => null;\n', 'src/Gadget.tsx': 'export const other = 1;\n' });
     const out = r.run('--symbol', 'Widget', '--new-name', 'Gadget');
     assert.equal(out.status, 1);
-    assert.match(out.stderr, /Nothing changed: cannot rename src\/Widget\.tsx: src\/Gadget\.tsx already exists/);
+    assert.match(out.stdout, /Nothing changed: cannot rename src\/Widget\.tsx: src\/Gadget\.tsx already exists/);
     unchanged(r);
   });
 
@@ -462,7 +462,7 @@ if (TS) {
     assert.equal(other.read('src/note.ts'), '// Widget elsewhere\n');
   });
 
-  // Round 4: the files where a break shows, and renames that are fine.
+  // Where the check finds a break, and renames that are fine.
   const refused = (r, out, re) => { assert.equal(out.status, 1, out.stdout + out.stderr); assert.match(out.stdout, re); unchanged(r); };
 
   test('an error the file already had with the same code is not reported in place of the new one', (t) => {
@@ -479,7 +479,7 @@ if (TS) {
     assert.match(r.read('src/a.ts'), /const x: string = bar\(\);/);
   });
 
-  test('an error already on a line that is rewritten, or that names the new name, never blocks the rename', (t) => {
+  test('an error already on a line that is rewritten never blocks the rename', (t) => {
     const r = repo(t, {
       'src/q.ts': "export interface Q { limit: number }\nconst limit = 'x';\nexport const q: Q = { limit };\n",
       'src/u.ts': "import type { Q } from './q';\nconst maxRows = 'y';\nexport const n: number = maxRows;\nexport const m = (x: Q) => x.limit;\n",
@@ -488,6 +488,51 @@ if (TS) {
     assert.equal(out.status, 0, out.stdout + out.stderr);
     assert.match(r.read('src/q.ts'), /\{ maxRows: limit \}/);
     assert.match(r.read('src/u.ts'), /x\.maxRows/);
+  });
+
+  test('a new error is found even when the rename fixes another of the same code in the file', (t) => {
+    const r = repo(t, { 'src/a.ts': 'interface Box { oldProp: number; other: number }\nconst lit = { newProp: 1, other: 2 };\nexport const p: Box = lit;\nconst lit2 = { oldProp: 1, other: 2 };\nexport const q: Box = lit2;\n' });
+    refused(r, r.run('--symbol', 'Box.oldProp', '--new-name', 'newProp'), /src\/a\.ts:5: TS2741 /);
+  });
+
+  test('an error that only gains or loses its "did you mean" is not new', (t) => {
+    const r = repo(t, {
+      'src/q.ts': 'export interface Q { limit: number }\nexport const f = (x: Q) => x.limit + x.limt;\n',
+      'src/b.ts': 'export function foo() { return 1; }\nexport const v = foo() + bar2;\n',
+    });
+    let out = r.run('--symbol', 'Q.limit', '--new-name', 'maxRows');
+    assert.equal(out.status, 0, out.stdout + out.stderr);
+    r.git('checkout', '-q', '-f', '.');
+    out = r.run('--symbol', 'foo', '--new-name', 'bar');
+    assert.equal(out.status, 0, out.stdout + out.stderr);
+    assert.match(r.read('src/b.ts'), /bar\(\) \+ bar2/);
+  });
+
+  test('a file rename of a file that already has an error is checked under the new path and written', (t) => {
+    const r = repo(t, { 'src/Widget.ts': 'export function Widget() { return 1; }\nexport const n: number = "x";\n', 'src/use.ts': "import { Widget } from './Widget';\nexport const v = Widget();\n" });
+    const out = r.run('--symbol', 'Widget', '--new-name', 'Gadget');
+    assert.equal(out.status, 0, out.stdout + out.stderr);
+    assert.ok(fs.existsSync(path.join(r.dir, 'src/Gadget.ts')));
+  });
+
+  test('a new name that is a keyword fails the check (syntax errors count)', (t) => {
+    const r = repo(t, { 'src/a.ts': 'export function f() {\n  const item = 1;\n  return item;\n}\n' });
+    refused(r, r.run('--at', 'src/a.ts:2:9', '--new-name', 'class'), /TS1\d{3} /);
+  });
+
+  test('a check that fails to run writes nothing, or writes unchecked with --allow-errors', (t) => {
+    const r = repo(t, { 'src/a.ts': 'export function foo() { return 1; }\nexport const v = foo();\n' });
+    const stub = path.join(r.dir, 'node_modules/typescript');
+    fs.unlinkSync(stub);
+    fs.mkdirSync(stub);
+    fs.writeFileSync(path.join(stub, 'package.json'), '{"name":"typescript","main":"index.js"}\n');
+    fs.writeFileSync(path.join(stub, 'index.js'), `const ts = require(${JSON.stringify(path.resolve(TS))});
+module.exports = { ...ts, createLanguageService(h, r) { const ls = ts.createLanguageService(h, r); return { ...ls, getSemanticDiagnostics() { throw new Error('boom'); } }; } };\n`);
+    refused(r, r.run('--symbol', 'foo', '--new-name', 'bar'), /^Nothing changed: the check of the result failed \(boom\)/);
+    const out = r.run('--symbol', 'foo', '--new-name', 'bar', '--allow-errors');
+    assert.equal(out.status, 0, out.stdout + out.stderr);
+    assert.match(out.stdout, /The check of the result failed \(boom\); written unchecked with --allow-errors\./);
+    assert.match(r.read('src/a.ts'), /bar\(\)/);
   });
 
   test('a barrel that already exports the new name fails the check', (t) => {

@@ -23,7 +23,7 @@ Run from the repo root (it finds the single `.sln`/`.slnx` upwards, or pass `--s
 bash "${CLAUDE_SKILL_DIR}/run.sh" --symbol <Name> --new-name <NewName>
 ```
 
-Before writing, the tool compiles in memory the renamed files and every file naming the old or the new name (for a member, only files that also name its type). If a file has more errors of some id than before the rename (a new name that clashes with a member or a type, a reference it couldn't rebind), it writes nothing and lists them (exit 1). A rename that compiles but binds differently (a member that now hides or overrides another, which is only a warning) or merges two partial types is not caught. Success prints one summary line, `Renamed <display name> -> <NewName>: 25 files, 0 file renames, 5s.`, where the display name is the compiler's (`Ns.OrderService.Cancel()`), followed by any `warning:` lines (below).
+Before writing, the tool compiles in memory the renamed files and every file naming the old or the new name (for a member, only files that also name its type). If a line has an error of an id it didn't have before the rename (a new name that clashes with a member or a type, a reference it couldn't rebind), it writes nothing and lists them (exit 1). A rename that compiles but binds differently (a member that now hides or overrides another, which is only a warning) or merges two partial types is not caught. Success prints one summary line, `Renamed <display name> -> <NewName>: 25 files, 0 file renames, 5s.`, where the display name is the compiler's (`Ns.OrderService.Cancel()`), followed by any `warning:` lines (below).
 
 | Argument | Meaning |
 |---|---|
@@ -38,9 +38,9 @@ Before writing, the tool compiles in memory the renamed files and every file nam
 | `--dry-run` | Run the check and list the files it would change, write nothing (exit 1 with the errors if the check fails) |
 | `--verbose` | Also list each changed file (implied by `--dry-run`) |
 
-Exit codes: `0` done, `1` error (also: nothing written because the rename would break the build; project load failures; `Failed:`; a malformed `--at` or a line or column out of range), `2` not found (also an `--at` file outside the solution, or no symbol at that position), `3` ambiguous — stderr lists each candidate with its exact display string and `file:line:col`; rerun with one of them.
+Exit codes: `0` done, `1` error (also every refusal under Errors below: nothing written because the rename would add compile errors; project load failures; `Failed:`; a malformed `--at` or a line or column out of range), `2` not found (also an `--at` file outside the solution, or no symbol at that position), `3` ambiguous — stderr lists each candidate with its exact display string and `file:line:col`; rerun with one of them.
 
-The first run builds the tool into `${XDG_CACHE_HOME:-~/.cache}/csharp-rename/` (~30s, once per version of `rename.cs`). After that a rename takes ~5s, almost all of it loading the solution.
+The first run builds the tool into `${XDG_CACHE_HOME:-~/.cache}/csharp-rename/` (~30s, once per version of `rename.cs`). After that a rename takes ~5s on a mid-sized solution, most of it loading the solution; the in-memory compile check adds about 1s on small ones.
 
 ## Errors and warnings
 

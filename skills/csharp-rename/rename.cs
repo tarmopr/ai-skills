@@ -195,7 +195,8 @@ internal static class RenameCommand
 
         // Renamer.RenameSymbolAsync drops the conflicts it can't resolve (a new name that clashes, a reference it can't
         // rebind) without a word, and the agent is told to trust this output. So the result is compiled in memory
-        // first: the errors it adds, counted per document and error id against the same documents before the rename.
+        // first: an error on a line that had no error of that id before the rename (each target framework's copy of a file
+        // is its own document).
         // Any one writes nothing, unless --allow-errors. Not covered: a rename that compiles but binds differently (a
         // member that now hides or overrides another, which is only a warning) or merges two partial types.
         var problems = await FindNewErrors(solution, newTexts, symbol, arguments.NewName);
@@ -325,27 +326,20 @@ internal static class RenameCommand
                 continue;
             }
 
-            // A document with more errors of some id than before is a problem; counting per id means an error that was
-            // there before never blocks a valid rename, even when the rename rewrites its line or its message.
-            var before = (await ErrorsOf(solution.GetDocument(documentId)!)).GroupBy(diagnostic => diagnostic.Id)
-                .ToDictionary(group => group.Key, group => group.Select(LineText).ToList());
-            foreach (var group in after.GroupBy(diagnostic => diagnostic.Id))
+            // An error on a line that had no error of that id before is a problem. A rename never adds or removes a line,
+            // so an error that was there before never blocks a valid rename, even when the rename rewrites its line.
+            var before = (await ErrorsOf(solution.GetDocument(documentId)!)).GroupBy(ErrorKey).ToDictionary(group => group.Key, group => group.Count());
+            foreach (var diagnostic in after)
             {
-                var was = before.GetValueOrDefault(group.Key) ?? [];
-                var added = group.Count() - was.Count;
-                if (added <= 0)
+                var key = ErrorKey(diagnostic);
+                if (before.GetValueOrDefault(key) > 0)
                 {
+                    before[key]--;
                     continue;
                 }
 
-                // Shown: the errors whose line had none of this id before (the new name read as the old one), else the last ones.
-                var remaining = was.Select(line => newWord.Replace(line, symbol.Name)).ToList();
-                var fresh = group.Where(diagnostic => !remaining.Remove(newWord.Replace(LineText(diagnostic), symbol.Name))).ToList();
-                foreach (var diagnostic in (fresh.Count > 0 ? fresh : group.ToList()).TakeLast(added))
-                {
-                    var span = diagnostic.Location.GetLineSpan();
-                    problems.Add($"{Relative(span.Path)}:{span.StartLinePosition.Line + 1}: {diagnostic.Id} {diagnostic.GetMessage()}");
-                }
+                var span = diagnostic.Location.GetLineSpan();
+                problems.Add($"{Relative(span.Path)}:{span.StartLinePosition.Line + 1}: {diagnostic.Id} {diagnostic.GetMessage()}");
             }
         }
 
@@ -353,16 +347,13 @@ internal static class RenameCommand
         return problems.Distinct().ToList();
     }
 
-    private static string LineText(Diagnostic diagnostic)
-    {
-        var tree = diagnostic.Location.SourceTree;
-        return tree is null ? string.Empty : tree.GetText().Lines.GetLineFromPosition(diagnostic.Location.SourceSpan.Start).ToString().Trim();
-    }
+    private static string ErrorKey(Diagnostic diagnostic) => $"{diagnostic.Id}:{diagnostic.Location.GetLineSpan().StartLinePosition.Line}";
 
     private static async Task<List<Diagnostic>> ErrorsOf(Document document)
     {
         var model = await document.GetSemanticModelAsync();
-        return model is null ? [] : model.GetDiagnostics().Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error).ToList();
+        // No model means nothing was checked: fail rather than read it as no errors.
+        return model is null ? throw new InvalidOperationException($"no semantic model for {document.FilePath}") : model.GetDiagnostics().Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error).ToList();
     }
 
     private static string? FindSolution(string directory)
