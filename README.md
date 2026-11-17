@@ -11,6 +11,8 @@ Claude Code skills by Tarmo Protsin.
 | `handoff` | Writes session state to a handoff file so work can continue in a fresh context |
 | `continue-handoff` | Picks up the newest pending handoff in a new session |
 | `retro` | Turns the current session's learnings into proposed changes to skills, CLAUDE.md/AGENTS.md, hooks, run logs and memory, and applies the ones you pick |
+| `ts-rename` | Renames a TypeScript symbol and every reference across all tsconfig projects with the TypeScript language service in one call, renames its file and import paths, and lists the mentions the compiler can't resolve with one command that fixes them. Uses the repo's own `typescript` |
+| `csharp-rename` | Renames a C# symbol and every reference across a .NET solution with Roslyn in one call. Needs the .NET 10 SDK |
 
 ## Install
 
