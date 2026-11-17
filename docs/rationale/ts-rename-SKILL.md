@@ -4,7 +4,7 @@ Reasons behind skills/ts-rename. Read when changing a rule or the script's outpu
 
 ## Why a script, and why this output
 
-Measured with headless `claude -p` runs on a TypeScript monorepo with six tsconfig projects. Cost is all tokens (input, cache read, cache write, output). A fresh session costs about 50k before it does anything, and every extra model call costs about another 50k, so cost follows the number of model calls.
+Measured with headless `claude -p` runs on a TypeScript monorepo with six tsconfig projects. Cost is all tokens (input, cache read, cache write, output). A fresh session costs about 50k before it does anything, and every extra model call costs roughly 30–70k more (the whole context is read again, and it grows), so cost follows the number of model calls.
 
 | Approach | Small rename (2–3 files) | Large rename (143 files, 423 edits) |
 |---|---|---|
@@ -12,17 +12,19 @@ Measured with headless `claude -p` runs on a TypeScript monorepo with six tsconf
 | No guidance (agent's own grep + Edit, or a script it writes) | 300–390k | about 730k, 65s |
 | This skill | 150–210k, 3–5 model calls | about 250k, 36s |
 
-Every approach was correct by typecheck and tests. But one leftover only the leftover list catches was missed by every approach until the script listed it. It was a regex literal in a test that scans source, `/\bformatError\(/`. Its test asserts a non-match, so it passes either way.
+Every approach was correct by typecheck and tests. But one leftover was missed by every approach that did not use the script's leftover list, and by the script too until it learned to list it: a regex literal in a test that scans source, of the form `/\bparseIsoDate\(/`. Its test asserts a non-match, so it passes either way.
 
-- **Leftovers listed in full, up to 60.** A list cut at 12 made agents rerun the script, or grep, to see the rest. That was one more model call, about 50k tokens, against about 2k for printing everything.
+- **Leftovers listed in full, up to 60.** A list cut at 12 made agents rerun the script, or grep, to see the rest. That was one more model call, about 50k tokens, against about 2k for printing everything. Beyond 60 the rest go to a file, because once the rename is applied a rerun can't find the old name.
 - **One `--text` command printed after the list.** Fixing leftovers with Read and Edit took 2–4 calls; the printed command takes one.
-- **Member mentions must be qualified.** For a member named with a common word (`current`, `reset`), hundreds of bare mentions in files the rename didn't touch were listed, and agents grepped to dismiss them. Outside the changed files, a mention is listed only when it reads `receiver.name` with a receiver the rename saw, or names the container.
+- **Member mentions must be qualified.** For a member named with a common word (`current`, `reset`), hundreds of bare mentions in files the rename didn't touch were listed, and agents grepped to dismiss them. Outside the changed files, a mention is listed only when it reads `receiver.name` with a receiver the rename saw or the container as receiver, or when the line names the container itself (a capitalised name, or one longer than 6 characters).
 - **A regex escape before the name counts as a word boundary.** `\b` puts a word character in front of the name, so a plain whole-word match skipped `/\bname\(/`.
 - **Tool's own files skipped** when scanning for leftovers.
+- **Re-exports renamed through.** With prefix/suffix text on, TypeScript stops at `export { old }` and writes `export { old as new }`, so importers of a barrel keep the old name. The full set of locations comes from the plain call; the prefix/suffix text is used only for shorthand properties and bindings, where it keeps the object key.
+- **What wasn't covered is printed on stdout**, never only on stderr: a tsconfig that failed to load or matched no files, one loaded with errors, skipped overlapping edits, a failed `git mv`. The agent acts on stdout and is told not to double-check, so a silent gap becomes a wrong rename.
 
 ## Why a skill and not a line in CLAUDE.md
 
-With no hint in the task prompt, both were found every time (12/12). The skill averaged 223k tokens and 3.2 tool calls; a one-line pointer in CLAUDE.md averaged 290k and 4.7. Without the workflow rules ("act on the output only, don't grep to double-check"), agents ran `--help`, `git diff` and grep to verify. That cost about one more model call per rename, more than the `Skill` call itself.
+A separate set of 12 runs (a method rename, the large rename and a common-word member rename, 2 runs each per variant) gave no hint in the task prompt. Both were found every time. The skill averaged 223k tokens and 3.2 tool calls; a one-line pointer in CLAUDE.md averaged 290k and 4.7. Without the workflow rules ("act on the output only, don't grep to double-check"), agents ran `--help`, `git diff` and grep to verify. That cost about one more model call per rename, more than the `Skill` call itself.
 
 When the prompt names the tool, the two tie (median 207k for the skill, 204k for the pointer). That's because the `Skill` call is one model call of its own.
 

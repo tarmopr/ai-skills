@@ -3,15 +3,16 @@
 // using the TypeScript language service of the repo's own `typescript` package.
 // Exit codes: 0 done, 1 error, 2 not found, 3 ambiguous.
 import { createRequire } from 'node:module';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 const t0 = Date.now();
 const die = (code, msg) => { process.stderr.write(msg.endsWith('\n') ? msg : msg + '\n'); process.exit(code); };
 
 // ---------- args ----------
-const SELF = `"${process.argv[1]}"`; // as SKILL.md's allowed-tools pattern writes it
+const SELF = `"${process.argv[1]}"`; // absolute and double-quoted, like SKILL.md's allowed-tools pattern after ${CLAUDE_SKILL_DIR} expands
 const USAGE = `Rename a TS symbol and every reference in every tsconfig*.json project of the repo:
   node ${SELF} --symbol <Name|Container.Name> --new-name <New>
   node ${SELF} --at <file>:<line>:<col> --new-name <New>       (locals, parameters, exit-3 candidates)
@@ -19,14 +20,15 @@ Container: a class, interface, function or the file's base name, chainable (apiC
 Options: --project <tsconfig> (repeatable)  --in-comments  --in-strings  --no-file-rename  --dry-run  --verbose  --all-leftovers
 Replace a word on given lines only (for the leftovers a rename lists; no type checking):
   node ${SELF} --text <Old> --new-name <New> --lines <file>:<line>,<line> [--lines <file>:<line>]...
-Exit codes: 0 done, 1 error, 2 not found, 3 ambiguous (stderr lists --at candidates).`;
+Exit codes: 0 done, 1 error, 2 not found, 3 ambiguous (stderr lists --at candidates).
+--text exits 1 when no listed line had the word; lines without it are named on stdout.`;
 const argv = process.argv.slice(2);
 const opts = { inComments: false, inStrings: false, fileRename: true, dryRun: false, verbose: false, projects: [], lines: [] };
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
   const next = () => { if (i + 1 >= argv.length) die(1, `${a} needs a value`); return argv[++i]; };
   switch (a) {
-    case '--help': case '-h': process.stdout.write(USAGE + '\n'); process.exit(0); // falls through never
+    case '--help': case '-h': process.stdout.write(USAGE + '\n'); process.exit(0); // process.exit never returns
     case '--text': opts.text = next(); break;
     case '--lines': opts.lines.push(next()); break;
     case '--symbol': opts.symbol = next(); break;
@@ -44,8 +46,14 @@ for (let i = 0; i < argv.length; i++) {
 }
 if (!opts.newName) die(1, USAGE);
 if (!/^[A-Za-z_$][\w$]*$/.test(opts.newName)) die(1, `not an identifier: ${opts.newName}`);
-// Whole word; a regex escape such as `\\b` or `\\.` right before it counts as a boundary (`/\\bformatError\\(/`).
-const wordRe = (w) => new RegExp(`(?:(?<![\\w$])|(?<=\\\\[bBdDwWsSnrt]))${w.replace(/\$/g, '\\$')}(?![\\w$])`, 'g');
+const isIdent = (w) => /^[A-Za-z_$][\w$]*$/.test(w);
+const escRe = (w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+// Whole word. A regex escape such as \b, \w or \n right before it also counts as a boundary, so the name in
+// a regex literal like /\bparseDate\(/ is found.
+const wordRe = (w) => new RegExp(`(?:(?<![\\w$])|(?<=\\\\[bBdDwWsSnrt]))${escRe(w)}(?![\\w$])`, 'g');
+// Lines as the TypeScript parser counts them (CRLF, LF, lone CR, U+2028, U+2029), separators kept for rejoining:
+// even indexes are lines, odd ones their line breaks.
+const splitLines = (text) => text.split(/(\r\n|[\n\r\u2028\u2029])/);
 
 // ---------- repo ----------
 let root;
@@ -56,29 +64,41 @@ const norm = (p) => path.resolve(p).split(path.sep).join('/');
 const rel = (p) => path.relative(root, p).split(path.sep).join('/');
 
 // ---------- --text: replace a whole word on the given lines only ----------
+// Every spec is checked before any file is written, so a refusal leaves everything as it was.
 if (opts.text !== undefined) {
+  if (opts.symbol || opts.at) die(1, '--text takes no --symbol or --at');
+  if (!isIdent(opts.text)) die(1, `not an identifier: ${opts.text}`);
   if (!opts.lines.length) die(1, '--text needs --lines <file>:<line>,<line>');
   const re = wordRe(opts.text);
-  let n = 0, nLines = 0; const missed = [], touched = new Set();
+  const realRoot = fs.realpathSync(root);
+  const plan = new Map(); // abs -> { name, lines: Set }
+  const missed = [];
   for (const spec of opts.lines) {
-    const m = /^(.*):([\d,]+)$/.exec(spec);
+    const m = /^(.*):(\d+(?:,\d+)*)$/.exec(spec);
     if (!m) die(1, `--lines must be <file>:<line>,<line>: ${spec}`);
     const abs = path.resolve(root, m[1]); // the paths a rename prints are relative to the repo root
     if (!fs.existsSync(abs)) { missed.push(`${m[1]} (no such file)`); continue; }
-    // Only files inside the repo, also through a symlink.
-    if (!fs.realpathSync(abs).startsWith(fs.realpathSync(root) + path.sep)) die(1, `Nothing changed: ${m[1]} is outside the repo (${root})`);
-    const lines = fs.readFileSync(abs, 'utf8').split('\n');
-    for (const ln of m[2].split(',').filter(Boolean).map(Number)) {
-      const before = lines[ln - 1];
-      const after = before === undefined ? before : before.replace(re, () => { n++; return opts.newName; });
-      if (before === undefined || after === before) { missed.push(`${m[1]}:${ln}`); continue; }
-      lines[ln - 1] = after; nLines++; touched.add(abs);
-    }
-    if (touched.has(abs)) fs.writeFileSync(abs, lines.join('\n'));
+    if (!fs.realpathSync(abs).startsWith(realRoot + path.sep)) die(1, `Nothing changed: ${m[1]} is outside the repo (${root})`);
+    if (!plan.has(abs)) plan.set(abs, { name: m[1], lines: new Set() });
+    for (const ln of m[2].split(',')) plan.get(abs).lines.add(Number(ln));
   }
-  const out = `Replaced ${opts.text} -> ${opts.newName}: ${n} mentions on ${nLines} lines in ${touched.size} files.`;
-  if (missed.length) die(n ? 0 : 1, `${out}\nNo ${opts.text} on (nothing changed there): ${missed.join(', ')}`);
-  process.stdout.write(out + '\n');
+  let n = 0, nLines = 0; const writes = [];
+  for (const [abs, { name, lines }] of plan) {
+    const parts = splitLines(fs.readFileSync(abs, 'utf8'));
+    let changed = false;
+    for (const ln of lines) {
+      const before = parts[(ln - 1) * 2];
+      const after = before === undefined ? before : before.replace(re, () => { n++; return opts.newName; });
+      if (before === undefined || after === before) { missed.push(`${name}:${ln}`); continue; }
+      parts[(ln - 1) * 2] = after; nLines++; changed = true;
+    }
+    if (changed) writes.push([abs, parts.join('')]);
+  }
+  const out = `${opts.dryRun ? 'Would replace' : 'Replaced'} ${opts.text} -> ${opts.newName}: ${n} mentions on ${nLines} lines in ${writes.length} files.`;
+  const miss = missed.length ? `\nNo ${opts.text} on (nothing changed there): ${missed.join(', ')}` : '';
+  if (!n) die(1, out + miss);
+  if (!opts.dryRun) for (const [abs, text] of writes) fs.writeFileSync(abs, text);
+  process.stdout.write(out + miss + '\n');
   process.exit(0);
 }
 if (!!opts.symbol === !!opts.at) die(1, 'pass exactly one of --symbol or --at');
@@ -87,7 +107,8 @@ if (!!opts.symbol === !!opts.at) die(1, 'pass exactly one of --symbol or --at');
 
 let ts;
 try { ts = createRequire(path.join(root, 'package.json'))('typescript'); }
-catch { die(1, `typescript is not installed in ${root} (run npm install)`); }
+catch (e) { die(1, `typescript is not installed in ${root} (run npm install): ${e.message.split('\n')[0]}`); }
+const notices = []; // printed on stdout with the summary: what the agent must know was not covered
 
 // ---------- projects ----------
 function discoverProjects() {
@@ -95,10 +116,13 @@ function discoverProjects() {
   try {
     files = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '--', '*tsconfig*.json'], { cwd: root, encoding: 'utf8' })
       .split('\n').filter(Boolean);
-  } catch { files = fs.existsSync(path.join(root, 'tsconfig.json')) ? ['tsconfig.json'] : []; }
+  } catch (e) {
+    files = fs.existsSync(path.join(root, 'tsconfig.json')) ? ['tsconfig.json'] : [];
+    notices.push(`Only ${files[0] ?? 'no tsconfig'} used: git ls-files failed (${String(e.message).split('\n')[0]}); pass --project for the others.`);
+  }
   return files.filter((f) => !f.includes('node_modules/')).map((f) => path.join(root, f));
 }
-const configPaths = (opts.projects.length ? opts.projects.map((p) => path.resolve(p)) : discoverProjects());
+const configPaths = (opts.projects.length ? opts.projects.map((p) => (fs.existsSync(path.resolve(p)) ? path.resolve(p) : path.resolve(root, p))) : discoverProjects());
 if (!configPaths.length) die(1, 'no tsconfig*.json found');
 
 const registry = ts.createDocumentRegistry(ts.sys.useCaseSensitiveFileNames, root);
@@ -107,9 +131,16 @@ const services = [];
 const configErrors = [];
 for (const cfg of configPaths) {
   const read = ts.readConfigFile(cfg, ts.sys.readFile);
-  if (read.error) { configErrors.push(`${rel(cfg)}: ${ts.flattenDiagnosticMessageText(read.error.messageText, '\n')}`); continue; }
+  if (read.error) { configErrors.push(`${rel(cfg)} (${ts.flattenDiagnosticMessageText(read.error.messageText, ' ')})`); continue; }
   const parsed = ts.parseJsonConfigFileContent(read.config, ts.sys, path.dirname(cfg), undefined, cfg);
-  if (!parsed.fileNames.length) continue; // solution-style config ("files": [] + references)
+  const errs = parsed.errors.filter((d) => d.code !== 18003); // 18003: no inputs, handled below
+  if (!parsed.fileNames.length) {
+    // A solution config ("files": [] plus references) has nothing of its own; any other config matching no file is reported.
+    const solution = Array.isArray(read.config.files) && !read.config.files.length && read.config.references?.length;
+    if (!solution) configErrors.push(`${rel(cfg)} (matches no files)`);
+    continue;
+  }
+  if (errs.length) notices.push(`${rel(cfg)} loaded with errors, so references may be missed: ${errs.map((d) => ts.flattenDiagnosticMessageText(d.messageText, ' ')).join('; ')}`);
   const host = {
     getScriptFileNames: () => parsed.fileNames,
     getScriptVersion: (f) => String(versions.get(norm(f)) ?? 0),
@@ -124,6 +155,7 @@ for (const cfg of configPaths) {
   services.push({ cfg, ls: ts.createLanguageService(host, registry) });
 }
 if (!services.length) die(1, `no loadable tsconfig:\n${configErrors.join('\n')}`);
+if (configErrors.length) notices.push(`Skipped tsconfig: ${configErrors.join(', ')}. Its files were not renamed; check them or pass --project.`);
 
 const inRepo = (f) => { const n = norm(f); return n.startsWith(norm(root) + '/') && !n.includes('/node_modules/'); };
 const programOf = (s) => (s.program ??= s.ls.getProgram());
@@ -147,7 +179,8 @@ let target; // { file, pos }
 if (opts.at) {
   const m = /^(.*):(\d+):(\d+)$/.exec(opts.at);
   if (!m) die(1, '--at must be <file>:<line>:<col> (1-based)');
-  const file = path.resolve(m[1]);
+  // Relative to the working directory, else to the repo root (as the exit-3 candidates print it).
+  const file = fs.existsSync(path.resolve(m[1])) ? path.resolve(m[1]) : path.resolve(root, m[1]);
   if (!fs.existsSync(file)) die(2, `file not found: ${m[1]}`);
   const text = fs.readFileSync(file, 'utf8');
   const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
@@ -161,7 +194,7 @@ if (opts.at) {
   const container = parts.join('.');
   const seen = new Map();
   for (const s of services) {
-    const items = s.ls.getNavigateToItems(name, 500, undefined, true);
+    const items = s.ls.getNavigateToItems(name, 500, undefined, false); // false: include the repo's own .d.ts files
     for (const it of items) {
       if (it.name !== name || it.kind === 'alias' || !inRepo(it.fileName)) continue;
       if (container && !(it.containerName === container || it.containerName?.endsWith('.' + container)
@@ -198,7 +231,7 @@ if (opts.at) {
 const owners = services.filter((s) => programOf(s).getSourceFile(target.file));
 if (!owners.length) die(1, `${rel(target.file)} is not part of any tsconfig (${services.map((s) => rel(s.cfg)).join(', ')})`);
 const info = owners[0].ls.getRenameInfo(target.file, target.pos, { allowRenameOfImportPath: false });
-if (!info.canRename) die(2, `cannot rename at ${rel(target.file)}: ${info.localizedErrorMessage}`);
+if (!info.canRename) die(1, `cannot rename at ${rel(target.file)}: ${info.localizedErrorMessage}`);
 const oldName = info.displayName;
 if (oldName === opts.newName) die(1, 'new name equals old name');
 
@@ -225,10 +258,32 @@ if (isMember) {
   for (const w of (info.fullDisplayName ?? '').split('.').slice(0, -1)) if (/^[A-Za-z_$][\w$]*$/.test(w)) containers.add(w);
   containers.add(path.basename(target.file).replace(/\.(d\.ts|tsx?|mts|cts)$/, ''));
 }
+// The identifier token at a position.
+const tokenAt = (sf, pos) => {
+  let node = sf;
+  for (;;) {
+    const child = node.getChildren(sf).find((c) => c.getStart(sf) <= pos && pos < c.end);
+    if (!child) return node;
+    node = child;
+  }
+};
+// With prefix/suffix text, TypeScript stops at an export or import specifier and adds an alias
+// (`export { old as new }`), so files importing through a re-export keep the old name. Without it, a shorthand
+// property `{ old }` would change the object's key. So: the full set of locations comes from the plain call, and the
+// prefix/suffix text is used only where it protects a shorthand property or binding, never on a specifier.
 for (const s of owners) {
-  const locs = s.ls.findRenameLocations(target.file, target.pos, opts.inStrings, opts.inComments, { providePrefixAndSuffixTextForRename: true }) ?? [];
+  const locs = s.ls.findRenameLocations(target.file, target.pos, opts.inStrings, opts.inComments, { providePrefixAndSuffixTextForRename: false }) ?? [];
+  const withAffix = new Map((s.ls.findRenameLocations(target.file, target.pos, opts.inStrings, opts.inComments, { providePrefixAndSuffixTextForRename: true }) ?? [])
+    .map((l) => [`${norm(l.fileName)}:${l.textSpan.start}`, l]));
   for (const l of locs) {
-    addEdit(l.fileName, l.textSpan.start, l.textSpan.length, `${l.prefixText ?? ''}${opts.newName}${l.suffixText ?? ''}`);
+    const a = withAffix.get(`${norm(l.fileName)}:${l.textSpan.start}`);
+    let text = opts.newName;
+    if (a && (a.prefixText || a.suffixText)) {
+      const sf = programOf(s).getSourceFile(l.fileName);
+      const parent = sf && tokenAt(sf, l.textSpan.start).parent;
+      if (parent && !ts.isExportSpecifier(parent) && !ts.isImportSpecifier(parent)) text = `${a.prefixText ?? ''}${opts.newName}${a.suffixText ?? ''}`;
+    }
+    addEdit(l.fileName, l.textSpan.start, l.textSpan.length, text);
     if (isMember) {
       const before = (programOf(s).getSourceFile(l.fileName)?.text ?? '').slice(Math.max(0, l.textSpan.start - 60), l.textSpan.start);
       const r = /([A-Za-z_$][\w$]*)\s*\??\.\s*$/.exec(before);
@@ -239,22 +294,24 @@ for (const s of owners) {
 
 // ---------- file rename: a top-level declaration in <OldName>.ts(x) ----------
 const fileRenames = [];
-const warnings = [];
 if (opts.fileRename) {
   const base = path.basename(target.file);
   const ext = /\.(d\.ts|tsx?|mts|cts)$/.exec(base)?.[0];
   if (ext && base.slice(0, -ext.length) === oldName) {
     const sf = programOf(owners[0]).getSourceFile(target.file);
-    const isTopLevel = sf.statements.some((st) => st.getStart(sf) <= target.pos && target.pos < st.end && ts.getNameOfDeclaration(st)?.getStart(sf) === target.pos);
+    const declNames = (st) => (ts.isVariableStatement(st) ? st.declarationList.declarations.map((d) => d.name) : [ts.getNameOfDeclaration(st)]);
+    const isTopLevel = sf.statements.some((st) => declNames(st).some((n) => n && ts.isIdentifier(n) && n.getStart(sf) === target.pos));
     if (isTopLevel) {
       const to = path.join(path.dirname(target.file), opts.newName + ext);
-      if (fs.existsSync(to)) die(1, `cannot rename ${rel(target.file)}: ${rel(to)} already exists (rerun with --no-file-rename)`);
+      // On a case-insensitive file system a case-only rename finds the same file under the new name.
+      const sameFile = fs.existsSync(to) && fs.realpathSync(to) === fs.realpathSync(target.file);
+      if (fs.existsSync(to) && !sameFile) die(1, `Nothing changed: cannot rename ${rel(target.file)}: ${rel(to)} already exists (rerun with --no-file-rename)`);
       fileRenames.push({ from: target.file, to });
       // ts' getEditsForFileRename is minutes on a large program; instead rewrite every module specifier
       // (import/export, import(), import type, vi.mock/require-style call args) whose last segment is the
       // old file name and that resolves to the renamed file.
       const fromN = norm(target.file);
-      const segRe = new RegExp(`(^|/)${oldName}(\\.(?:d\\.ts|tsx?|mts|cts|js|jsx|mjs|cjs))?$`);
+      const segRe = new RegExp(`(^|/)${escRe(oldName)}(\\.(?:d\\.ts|tsx?|mts|cts|js|jsx|mjs|cjs))?$`);
       for (const s of services) {
         const prog = programOf(s);
         const options = prog.getCompilerOptions();
@@ -286,59 +343,68 @@ if (opts.fileRename) {
 }
 
 // ---------- apply ----------
+// A failure partway (a read-only file, a full disk) stops with the list of what was already written.
 const files = [...edits.keys()].sort();
 let count = 0;
-for (const f of files) {
-  const list = [...edits.get(f).values()].sort((a, b) => b.start - a.start);
-  let text = fs.readFileSync(f, 'utf8');
-  let lastStart = Infinity;
-  for (const e of list) {
-    if (e.start + e.length > lastStart) { warnings.push(`overlapping edit skipped in ${rel(f)} at ${e.start}`); continue; }
-    text = text.slice(0, e.start) + e.text + text.slice(e.start + e.length);
-    lastStart = e.start;
-    count++;
+const overlaps = [], written = [];
+const stop = (e) => die(1, `Stopped partway: ${e.message}\nAlready written (${written.length}): ${written.map(rel).join(', ') || 'nothing'}\nUndo with git checkout on those files, or finish by hand.`);
+try {
+  for (const f of files) {
+    const list = [...edits.get(f).values()].sort((a, b) => b.start - a.start);
+    let text = fs.readFileSync(f, 'utf8');
+    let lastStart = Infinity;
+    for (const e of list) {
+      if (e.start + e.length > lastStart) { overlaps.push(`${rel(f)}:${text.slice(0, e.start).split('\n').length}`); continue; }
+      text = text.slice(0, e.start) + e.text + text.slice(e.start + e.length);
+      lastStart = e.start;
+      count++;
+    }
+    if (!opts.dryRun) { fs.writeFileSync(f, text); written.push(f); }
   }
-  if (!opts.dryRun) fs.writeFileSync(f, text);
-}
-for (const { from, to } of fileRenames) {
-  if (opts.dryRun) continue;
-  try { execFileSync('git', ['mv', from, to], { cwd: root, stdio: 'pipe' }); }
-  catch { fs.renameSync(from, to); }
-}
+  for (const { from, to } of fileRenames) {
+    if (opts.dryRun) continue;
+    const r = spawnSync('git', ['mv', from, to], { cwd: root, encoding: 'utf8' });
+    if (r.status !== 0) {
+      // An untracked file can't be git mv'd; a tracked one failing (index.lock, a conflict) is worth knowing.
+      const tracked = spawnSync('git', ['ls-files', '--error-unmatch', from], { cwd: root }).status === 0;
+      fs.renameSync(from, to);
+      if (tracked) notices.push(`git mv failed (${(r.stderr || '').trim().split('\n')[0]}); renamed ${rel(from)} -> ${rel(to)} on disk only: stage it with git add -A.`);
+    }
+    written.push(to);
+  }
+} catch (e) { stop(e); }
+if (overlaps.length) notices.push(`Not renamed (overlapping edits, fix by hand): ${overlaps.join(', ')}`);
 
 if (opts.verbose) {
   for (const f of files) process.stdout.write(`  ${rel(f)} (${edits.get(f).size})\n`);
   for (const { from, to } of fileRenames) process.stdout.write(`  ${rel(from)} -> ${rel(to)}\n`);
 }
-for (const w of warnings) process.stderr.write(`warning: ${w}\n`);
 
 // What the compiler can't see. Every remaining whole-word match of the old name is classified with the parser:
 // comments, strings, regex literals, JSX text and keys in vi.mock/jest.mock factories may mean this symbol;
-// identifiers in compiled files are other symbols per the compiler and only counted. Files outside every tsconfig
-// are scanned as text. For a member, a mention outside the changed files counts only when it is qualified
+// identifiers in compiled files are ones the language service found no reference for, and only counted; module
+// specifiers are paths, not mentions. Files outside every tsconfig are scanned as text. For a member, a mention outside the changed files counts only when it is qualified
 // (`cache.current`, `SessionCache`), since a bare common word (`current`, `reset`) is almost never it.
 // Listing everything that fits costs far fewer tokens than a second model call to fetch the rest.
-const LIMIT = opts.allLeftovers ? Infinity : 60;
+const LIMIT = opts.allLeftovers ? Infinity : 60; // lines listed; the rest go to a file
 const tiers = [[], [], []]; // 0: changed files, mock keys, regex; 1: outside every tsconfig; 2: other comments/strings
 const outsideFiles = new Map();
 let otherIds = 0; const otherIdFiles = new Set(); let unqualified = 0;
 if (!opts.dryRun) {
-  let hits = [];
-  try {
-    hits = execFileSync('git', ['grep', '-c', '-I', '-F', '--untracked', '-e', oldName], { cwd: root, encoding: 'utf8', maxBuffer: 1 << 26 })
-      .split('\n').filter(Boolean).map((l) => l.slice(0, l.lastIndexOf(':')));
-  } catch { /* exit 1: no matches */ }
+  // -z and quotePath=false: file names come raw, also non-ASCII ones (git otherwise C-quotes them).
+  const g = spawnSync('git', ['-c', 'core.quotePath=false', 'grep', '-z', '-c', '-I', '-F', '--untracked', '-e', oldName], { cwd: root, encoding: 'utf8', maxBuffer: 1 << 28 });
+  if (g.status !== 0 && g.status !== 1) stop(new Error(`the rename is done, but listing what is left failed: git grep ${g.error?.message ?? (g.stderr || '').trim().split('\n')[0]}`));
+  const hits = g.status === 1 ? [] : g.stdout.split('\n').filter(Boolean).map((l) => l.slice(0, l.indexOf('\0')));
   const compiled = new Set();
   for (const s of services) for (const sf of programOf(s).getSourceFiles()) if (inRepo(sf.fileName)) compiled.add(norm(sf.fileName));
   const renamedTo = new Map(fileRenames.map((r) => [norm(r.to), norm(r.from)]));
   const changed = new Set([...files, ...fileRenames.map((r) => norm(r.to))]);
   const word = wordRe(oldName);
-  const esc = (w) => w.replace(/[$]/g, '\\$');
   const qualified = !isMember ? null : (() => {
-    // `recv.name`, `recv?.name`, or `recv\\.name` inside a regex; or a distinctive container name anywhere on the line.
-    const q = [...qualifiers, ...containers].map(esc);
-    const named = [...containers].filter((w) => /^[A-Z]/.test(w) || w.length > 6).map(esc);
-    return new RegExp([q.length && `(?<![\\w$])(?:${q.join('|')})[?\\\\]*\\.${esc(oldName)}(?![\\w$])`, named.length && `(?<![\\w$])(?:${named.join('|')})(?![\\w$])`].filter(Boolean).join('|'));
+    // `recv.name`, `recv?.name`, or `recv\.name` inside a regex; or a distinctive container name anywhere on the line.
+    const q = [...qualifiers, ...containers].map(escRe);
+    const named = [...containers].filter((w) => /^[A-Z]/.test(w) || w.length > 6).map(escRe);
+    return new RegExp([q.length && `(?<![\\w$])(?:${q.join('|')})[?\\\\]*\\.${escRe(oldName)}(?![\\w$])`, named.length && `(?<![\\w$])(?:${named.join('|')})(?![\\w$])`].filter(Boolean).join('|'));
   })();
   const snippetOf = (src, character) => {
     const from = Math.max(0, character - 40);
@@ -354,12 +420,21 @@ if (!opts.dryRun) {
     return o === factory;
   };
   const isMockCall = (n) => ts.isCallExpression(n) && /(^|\.)(mock|doMock|unstable_mockModule)$/.test(n.expression.getText());
+  // A path in import/export, import(), require/vi.mock-style calls or an import type: not a mention of the symbol.
+  const isModuleSpecifier = (n) => {
+    const p = n.parent;
+    return !!p && ((ts.isImportDeclaration(p) || ts.isExportDeclaration(p)) && p.moduleSpecifier === n
+      || ts.isExternalModuleReference(p)
+      || ts.isCallExpression(p) && p.arguments[0] === n && (p.expression.kind === ts.SyntaxKind.ImportKeyword
+        || /^(require|(.+\.)?(mock|doMock|unmock|requireActual|importActual|importMock|unstable_mockModule))$/.test(p.expression.getText()))
+      || ts.isLiteralTypeNode(p) && ts.isImportTypeNode(p.parent));
+  };
   const selfDir = norm(path.dirname(path.resolve(process.argv[1]))) + '/';
   for (const relPath of hits) {
     const abs = norm(path.join(root, relPath));
     if (abs.startsWith(selfDir)) continue; // this tool's own files
     const text = fs.readFileSync(abs, 'utf8');
-    const srcLines = text.split('\n');
+    const srcLines = splitLines(text).filter((_, i) => i % 2 === 0);
     if (!/\.(m|c)?[jt]sx?$/.test(relPath) || !(compiled.has(abs) || compiled.has(renamedTo.get(abs) ?? ''))) {
       srcLines.forEach((src, i) => {
         for (const m of src.matchAll(word)) {
@@ -386,9 +461,9 @@ if (!opts.dryRun) {
         if (k === S.Identifier || k === S.PrivateIdentifier) kind = factory && isFactoryKey(node, factory) ? 'mock key' : null;
         else if (k === S.RegularExpressionLiteral) kind = 'regex';
         else if (k === S.JsxText) kind = 'jsx text';
-        else if ([S.StringLiteral, S.NoSubstitutionTemplateLiteral, S.TemplateHead, S.TemplateMiddle, S.TemplateTail].includes(k)) kind = 'string';
+        else if ([S.StringLiteral, S.NoSubstitutionTemplateLiteral, S.TemplateHead, S.TemplateMiddle, S.TemplateTail].includes(k)) kind = isModuleSpecifier(node) ? null : 'string';
       }
-      if (!kind) { otherIds++; otherIdFiles.add(relPath); continue; }
+      if (!kind) { if (node.kind === ts.SyntaxKind.Identifier || node.kind === ts.SyntaxKind.PrivateIdentifier) { otherIds++; otherIdFiles.add(relPath); } continue; }
       const { line, character } = sf.getLineAndCharacterOfPosition(pos);
       const src = srcLines[line];
       const inChanged = changed.has(abs);
@@ -401,37 +476,42 @@ if (!opts.dryRun) {
   for (const t of tiers) t.sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind) || a.file.localeCompare(b.file) || a.line - b.line);
 }
 const secs = ((Date.now() - t0) / 1000).toFixed(1);
-const out = [`${opts.dryRun ? 'Would rename' : 'Renamed'} ${oldName} -> ${opts.newName}: ${files.length} files, ${count} edits, ${fileRenames.length} file renames, ${owners.length}/${services.length} projects, ${secs}s.`];
+const out = [`${opts.dryRun ? 'Would rename' : 'Renamed'} ${oldName} -> ${opts.newName}: ${files.length} files, ${count} edits, ${fileRenames.length} file renames, ${owners.length}/${services.length} projects, ${secs}s.`, ...notices];
 if (!opts.dryRun) {
   const shown = tiers[0].slice(0, LIMIT);
-  const cut = tiers[0].length - shown.length;
   const listOutside = shown.length + tiers[1].length <= LIMIT;
   if (listOutside) shown.push(...tiers[1]);
   const listOther = shown.length + tiers[2].length <= LIMIT;
   if (listOther) shown.push(...tiers[2]);
+  const all = [...tiers[0], ...tiers[1], ...tiers[2]];
+  const line = (l) => `${l.file}:${l.line} ${l.kind}: ${l.snippet}`;
   if (shown.length) {
     out.push(`Not renamed: mentions of ${oldName} the compiler can't resolve. Rename the ones that mean this symbol:`);
-    for (const l of shown) out.push(`  ${l.file}:${l.line} ${l.kind}: ${l.snippet}`);
-    if (cut) out.push(`  … ${cut} more (--all-leftovers lists them)`);
+    for (const l of shown) out.push(`  ${line(l)}`);
     const byFile = new Map();
     for (const l of shown) { if (!byFile.has(l.file)) byFile.set(l.file, new Set()); byFile.get(l.file).add(l.line); }
-    const q = (s) => (/^[\w./@+-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`);
+    const q = (x) => (/^[\w./@+-]+$/.test(x) ? x : `'${x.replace(/'/g, `'\\''`)}'`);
     // Only for a plain identifier: a quoted property name ("foo-bar") can't be passed safely as a word.
-    if (/^[A-Za-z_$][\w$]*$/.test(oldName)) {
-    out.push(`One call renames them (delete the --lines entries that are something else):`);
-    out.push(`  node ${SELF} --text ${q(oldName)} --new-name ${opts.newName} ${[...byFile].map(([f, ls]) => `--lines ${q(`${f}:${[...ls].join(',')}`)}`).join(' ')}`);
+    if (isIdent(oldName)) {
+      out.push(`One call renames the listed ones (delete the --lines entries that are something else):`);
+      out.push(`  node ${SELF} --text ${q(oldName)} --new-name ${q(opts.newName)} ${[...byFile].map(([f, ls]) => `--lines ${q(`${f}:${[...ls].join(',')}`)}`).join(' ')}`);
     }
   }
-  if (!listOutside && outsideFiles.size) {
-    const byDir = new Map();
-    for (const f of outsideFiles.keys()) { const d = f.includes('/') ? f.split('/').slice(0, 2).join('/') : '.'; byDir.set(d, (byDir.get(d) ?? 0) + 1); }
-    out.push(`Outside every tsconfig: ${outsideFiles.size} files mention ${oldName} (${[...byDir].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([d, n]) => `${d} ${n}`).join(', ')}); --all-leftovers lists them.`);
+  if (all.length > shown.length) {
+    // The rename is already applied, so a rerun can't list these again: they go to a file instead.
+    const file = path.join(os.tmpdir(), `ts-rename-${oldName.replace(/[^\w$]/g, '_')}-${process.pid}.txt`);
+    fs.writeFileSync(file, all.map(line).join('\n') + '\n');
+    const parts = [];
+    if (tiers[0].length > LIMIT) parts.push(`${tiers[0].length - LIMIT} more in changed files, mock keys and regexes`);
+    if (!listOutside && tiers[1].length) parts.push(`${tiers[1].length} in ${outsideFiles.size} files outside every tsconfig`);
+    if (!listOther && tiers[2].length) parts.push(`${tiers[2].length} comments/strings in files that don't use this symbol`);
+    out.push(`Not listed: ${parts.join('; ')}. All ${all.length}: ${file}`);
   }
-  if (!listOther) out.push(`Not listed: ${tiers[2].length} comments/strings in files that don't use this symbol (--all-leftovers lists them).`);
   const ign = [];
-  if (otherIds) ign.push(`${otherIds} same-name identifiers in ${otherIdFiles.size} files are other symbols (compiler-checked)`);
-  if (unqualified) ign.push(`${unqualified} unqualified mentions of the word ${oldName} in other files are not this member`);
+  if (otherIds) ign.push(`${otherIds} same-name identifiers in ${otherIdFiles.size} files that the language service found no reference to this symbol in`);
+  if (unqualified) ign.push(`${unqualified} unqualified mentions of the word ${oldName} in other files, taken as not this member`);
   if (ign.length) out.push(`Ignore: ${ign.join('; ')}.`);
-  if (!shown.length && listOutside && listOther) out.push('Nothing else to check.');
+  if (!all.length && !notices.length) out.push('Nothing else to check.');
 }
 process.stdout.write(out.join('\n') + '\n');
+if (overlaps.length) process.exit(1);

@@ -48,6 +48,12 @@ internal sealed record RenameArguments(
 
         for (var i = 0; i < args.Length; i++)
         {
+            if (args[i] is "--new-name" or "--symbol" or "--at" or "--solution" && i + 1 >= args.Length)
+            {
+                Console.Error.WriteLine($"{args[i]} needs a value.");
+                return null;
+            }
+
             switch (args[i])
             {
                 case "--new-name": newName = args[++i]; break;
@@ -114,7 +120,7 @@ internal static class RenameCommand
 
         var resolution = arguments.At is not null
             ? await SymbolResolver.ResolveAtPosition(solution, arguments.At)
-            : await SymbolResolver.ResolveByName(solution, arguments.Symbol!);
+            : await SymbolResolver.ResolveByName(solution, arguments.Symbol!, arguments.Overloads);
         if (resolution.ExitCode != 0)
         {
             return resolution.ExitCode;
@@ -263,7 +269,8 @@ internal static class RenameCommand
         await File.WriteAllTextAsync(path, text.ToString(), encoding);
     }
 
-    // git mv keeps history when the file is tracked; otherwise a plain move.
+    // git mv keeps history when the file is tracked; otherwise a plain move. A tracked file that git can't move
+    // (index.lock, a conflict) is still moved on disk, and the reason is printed so it can be staged by hand.
     private static void MoveFile(string from, string to)
     {
         var git = Process.Start(new ProcessStartInfo("git", ["mv", from, to])
@@ -272,10 +279,15 @@ internal static class RenameCommand
             RedirectStandardError = true,
             RedirectStandardOutput = true,
         })!;
+        var error = git.StandardError.ReadToEnd();
         git.WaitForExit();
         if (git.ExitCode != 0)
         {
             File.Move(from, to);
+            if (!error.Contains("not under version control"))
+            {
+                Console.WriteLine($"warning: git mv failed ({error.Trim().Split('\n')[0]}); moved {Path.GetFileName(from)} -> {Path.GetFileName(to)} on disk only, stage it with git add -A.");
+            }
         }
     }
 }
@@ -284,7 +296,7 @@ internal sealed record SymbolResolution(ISymbol? Symbol, int ExitCode);
 
 internal static class SymbolResolver
 {
-    public static async Task<SymbolResolution> ResolveByName(Solution solution, string query)
+    public static async Task<SymbolResolution> ResolveByName(Solution solution, string query, bool overloads)
     {
         var simpleName = SimpleName(query);
         var declarations = await SymbolFinder.FindSourceDeclarationsAsync(
@@ -301,6 +313,13 @@ internal static class SymbolResolver
         {
             Console.Error.WriteLine($"No source declaration matches '{query}'.");
             return new SymbolResolution(null, 2);
+        }
+
+        // With --overloads, candidates that are all overloads of one method are one rename: Roslyn renames the rest.
+        if (overloads && candidates.Count > 1 && candidates.All(c => c is IMethodSymbol)
+            && candidates.Select(c => (c.ContainingType, c.Name)).Distinct().Count() == 1)
+        {
+            return new SymbolResolution(candidates[0], 0);
         }
 
         if (candidates.Count > 1)

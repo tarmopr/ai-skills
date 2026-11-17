@@ -19,14 +19,25 @@ if [[ ! -f "$dll" ]]; then
     exit 1
   fi
 
-  # Another run may have finished the same build first; keep whichever landed.
-  mv "$staging_dir" "$build_dir" 2>/dev/null || rm -rf "$staging_dir"
+  # Another run may have finished the same build first: then keep its copy. A folder without rename.dll is a
+  # broken earlier build: replace it. (mv onto an existing folder would nest staging inside it.)
+  if [[ -f "$dll" ]]; then
+    rm -rf "$staging_dir"
+  else
+    rm -rf "$build_dir"
+    mv "$staging_dir" "$build_dir" 2>/dev/null || rm -rf "$staging_dir"
+  fi
+  if [[ ! -f "$dll" ]]; then
+    echo "csharp-rename: no rename.dll in $build_dir after the build; delete that folder and rerun." >&2
+    exit 1
+  fi
 
   # Each version is ~60 MB. Drop only versions no run has used for 30 days, so a session still using one keeps it.
-  find "$cache_root" -mindepth 2 -maxdepth 2 -name rename.dll -mtime +30 -print | while read -r stale_dll; do
-    rm -rf "$(dirname "$stale_dll")"
+  # A cleanup failure (a folder another run is removing) must not stop the rename.
+  { find "$cache_root" -mindepth 2 -maxdepth 2 -name rename.dll -mtime +30 -print 2>/dev/null || true; } | while read -r stale_dll; do
+    rm -rf "$(dirname "$stale_dll")" || true
   done
 fi
 
-touch "$dll"
+touch -c "$dll"
 exec dotnet "$dll" "$@"
