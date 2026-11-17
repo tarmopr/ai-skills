@@ -23,7 +23,7 @@ Run from the repo root (it finds the single `.sln`/`.slnx` upwards, or pass `--s
 bash "${CLAUDE_SKILL_DIR}/run.sh" --symbol <Name> --new-name <NewName>
 ```
 
-Before writing, the tool compiles in memory the renamed files and every file naming the old or the new name (for a member, only files that also name its type). If a line has an error of an id it didn't have before the rename (a new name that clashes with a member or a type, a reference it couldn't rebind), it writes nothing and lists them (exit 1). A rename that compiles but binds differently (a member that now hides or overrides another, which is only a warning) or merges two partial types is not caught. Success prints one summary line, `Renamed <display name> -> <NewName>: 25 files, 0 file renames, 5s.`, where the display name is the compiler's (`Ns.OrderService.Cancel()`), followed by any `warning:` lines (below).
+Before writing, the tool compiles in memory the renamed files and every file naming the old or the new name (for a member, only files that also name its type). If a line has more errors of some id than before the rename (a new name that clashes with a member or a type, a reference it couldn't rebind), it writes nothing and lists them (exit 1). A rename that compiles but binds differently (a member that now hides or overrides another, which is only a warning) or merges two partial types is not caught. Success prints one summary line, `Renamed <display name> -> <NewName>: 25 files, 0 file renames, 5s.`, where the display name is the compiler's (`Ns.OrderService.Cancel()`), followed by any `warning:` lines (below).
 
 | Argument | Meaning |
 |---|---|

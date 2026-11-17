@@ -550,6 +550,14 @@ module.exports = { ...ts, createLanguageService(h, r) { const ls = ts.createLang
     }
   });
 
+  test('a line that already had an error and gets another fails the check, and the new error is the one listed', (t) => {
+    const r = repo(t, { 'src/c.ts': 'export class C { alpha() { return 1; } beta(): string { return 2; } }\n' });
+    const out = r.run('--symbol', 'C.alpha', '--new-name', 'beta');
+    refused(r, out, /TS2393 /);
+    assert.equal(out.stdout.match(/TS2393 /g).length, 2, out.stdout);
+    assert.doesNotMatch(out.stdout, /TS2322 /);
+  });
+
   test('a barrel that already exports the new name fails the check', (t) => {
     const r = repo(t, {
       'src/a.ts': 'export const foo = 1;\n', 'src/b.ts': 'export const bar = 2;\n',

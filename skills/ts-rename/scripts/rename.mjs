@@ -12,8 +12,8 @@ const t0 = Date.now();
 // What the agent must know was not covered (skipped tsconfigs, failed git mv, …): printed with the summary, and
 // with any error, so a "not found" never hides that the project defining the symbol didn't load.
 const notices = [];
-// Usage errors and lookups that found nothing go to stderr; a refusal ("Nothing changed", "Stopped partway") is an
-// outcome the agent acts on, and goes to stdout with every other outcome.
+// Usage and setup errors, not found, ambiguous (exit 3) and an unrenamable symbol go to stderr; refuse() sends a refusal
+// after the lookup ("Nothing changed", "Stopped partway") to stdout, with every other outcome the agent acts on.
 const die = (code, msg, fd = 2) => {
   const text = [msg.replace(/\n$/, ''), ...notices].join('\n');
   // writeSync: process.exit right after an async write cuts a pipe's output at 64 KB.
@@ -443,8 +443,10 @@ for (const f of files) {
 // changed files are type-checked in memory first, through the language service reading the new texts from an
 // overlay. A line with more errors than before the rename is a problem, and any problem writes nothing, unless
 // --allow-errors; a check that fails to run writes nothing either. Matching by line means an error that was there
-// before never blocks a valid rename, even when the rename rewrites its line, its message or its code. Not caught: a
-// rename that fixes an error and adds another on the same line.
+// before doesn't block a valid rename, even when the rename rewrites its line, its message or its code. Not caught: a
+// rename that fixes an error and adds another on the same line, or whose break TypeScript folds into an error already
+// reported (a second missing property of the same argument). Refused by mistake: an error TypeScript hid behind an
+// earlier one (it reports one excess property per object) and shows once the rename fixes that one.
 // Not covered: a break in a file the rename didn't change (an untyped object passed to the renamed type elsewhere, a
 // subclass in another file, a clashing `export *`), and a rename that compiles but means something else (a capture,
 // an override). The repo's own typecheck and tests find those.
@@ -479,19 +481,28 @@ try {
   if (after.size) {
     const saved = overlay;
     overlay = null; bump(changedPaths);
-    const before = new Map(); // file -> error key -> count
+    const msg = (d) => ts.flattenDiagnosticMessageText(d.messageText, ' ').replace(wordRe(opts.newName), oldName);
+    const before = new Map(); // file -> line -> the errors on it
     for (const f of after.keys()) {
-      const n = new Map();
-      for (const d of errorsOf(toCheck.get(f), f)) n.set(errorKey(d), (n.get(errorKey(d)) ?? 0) + 1);
-      before.set(f, n);
+      const byLine = new Map();
+      for (const d of errorsOf(toCheck.get(f), f)) { const k = errorKey(d); if (!byLine.has(k)) byLine.set(k, []); byLine.get(k).push(d); }
+      before.set(f, byLine);
     }
     overlay = saved; bump(changedPaths);
     for (const [f, errs] of after) {
-      const left = before.get(f);
-      for (const d of errs) {
-        const k = errorKey(d);
-        if (left.get(k)) { left.set(k, left.get(k) - 1); continue; }
-        problems.push(`${d.file ? at(d.file, d.start) : rel(f)}: TS${d.code} ${ts.flattenDiagnosticMessageText(d.messageText, ' ')}`);
+      // Pair each error with one the line had before: the same code and message (the new name read as the old) first,
+      // then the same code, then any. What is left over is new.
+      const fresh = new Map(); // line -> errors not yet paired
+      for (const d of errs) { const k = errorKey(d); if (!fresh.has(k)) fresh.set(k, []); fresh.get(k).push(d); }
+      for (const [k, list] of fresh) {
+        const was = [...(before.get(f).get(k) ?? [])];
+        for (const same of [(a, b) => a.code === b.code && msg(a) === msg(b), (a, b) => a.code === b.code, () => true]) {
+          for (let i = 0; i < list.length; i++) {
+            const j = was.findIndex((w) => same(list[i], w));
+            if (j >= 0) { was.splice(j, 1); list.splice(i--, 1); }
+          }
+        }
+        for (const d of list) problems.push(`${d.file ? at(d.file, d.start) : rel(f)}: TS${d.code} ${ts.flattenDiagnosticMessageText(d.messageText, ' ')}`);
       }
     }
   }

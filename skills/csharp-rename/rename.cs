@@ -195,8 +195,8 @@ internal static class RenameCommand
 
         // Renamer.RenameSymbolAsync drops the conflicts it can't resolve (a new name that clashes, a reference it can't
         // rebind) without a word, and the agent is told to trust this output. So the result is compiled in memory
-        // first: an error on a line that had no error of that id before the rename (each target framework's copy of a file
-        // is its own document).
+        // first: a line with more errors of some id than before the rename (each target framework's copy of a file is its
+        // own document).
         // Any one writes nothing, unless --allow-errors. Not covered: a rename that compiles but binds differently (a
         // member that now hides or overrides another, which is only a warning) or merges two partial types.
         var problems = await FindNewErrors(solution, newTexts, symbol, arguments.NewName);
@@ -293,8 +293,8 @@ internal static class RenameCommand
     // The documents to compile: every copy (one per target framework) of each changed file, and every other document
     // that names the new name (a declaration it now clashes with, reported only at the later one) or still names the
     // old name (a reference the rename missed); for a member, only where the containing type is named too. Documents
-    // with errors after the rename are compiled again without it, and an error counts only on a line that had no
-    // error of that id before.
+    // with errors after the rename are compiled again without it, and a line counts when it has more errors of
+    // some id than before.
     private static async Task<List<string>> FindNewErrors(Solution solution, Dictionary<string, SourceText> newTexts, ISymbol symbol, string newName)
     {
         var oldWord = new Regex($@"(?<![\w@]){Regex.Escape(symbol.Name)}(?!\w)");
@@ -327,7 +327,7 @@ internal static class RenameCommand
                 continue;
             }
 
-            // An error on a line that had no error of that id before is a problem. A rename never adds or removes a line,
+            // A line with more errors of some id than before is a problem. A rename never adds or removes a line,
             // so an error that was there before never blocks a valid rename, even when the rename rewrites its line.
             var before = (await ErrorsOf(solution.GetDocument(documentId)!)).GroupBy(ErrorKey).ToDictionary(group => group.Key, group => group.Count());
             foreach (var diagnostic in after)
