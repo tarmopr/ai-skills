@@ -26,7 +26,7 @@ const USAGE = `Rename a TS symbol and every reference in every tsconfig*.json pr
   node ${SELF} --at <file>:<line>:<col> --new-name <New>       (locals, parameters, exit-3 candidates)
 Container: a class, interface, function or the file's base name, chainable (apiClient.RequestOptions.timeoutMs).
 Options: --project <tsconfig> (repeatable)  --in-comments  --in-strings  --no-file-rename  --dry-run  --verbose  --all-leftovers
-  --allow-errors (write even when the check finds type errors or a name clash the rename would add)
+  --allow-errors (write even when the check finds type errors the rename adds in the changed files, or fails to run)
 Replace a word on given lines only (for the leftovers a rename lists; no type checking):
   node ${SELF} --text <Old> --new-name <New> --lines <file>:<line>,<line> [--lines <file>:<line>]...
 Exit codes: 0 done, 1 error (also: nothing written because the rename would break the code), 2 not found, 3 ambiguous (stderr lists --at candidates).
@@ -327,8 +327,6 @@ const tokenAt = (sf, pos) => {
   if (plainImport) target = decl;
 }
 const seenLoc = new Set();
-const renameLocs = []; // { s, file, start }: for the name-clash check
-const specFiles = new Set(); // files with an import/export specifier the rename continued through
 const queue = [{ file: target.file, pos: target.pos }];
 while (queue.length) {
   const { file, pos } = queue.shift();
@@ -337,12 +335,10 @@ while (queue.length) {
       const key = `${norm(l.fileName)}:${l.textSpan.start}`;
       if (seenLoc.has(key)) continue;
       seenLoc.add(key);
-      renameLocs.push({ s, file: l.fileName, start: l.textSpan.start });
       const sf = programOf(s).getSourceFile(l.fileName);
       const parent = sf && tokenAt(sf, l.textSpan.start).parent;
       if ((l.prefixText || l.suffixText) && parent && (ts.isExportSpecifier(parent) || ts.isImportSpecifier(parent))) {
         addEdit(l.fileName, l.textSpan.start, l.textSpan.length, opts.newName);
-        specFiles.add(norm(l.fileName));
         queue.push({ file: l.fileName, pos: l.textSpan.start });
       } else {
         addEdit(l.fileName, l.textSpan.start, l.textSpan.length, `${l.prefixText ?? ''}${opts.newName}${l.suffixText ?? ''}`);
@@ -439,15 +435,14 @@ for (const f of files) {
 }
 
 // ---------- check the result before writing ----------
-// TypeScript's rename checks neither that the result compiles nor that the new name is free, and the agent is told
-// to trust this output. So the result is checked in memory first, through the language service reading the new
-// texts from an overlay, three ways:
-// - type errors the rename adds, in every file that could show one;
-// - every identifier spelled with the new name still means what it meant: a renamed reference the renamed symbol,
-//   an existing one its old declaration (a capture or a shadowing compiles, but changes the code);
-// - for a member, no class or interface above or below its container already has a member with the new name
-//   (renaming onto it merges the two, or makes one override the other).
-// Any problem writes nothing, unless --allow-errors; a check that fails to run writes nothing either.
+// TypeScript's rename doesn't check that the result compiles, and the agent is told to trust this output. So the
+// changed files are type-checked in memory first, through the language service reading the new texts from an
+// overlay. A file that has more errors of some code than before the rename is a problem, and any problem writes
+// nothing, unless --allow-errors; a check that fails to run writes nothing either. Counting per code means an error
+// that was there before never blocks a valid rename, even when the rename rewrites its line or its message.
+// Not covered: a break in a file the rename didn't change (an untyped object passed to the renamed type elsewhere, a
+// subclass in another file, a clashing `export *`), and a rename that compiles but means something else (a capture,
+// an override). The repo's own typecheck and tests find those.
 const problems = [];
 let checkFailed = null;
 const compiled = new Map(); // file -> compiler options of a program that has it (for the leftover scan)
@@ -455,116 +450,13 @@ for (const s of services) for (const sf of programOf(s).getSourceFiles()) if (in
 const at = (sf, pos) => { const lc = sf.getLineAndCharacterOfPosition(pos); return `${rel(sf.fileName)}:${lc.line + 1}`; };
 try {
   for (const { from, to } of fileRenames) moveTo.set(norm(from), norm(to));
-  // Positions before and after the edits of one file. A position inside an edit's new text maps back to the edit's start.
-  const sorted = new Map([...edits].map(([f, m]) => [f, [...m.values()].sort((a, b) => a.start - b.start)]));
-  const forward = (f, pos) => { let d = 0; for (const e of sorted.get(f) ?? []) { if (e.start + e.length <= pos) d += e.text.length - e.length; else break; } return pos + d; };
-  // -1 inside an edit with prefix/suffix text (`{ old: new }`): TypeScript writes those to keep the old meaning.
-  const backward = (f, pos) => {
-    let d = 0;
-    for (const e of sorted.get(f) ?? []) {
-      const s = e.start + d;
-      if (pos < s) break;
-      if (pos < s + e.text.length) return e.text === opts.newName ? e.start : -1;
-      d += e.text.length - e.length;
-    }
-    return pos - d;
-  };
-  const declKeys = (sym) => (sym?.declarations ?? []).map((x) => {
-    const n = ts.getNameOfDeclaration(x) ?? x, sf = x.getSourceFile();
-    return `${norm(sf.fileName)}:${n.getStart(sf)}`;
-  });
-
-  // The files to check: every changed file; the declaring file and every barrel re-exporting it (a clashing
-  // `export *`); for a member, every file importing one of those (a subclass, an untyped object passed to it); and
-  // every other file that names the new name (a declaration it merges with, a name an `export *` now makes
-  // ambiguous) or still names the old one (a reference the rename missed). For a member, an unchanged file counts
-  // only when it also names the container, or qualifies the old name. A file that imports the declaring module for
-  // something else can't see a non-member's rename.
-  const declFile = norm(decl.file);
-  const targets = new Set([declFile]);
-  const reexporters = new Map(), importers = new Map(); // file -> files it re-exports / imports from
-  for (const s of services) {
-    const prog = programOf(s), options = prog.getCompilerOptions();
-    const cache = ts.createModuleResolutionCache(path.dirname(s.cfg), (x) => x, options);
-    for (const sf of prog.getSourceFiles()) {
-      const f = norm(sf.fileName);
-      if (!inRepo(f) || importers.has(f)) continue;
-      const imp = new Set(), re = new Set();
-      for (const st of sf.statements) {
-        const spec = (ts.isImportDeclaration(st) || ts.isExportDeclaration(st)) && st.moduleSpecifier;
-        if (!spec || !ts.isStringLiteral(spec)) continue;
-        const r = ts.resolveModuleName(spec.text, sf.fileName, options, ts.sys, cache).resolvedModule;
-        if (!r) continue;
-        imp.add(norm(r.resolvedFileName));
-        if (ts.isExportDeclaration(st)) re.add(norm(r.resolvedFileName));
-      }
-      importers.set(f, imp); reexporters.set(f, re);
-    }
+  const toCheck = new Map(); // changed file -> the service that checks it
+  for (const f of newTexts.keys()) {
+    const s = services.find((x) => programOf(x).getSourceFile(f));
+    if (s && inRepo(f)) toCheck.set(f, s);
   }
-  for (let grew = true; grew;) {
-    grew = false;
-    for (const [f, re] of reexporters) if (!targets.has(f) && [...re].some((x) => targets.has(x))) { targets.add(f); grew = true; }
-  }
-  const oldWord = new RegExp(wordRe(oldName).source), newWord = new RegExp(wordRe(opts.newName).source);
-  const containerWord = isMember && containers.size ? new RegExp(`(?<![\\w$])(?:${[...containers].map(escRe).join('|')})(?![\\w$])`) : null;
-  const toCheck = new Map(); // file -> the service that checks it
-  for (const s of services) for (const sf of programOf(s).getSourceFiles()) {
-    const f = norm(sf.fileName);
-    if (!inRepo(f) || toCheck.has(f)) continue;
-    const now = newTexts.get(f) ?? sf.text;
-    const related = !isMember || (containerWord?.test(sf.text) ?? true);
-    if (newTexts.has(f) || targets.has(f) || isMember && [...(importers.get(f) ?? [])].some((x) => targets.has(x))
-      || related && newWord.test(sf.text) || oldWord.test(now) && (!qualifiedRe || qualifiedRe.test(now))) toCheck.set(f, s);
-  }
-
-  // What each identifier spelled with the old name at a rename location, or already with the new name, means now.
-  const meaning = new Map(); // `${file}:${pos}` -> declaration keys, mapped to after the rename
-  const renamedAt = new Set(renameLocs.map((l) => `${norm(l.file)}:${l.start}`));
-  // A declaration name an edit with prefix/suffix text replaces (`total` -> `total: amount`) sits where the new name is in it.
-  const mapKey = (k) => {
-    const i = k.lastIndexOf(':'), f = k.slice(0, i), p = Number(k.slice(i + 1));
-    const e = (sorted.get(f) ?? []).find((x) => x.start === p && x.text !== opts.newName);
-    const shift = !e ? 0 : e.text.startsWith(`${opts.newName}:`) ? 0 : Math.max(0, e.text.lastIndexOf(opts.newName));
-    return `${moveTo.get(f) ?? f}:${forward(f, p) + shift}`;
-  };
-  for (const [f, s] of toCheck) {
-    const prog = programOf(s), sf = prog.getSourceFile(f), checker = prog.getTypeChecker();
-    if (!sf) continue;
-    const visit = (node) => {
-      if (ts.isIdentifier(node) && (node.text === opts.newName || node.text === oldName && renamedAt.has(`${f}:${node.getStart(sf)}`))) {
-        const sym = checker.getSymbolAtLocation(node);
-        if (sym) meaning.set(`${f}:${node.getStart(sf)}`, declKeys(sym).map(mapKey));
-      }
-      ts.forEachChild(node, visit);
-    };
-    visit(sf);
-  }
-
-  // Members: a class or interface above or below the container that already has the new name.
-  if (isMember) {
-    const s = owners[0], prog = programOf(s), checker = prog.getTypeChecker();
-    const sf = prog.getSourceFile(decl.file);
-    const member = sf && tokenAt(sf, decl.pos).parent;
-    const container = member?.parent;
-    if (container && (ts.isClassLike(container) || ts.isInterfaceDeclaration(container)) && container.name) {
-      const type = checker.getTypeAtLocation(container.name);
-      for (const base of type.isClassOrInterface() ? checker.getBaseTypes(type) : []) {
-        const p = checker.getPropertyOfType(base, opts.newName);
-        const d = p?.declarations?.[0];
-        if (d) problems.push(`${at(sf, decl.pos)}: ${checker.typeToString(base)} already has ${opts.newName} (${at(d.getSourceFile(), d.getStart())}), so the renamed ${oldName} would override or merge with it`);
-      }
-      for (const impl of s.ls.getImplementationAtPosition(decl.file, container.name.getStart(sf)) ?? []) {
-        const isf = prog.getSourceFile(impl.fileName);
-        const node = isf && tokenAt(isf, impl.textSpan.start);
-        const cls = node && (ts.isClassLike(node) || ts.isInterfaceDeclaration(node) ? node : ts.isClassLike(node.parent) || ts.isInterfaceDeclaration(node.parent) ? node.parent : null);
-        const own = cls && cls !== container && cls.members.find((m) => m.name && ts.isIdentifier(m.name) && m.name.text === opts.newName);
-        if (own) problems.push(`${at(isf, own.getStart(isf))}: ${cls.name?.text ?? 'a subtype'} already has ${opts.newName}, so the renamed ${oldName} would be overridden by or merge with it`);
-      }
-    }
-  }
-
   const errorsOf = (s, f) => [...s.ls.getSyntacticDiagnostics(f), ...s.ls.getSemanticDiagnostics(f)].filter((d) => d.category === ts.DiagnosticCategory.Error);
-  const errorKey = (d) => `${d.code}|${ts.flattenDiagnosticMessageText(d.messageText, ' ')}|${d.file ? splitLines(d.file.text)[2 * d.file.getLineAndCharacterOfPosition(d.start).line].trim() : ''}`;
+  const lineText = (d) => (d.file ? splitLines(d.file.text)[2 * d.file.getLineAndCharacterOfPosition(d.start).line].trim() : '');
   const bump = (list) => { for (const f of list) versions.set(f, (versions.get(f) ?? 0) + 1); };
   overlay = new Map();
   for (const [f, text] of newTexts) overlay.set(moveTo.get(f) ?? f, text);
@@ -574,47 +466,31 @@ try {
   }
   const changedPaths = [...overlay.keys()];
   bump(changedPaths);
-
-  // After the rename: identifiers spelled with the new name, and type errors.
   const after = new Map();
-  for (const [f, s] of toCheck) {
-    const nf = moveTo.get(f) ?? f;
-    const prog = s.ls.getProgram(), sf = prog.getSourceFile(nf), checker = prog.getTypeChecker();
-    if (!sf) continue;
-    const visit = (node) => {
-      if (ts.isIdentifier(node) && node.text === opts.newName) {
-        const back = backward(f, node.getStart(sf));
-        const was = back < 0 ? undefined : meaning.get(`${f}:${back}`);
-        const now = declKeys(checker.getSymbolAtLocation(node));
-        if (was?.length && !was.some((k) => now.includes(k))) {
-          const line = (k) => { const i = k.lastIndexOf(':'), ksf = prog.getSourceFile(k.slice(0, i)); return ksf ? at(ksf, Number(k.slice(i + 1))) : rel(k.slice(0, i)); };
-          problems.push(`${at(sf, node.getStart(sf))}: ${opts.newName} here would refer to ${now.length ? line(now[0]) : 'nothing'} instead of ${line(was[0])}`);
-        }
-      }
-      ts.forEachChild(node, visit);
-    };
-    visit(sf);
-    const e = errorsOf(s, nf);
-    if (e.length) after.set(f, e);
-  }
-  // Errors the files had before the rename don't count: matched by code, message and the text of their line.
+  for (const [f, s] of toCheck) { const e = errorsOf(s, moveTo.get(f) ?? f); if (e.length) after.set(f, e); }
   if (after.size) {
     const saved = overlay;
     overlay = null; bump(changedPaths);
-    const before = new Map();
+    const before = new Map(); // file -> code -> the trimmed text of each error's line
     for (const f of after.keys()) {
-      const n = new Map();
-      for (const d of errorsOf(toCheck.get(f), f)) n.set(errorKey(d), (n.get(errorKey(d)) ?? 0) + 1);
-      before.set(f, n);
+      const byCode = new Map();
+      for (const d of errorsOf(toCheck.get(f), f)) { if (!byCode.has(d.code)) byCode.set(d.code, []); byCode.get(d.code).push(lineText(d)); }
+      before.set(f, byCode);
     }
     overlay = saved; bump(changedPaths);
+    const asOld = (text) => text.replace(wordRe(opts.newName), oldName);
     for (const [f, errs] of after) {
-      const prev = before.get(f);
-      for (const d of errs) {
-        // The new name read as the old one, so an error on a renamed line still matches its earlier self.
-        const k = errorKey(d).replace(wordRe(opts.newName), oldName);
-        if (prev.get(k)) { prev.set(k, prev.get(k) - 1); continue; }
-        problems.push(`${d.file ? at(d.file, d.start) : rel(f)}: TS${d.code} ${ts.flattenDiagnosticMessageText(d.messageText, ' ')}`);
+      const byCode = new Map();
+      for (const d of errs) { if (!byCode.has(d.code)) byCode.set(d.code, []); byCode.get(d.code).push(d); }
+      for (const [code, list] of byCode) {
+        const was = [...(before.get(f).get(code) ?? [])];
+        if (list.length <= was.length) continue;
+        // Show the errors whose line had no error of this code before (the new name read as the old one); when
+        // that doesn't single them out, the last ones.
+        const fresh = list.filter((d) => { const i = was.findIndex((w) => asOld(w) === asOld(lineText(d))); if (i < 0) return true; was.splice(i, 1); return false; });
+        for (const d of (fresh.length ? fresh : list).slice(-(list.length - (before.get(f).get(code)?.length ?? 0)))) {
+          problems.push(`${d.file ? at(d.file, d.start) : rel(f)}: TS${d.code} ${ts.flattenDiagnosticMessageText(d.messageText, ' ')}`);
+        }
       }
     }
   }
@@ -627,23 +503,27 @@ if (checkFailed && !opts.allowErrors) {
 }
 if (checkFailed) notices.push(`The check of the result failed (${checkFailed}); written unchecked with --allow-errors.`);
 if (problems.length) {
-  const unique = [...new Set(problems)];
-  const list = unique.slice(0, 20).map((p) => `  ${p}`).concat(unique.length > 20 ? [`  … ${unique.length - 20} more`] : []);
+  const list = problems.slice(0, 20).map((p) => `  ${p}`).concat(problems.length > 20 ? [`  … ${problems.length - 20} more`] : []);
   if (!opts.allowErrors) {
-    const msg = [`Nothing changed: renaming ${oldName} -> ${opts.newName} would break the code:`, ...list,
+    const msg = [`Nothing changed: renaming ${oldName} -> ${opts.newName} would add type errors:`, ...list,
       'Pick another name, or rename at the declaration with --symbol; a reference the rename misses (an untyped object key, an import the',
       'compiler can\'t resolve) needs a hand edit after the rename. --allow-errors writes it anyway.', ...notices];
     fs.writeSync(1, msg.join('\n') + '\n');
     process.exit(1);
   }
-  notices.push(`${opts.dryRun ? 'With' : 'Written with'} --allow-errors; the rename adds these problems:`, ...list);
+  notices.push(`${opts.dryRun ? 'With' : 'Written with'} --allow-errors; the rename adds these type errors:`, ...list);
 }
 
 // ---------- write ----------
 // A failure partway (a read-only file, a full disk) stops with the list of what was already written.
 const written = [], moved = [];
-const stop = (e) => die(1, `Stopped partway: ${e.message}\nAlready written (${written.length}): ${written.map(rel).join(', ') || 'nothing'}`
-  + (moved.length ? `\nAlready moved: ${moved.join(', ')}` : '') + '\nUndo with git checkout on the written files (and move the moved ones back), or finish by hand.');
+// On stdout like every other outcome the agent acts on (die writes stderr).
+const stop = (e) => {
+  const msg = [`Stopped partway: ${e.message}`, `Already written (${written.length}): ${written.map(rel).join(', ') || 'nothing'}`,
+    ...(moved.length ? [`Already moved: ${moved.join(', ')}`] : []), 'Undo with git checkout on the written files (and move the moved ones back), or finish by hand.', ...notices];
+  fs.writeSync(1, msg.join('\n') + '\n');
+  process.exit(1);
+};
 try {
   for (const f of files) if (!opts.dryRun) { fs.writeFileSync(f, newTexts.get(f)); written.push(f); }
   for (const { from, to } of fileRenames) {
