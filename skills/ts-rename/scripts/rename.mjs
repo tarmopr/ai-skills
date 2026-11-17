@@ -65,6 +65,8 @@ if (opts.text !== undefined) {
     if (!m) die(1, `--lines must be <file>:<line>,<line>: ${spec}`);
     const abs = path.resolve(root, m[1]); // the paths a rename prints are relative to the repo root
     if (!fs.existsSync(abs)) { missed.push(`${m[1]} (no such file)`); continue; }
+    // Only files inside the repo, also through a symlink.
+    if (!fs.realpathSync(abs).startsWith(fs.realpathSync(root) + path.sep)) die(1, `Nothing changed: ${m[1]} is outside the repo (${root})`);
     const lines = fs.readFileSync(abs, 'utf8').split('\n');
     for (const ln of m[2].split(',').filter(Boolean).map(Number)) {
       const before = lines[ln - 1];
@@ -414,8 +416,11 @@ if (!opts.dryRun) {
     const byFile = new Map();
     for (const l of shown) { if (!byFile.has(l.file)) byFile.set(l.file, new Set()); byFile.get(l.file).add(l.line); }
     const q = (s) => (/^[\w./@+-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`);
+    // Only for a plain identifier: a quoted property name ("foo-bar") can't be passed safely as a word.
+    if (/^[A-Za-z_$][\w$]*$/.test(oldName)) {
     out.push(`One call renames them (delete the --lines entries that are something else):`);
-    out.push(`  node ${SELF} --text ${oldName} --new-name ${opts.newName} ${[...byFile].map(([f, ls]) => `--lines ${q(`${f}:${[...ls].join(',')}`)}`).join(' ')}`);
+    out.push(`  node ${SELF} --text ${q(oldName)} --new-name ${opts.newName} ${[...byFile].map(([f, ls]) => `--lines ${q(`${f}:${[...ls].join(',')}`)}`).join(' ')}`);
+    }
   }
   if (!listOutside && outsideFiles.size) {
     const byDir = new Map();

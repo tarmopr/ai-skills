@@ -43,3 +43,18 @@ test('--text reports lines without the word and fails when nothing changed', () 
   assert.equal(r.status, 1);
   assert.match(r.stderr, /No current on \(nothing changed there\): a\.ts:1/);
 });
+
+test('--text refuses a file outside the repo, also through a symlink', () => {
+  const repo = scratch(), outside = scratch();
+  spawnSync('git', ['init', '-q'], { cwd: repo });
+  const target = path.join(outside, 'b.ts');
+  fs.writeFileSync(target, 'current\n');
+  fs.symlinkSync(target, path.join(repo, 'link.ts'));
+  for (const spec of [`${target}:1`, '../b.ts:1', 'link.ts:1']) {
+    const r = run(repo, '--text', 'current', '--new-name', 'snapshot', '--lines', spec);
+    if (spec === '../b.ts:1') { assert.equal(r.status, 1); continue; } // resolves to a missing file in the repo's parent
+    assert.equal(r.status, 1, spec);
+    assert.match(r.stderr, /outside the repo/, spec);
+  }
+  assert.equal(fs.readFileSync(target, 'utf8'), 'current\n');
+});
