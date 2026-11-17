@@ -293,7 +293,8 @@ internal static class RenameCommand
     // The documents to compile: every copy (one per target framework) of each changed file, and every other document
     // that names the new name (a declaration it now clashes with, reported only at the later one) or still names the
     // old name (a reference the rename missed); for a member, only where the containing type is named too. Documents
-    // with errors after the rename are compiled again without it, and only the errors it adds count, by id.
+    // with errors after the rename are compiled again without it, and an error counts only on a line that had no
+    // error of that id before.
     private static async Task<List<string>> FindNewErrors(Solution solution, Dictionary<string, SourceText> newTexts, ISymbol symbol, string newName)
     {
         var oldWord = new Regex($@"(?<![\w@]){Regex.Escape(symbol.Name)}(?!\w)");

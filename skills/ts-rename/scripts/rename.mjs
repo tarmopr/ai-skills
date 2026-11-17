@@ -441,9 +441,10 @@ for (const f of files) {
 // ---------- check the result before writing ----------
 // TypeScript's rename doesn't check that the result compiles, and the agent is told to trust this output. So the
 // changed files are type-checked in memory first, through the language service reading the new texts from an
-// overlay. An error on a line that had no error of that code before the rename is a problem, and any problem writes
-// nothing, unless --allow-errors; a check that fails to run writes nothing either. Matching by code and line means an
-// error that was there before never blocks a valid rename, even when the rename rewrites its line or its message.
+// overlay. A line with more errors than before the rename is a problem, and any problem writes nothing, unless
+// --allow-errors; a check that fails to run writes nothing either. Matching by line means an error that was there
+// before never blocks a valid rename, even when the rename rewrites its line, its message or its code. Not caught: a
+// rename that fixes an error and adds another on the same line.
 // Not covered: a break in a file the rename didn't change (an untyped object passed to the renamed type elsewhere, a
 // subclass in another file, a clashing `export *`), and a rename that compiles but means something else (a capture,
 // an override). The repo's own typecheck and tests find those.
@@ -460,10 +461,10 @@ try {
     if (s && inRepo(f)) toCheck.set(f, s);
   }
   const errorsOf = (s, f) => [...s.ls.getSyntacticDiagnostics(f), ...s.ls.getSemanticDiagnostics(f)].filter((d) => d.category === ts.DiagnosticCategory.Error);
-  // An error is matched to one from before by its code and line. A rename never adds or removes a line, and a
-  // "did you mean" error counts as its plain code: the rename can make or drop the suggestion.
-  const plainCode = { 2551: 2339, 2568: 2339, 2576: 2339, 2552: 2304, 2570: 2304, 2662: 2304, 2663: 2304, 2561: 2353, 2724: 2305, 2820: 2322, 2833: 2503, 4117: 4113 };
-  const errorKey = (d) => `${plainCode[d.code] ?? d.code}:${d.file ? d.file.getLineAndCharacterOfPosition(d.start).line : -1}`;
+  // An error is matched to one from before by its line only. A rename never adds or removes a line, and it can change
+  // the code of an error already there: TypeScript gives an error a "did you mean" code (2551, 2552, 2724, …) when a
+  // similar name exists, and the rename can make or drop that name.
+  const errorKey = (d) => (d.file ? d.file.getLineAndCharacterOfPosition(d.start).line : -1);
   const bump = (list) => { for (const f of list) versions.set(f, (versions.get(f) ?? 0) + 1); };
   overlay = new Map();
   for (const [f, text] of newTexts) overlay.set(moveTo.get(f) ?? f, text);

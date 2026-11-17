@@ -535,6 +535,21 @@ module.exports = { ...ts, createLanguageService(h, r) { const ls = ts.createLang
     assert.match(r.read('src/a.ts'), /bar\(\)/);
   });
 
+  test('an error whose code the rename changes on its line is not new (namespace, default-export module, shorthand)', (t) => {
+    const r = repo(t, {
+      'src/n1.ts': 'export namespace N1 { export type Bar = 2; }\nexport type T = N1.Fooo;\n',
+      'src/n2.ts': 'export namespace N2 { export type Foo = 1; }\nexport type T = N2.Fooo;\n',
+      'src/m.ts': 'export function foo() { return 1; }\nexport default 1;\n',
+      'src/u.ts': "import { foo, fooo } from './m';\nexport const v = foo();\n",
+      'src/s.ts': 'const bar = 1;\nexport const o = { fooo, bar };\n',
+    });
+    for (const args of [['--symbol', 'N1.Bar', '--new-name', 'Foo'], ['--symbol', 'N2.Foo', '--new-name', 'Bar'], ['--symbol', 'm.foo', '--new-name', 'bar'], ['--at', 'src/s.ts:1:7', '--new-name', 'foo']]) {
+      const out = r.run(...args);
+      assert.equal(out.status, 0, args.join(' ') + '\n' + out.stdout + out.stderr);
+      r.git('checkout', '-q', '-f', '.');
+    }
+  });
+
   test('a barrel that already exports the new name fails the check', (t) => {
     const r = repo(t, {
       'src/a.ts': 'export const foo = 1;\n', 'src/b.ts': 'export const bar = 2;\n',
