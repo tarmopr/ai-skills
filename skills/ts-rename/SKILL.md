@@ -12,8 +12,24 @@ One Bash call renames a symbol and every reference in every `tsconfig*.json` pro
 
 1. **Check the contract.** If the name is on the wire or in the database (a JSON/API field, a column, a translation key, a URL or storage path), renaming it is a breaking change. Stop and ask.
 2. **Rename right away. Don't grep or read first.** Name the symbol as `Container.Name` when you know where it lives (a class, an interface, or the file's base name, e.g. `dates.parseIsoDate`, `SessionCache.reset`, `apiClient.RequestOptions.timeoutMs`). On exit 3, rerun with one `--at` candidate from the list. If it prints `Nothing changed: renaming Old -> New would add type errors:` (exit 1), nothing was written: the lines below it are the errors. `Nothing changed: the check of the result failed` also wrote nothing. Pick another name or ask; pass `--allow-errors` only when the user wants it anyway. For a rename across many files, pass `--all-leftovers` on this first call: once the rename is applied, a rerun can't find the old name.
-3. **Act on the output only.** Under `Not renamed: mentions of Old the compiler can't resolve` it lists keys in `vi.mock` factories, regex literals in tests that scan source, module paths that resolve to no file, uses of the name imported from a module the compiler can't resolve, for a member the same-name identifiers left in changed files (object literals without a type), strings, JSX text, comments, and files outside every tsconfig such as Deno functions and docs. Then comes one `--text` command that renames all listed ones (when the old name is a plain identifier). Delete the `--lines` entries that mean something else and run it; Edit by hand only when a line needs more than the word swapped. When the list doesn't fit, the `Not listed:` line names a file with all of them. A `Skipped tsconfig`, `loaded with errors`, `Only … used: git ls-files failed`, `Not renamed (overlapping edits…)`, `Not renamed: N references outside <root>`, `git mv failed`, `Listing what is left failed` or (with `--allow-errors`) `The check of the result failed` line names what the rename did not cover: fix that by hand or ask. `Not renamed (overlapping edits…)`, `Not renamed: N references outside` and `Listing what is left failed` exit 1 although the rename was written; don't rerun it. The `Ignore:` line counts what was checked and is not this symbol (same-name identifiers, and for a member, unqualified uses of the word in other files): leave those. Don't grep or read files to double-check.
+3. **Act on the output only.** Don't grep or read files to double-check. Each line below says what to do:
+
+| Output line | What to do |
+|---|---|
+| `Not renamed: mentions of Old the compiler can't resolve`, then a list | Mentions the rename can't reach: keys in `vi.mock` factories, regex literals in tests that scan source, module paths that resolve to no file, uses of the name imported from a module the compiler can't resolve, for a member the same-name identifiers left in changed files (object literals without a type), strings, JSX text, comments, files outside every tsconfig (Deno functions, docs). |
+| The `--text` command after that list (when the old name is a plain identifier) | Delete the `--lines` entries that mean something else and run it. Edit by hand only when a line needs more than the word swapped. |
+| `Not listed:` | The list didn't fit; the named file has all of them. |
+| `Ignore:` | Counts what was checked and is not this symbol (same-name identifiers; for a member, unqualified uses of the word in other files). Leave those. |
+| `Skipped tsconfig`, `loaded with errors`, `Only … used: git ls-files failed`, `git mv failed`, (with `--allow-errors`) `The check of the result failed` | Something the rename did not cover: fix it by hand or ask. |
+| `Not renamed (overlapping edits…)`, `Not renamed: N references outside <root>`, `Listing what is left failed` | Same, and exit 1 although the rename was written: don't rerun it. |
+| `Stopped partway: …` (exit 1) | A write failed: the files already written are listed, with how to undo them. Undo or finish by hand, or ask. |
+
 4. **Verify** only if the user asked: typecheck the affected projects and run the tests of the changed files.
+
+## Requirements
+
+- Node.js, and the repo's own `typescript` installed (`npm install`): the script loads it from the `package.json` at the git root and exits 1 if it is missing.
+- `git`: the script finds the repo root and the tsconfig files with it, and moves renamed files with `git mv`. Without it, only `tsconfig.json` in the working directory is used (pass `--project` for others), and the output says so.
 
 ## Command
 
@@ -41,4 +57,13 @@ node "${CLAUDE_SKILL_DIR}/scripts/rename.mjs" --text <Old> --new-name <New> --li
 | `--all-leftovers` | List every remaining mention (default: up to 60, the rest go to a file) |
 | `--text <Old> --lines <file>:<l>,<l>` | Replace the whole word on those lines only (no type checking); paths from the repo root, or absolute (the printed command uses absolute paths when the renamed repo is not the working directory's) |
 
-Exit codes: `0` done, `1` error (also: nothing written because the rename would add type errors in the changed files, or the check failed; `Stopped partway`: some files were written, listed with how to undo them; a `--text` file outside the repo; an unrenamable symbol; and, after writing, skipped overlapping edits, references outside the repo, a failed leftover scan), `2` not found (also a missing `--at` file or position), `3` ambiguous (stderr lists up to 10 candidates as `--at file:line:col`; with more, narrow with `--symbol Container.Name`). What the check refuses or fails to run, a refused file rename, an unreadable source file or `--text` file, and `Stopped partway: …` print on stdout; usage and setup errors, not found, ambiguous (exit 3) and an unrenamable symbol on stderr. `--text` exits `1` when no listed line had the word; either way it names the lines without it on stdout.
+| Exit | Meaning | Printed on |
+|---|---|---|
+| `0` | Done | stdout |
+| `1` | Nothing written: the rename would add type errors in the changed files, the check failed to run, a file rename onto an existing file, an unreadable source file, a `--text` file outside the repo, or `--text` with no listed line holding the word | stdout |
+| `1` | Written, but not all of it: `Stopped partway`, skipped overlapping edits, references outside the repo, a failed leftover scan | stdout |
+| `1` | Usage or setup error (no tsconfig, no `typescript`), or a symbol that can't be renamed | stderr |
+| `2` | Not found (also a missing `--at` file or position) | stderr |
+| `3` | Ambiguous: up to 10 candidates as `--at file:line:col`; with more, narrow with `--symbol Container.Name` | stderr |
+
+`--text` names the listed lines without the word on stdout, whether it exits 0 or 1.
