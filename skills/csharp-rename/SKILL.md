@@ -23,7 +23,7 @@ Run from the repo root (it finds the single `.sln`/`.slnx` upwards, or pass `--s
 bash "${CLAUDE_SKILL_DIR}/run.sh" --symbol <Name> --new-name <NewName>
 ```
 
-Before writing, the tool compiles the renamed files in memory. If the rename would add a compile error (a new name that clashes with a member, a reference it couldn't rebind), it writes nothing and lists the errors (exit 1). Success prints one summary line, `Renamed <display name> -> <NewName>: 25 files, 0 file renames, 5s.`, where the display name is the compiler's (`Ns.OrderService.Cancel()`), followed by any `warning:` lines (below).
+Before writing, the tool compiles in memory the renamed files and every file naming the old or the new name (for a member, only files that also name its type). If the rename would add a compile error (a new name that clashes with a member or a type, a reference it couldn't rebind), it writes nothing and lists the errors (exit 1). Success prints one summary line, `Renamed <display name> -> <NewName>: 25 files, 0 file renames, 5s.`, where the display name is the compiler's (`Ns.OrderService.Cancel()`), followed by any `warning:` lines (below).
 
 | Argument | Meaning |
 |---|---|
@@ -35,7 +35,7 @@ Before writing, the tool compiles the renamed files in memory. If the rename wou
 | `--no-file-rename` | Keep `Old.cs` file name (by default a type declared in `Old.cs` is `git mv`'d to `New.cs`) |
 | `--allow-load-failures` | Rename even though some projects failed to load; references in those projects stay unrenamed |
 | `--allow-errors` | Write even when the check finds compile errors the rename adds (they are listed) |
-| `--dry-run` | List the files it would change, write nothing |
+| `--dry-run` | Run the check and list the files it would change, write nothing (exit 1 with the errors if the check fails) |
 | `--verbose` | Also list each changed file (implied by `--dry-run`) |
 
 Exit codes: `0` done, `1` error (also: nothing written because the rename would break the build; a malformed `--at` or a line or column out of range), `2` not found (also an `--at` file outside the solution, or no symbol at that position), `3` ambiguous — stderr lists each candidate with its exact display string and `file:line:col`; rerun with one of them.
@@ -53,6 +53,7 @@ The first run builds the tool into `${XDG_CACHE_HOME:-~/.cache}/csharp-rename/` 
 - **`warning: kept Old.cs, because a <Compile Include> in its project file names it`** — the code was renamed but the file wasn't. Rename the file and its `Compile` entry by hand.
 - **`warning: N project load failures; references in those projects were NOT renamed`** (only with `--allow-load-failures`), followed by each load message — tell the user which projects; their references to the old name stay.
 - **`Stopped partway: …` (exit 1)** — a write failed. `Nothing was changed.`, or `Already written (N): …` with the edited files and `Old.cs -> New.cs` moves: undo the edits with `git checkout`, move the moved files back, or finish by hand.
+- **`Failed: <exception>`** (exit 1) — the solution didn't open or MSBuild failed; nothing was written. Tell the user.
 - **The first build fails** (run.sh prints the `dotnet publish` log) — usually a missing requirement below. Tell the user which one; don't work around it.
 
 ## Requirements

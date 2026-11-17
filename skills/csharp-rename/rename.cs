@@ -9,7 +9,7 @@
 // Usage:
 //   run.sh --new-name <Name> (--symbol <Name|dotted suffix of the qualified name|exact display string> | --at <file>:<line>:<col>)
 //          [--solution <path>] [--overloads] [--in-comments] [--in-strings] [--no-file-rename] [--allow-load-failures] [--allow-errors] [--dry-run] [--verbose]
-// Prints one summary line plus any warning lines; --verbose (or --dry-run) also lists each changed file.
+// Prints one summary line plus any warning lines, or why nothing was written; --verbose (or --dry-run) also lists each changed file.
 // Exit codes: 0 renamed (or dry run), 1 error (also: nothing written because the rename would break the build), 2 symbol not found, 3 ambiguous symbol.
 
 using System.Diagnostics;
@@ -26,7 +26,17 @@ if (options is null)
     return 1;
 }
 
-return await RenameCommand.Run(options);
+// An unexpected failure (a solution that doesn't open, an MSBuild error) is reported on stdout with exit 1, and
+// nothing has been written unless the message says so.
+try
+{
+    return await RenameCommand.Run(options);
+}
+catch (Exception exception)
+{
+    Console.WriteLine($"Failed: {exception.GetType().Name}: {exception.Message}");
+    return 1;
+}
 
 internal sealed record RenameArguments(
     string NewName,
@@ -109,8 +119,8 @@ internal static class RenameCommand
         var solution = await workspace.OpenSolutionAsync(solutionPath);
         if (loadFailures.Count > 0 && !arguments.AllowLoadFailures)
         {
-            loadFailures.ForEach(message => Console.Error.WriteLine($"warning: {message}"));
-            Console.Error.WriteLine($"{loadFailures.Count} project load failures (see the warnings above); nothing was changed, because references in those projects would not be renamed. Run `dotnet restore` and retry, or pass --allow-load-failures to rename only the projects that loaded.");
+            loadFailures.ForEach(message => Console.WriteLine($"warning: {message}"));
+            Console.WriteLine($"{loadFailures.Count} project load failures (see the warnings above); nothing was changed, because references in those projects would not be renamed. Run `dotnet restore` and retry, or pass --allow-load-failures to rename only the projects that loaded.");
             return 1;
         }
 
@@ -165,7 +175,7 @@ internal static class RenameCommand
                 if (merged[i].Span.Start < merged[i - 1].Span.End || merged[i].Span.Start == merged[i - 1].Span.Start)
                 {
                     var line = oldText.Lines.GetLineFromPosition(merged[i].Span.Start).LineNumber + 1;
-                    Console.WriteLine($"Nothing changed: the target frameworks disagree on the edit at {Relative(group.Key)}:{line}; rename with --at in that file or by hand.");
+                    Console.WriteLine($"Nothing changed: the target frameworks disagree on the edit at {Relative(group.Key)}:{line}; rename that file by hand.");
                     return 1;
                 }
             }
@@ -187,19 +197,19 @@ internal static class RenameCommand
         // rebind) without a word, and the agent is told to trust this output. So the result is compiled in memory
         // first: the errors it adds, counted per document and error id against the same documents before the rename.
         // Any one writes nothing, unless --allow-errors.
-        var problems = await FindNewErrors(solution, newTexts, symbol);
+        var problems = await FindNewErrors(solution, newTexts, symbol, arguments.NewName);
+        var problemList = problems.Take(20).Select(problem => $"  {problem}").ToList();
+        if (problems.Count > 20)
+        {
+            problemList.Add($"  … {problems.Count - 20} more");
+        }
+
         if (problems.Count > 0)
         {
-            var list = problems.Take(20).Select(problem => $"  {problem}").ToList();
-            if (problems.Count > 20)
-            {
-                list.Add($"  … {problems.Count - 20} more");
-            }
-
             if (!arguments.AllowErrors)
             {
                 Console.WriteLine($"Nothing changed: renaming {symbol.Name} -> {arguments.NewName} would break the build:");
-                list.ForEach(Console.WriteLine);
+                problemList.ForEach(Console.WriteLine);
                 Console.WriteLine("Pick another name, or fix the conflict first; --allow-errors writes it anyway.");
                 return 1;
             }
@@ -254,8 +264,8 @@ internal static class RenameCommand
         Console.WriteLine($"{(arguments.DryRun ? "Would rename" : "Renamed")} {symbol.ToDisplayString()} -> {arguments.NewName}: {newTexts.Count} files, {fileMoves.Count} file renames, {stopwatch.Elapsed.TotalSeconds:F0}s.");
         if (problems.Count > 0)
         {
-            Console.WriteLine("Written with --allow-errors; the rename adds these errors:");
-            problems.Take(20).ToList().ForEach(problem => Console.WriteLine($"  {problem}"));
+            Console.WriteLine($"{(arguments.DryRun ? "With" : "Written with")} --allow-errors; the rename adds these errors:");
+            problemList.ForEach(Console.WriteLine);
         }
         foreach (var warning in moveWarnings)
         {
@@ -279,12 +289,14 @@ internal static class RenameCommand
     private static string Relative(string path) => Path.GetRelativePath(Directory.GetCurrentDirectory(), path);
 
     // The documents to compile: every copy (one per target framework) of each changed file, and every other document
-    // that still names the old name after the rename (a reference the rename missed), for a member only where the
-    // containing type is named too. Documents with errors after the rename are compiled again without it, and only
-    // the errors it adds (per error id) count.
-    private static async Task<List<string>> FindNewErrors(Solution solution, Dictionary<string, SourceText> newTexts, ISymbol symbol)
+    // that names the new name (a declaration it now clashes with, reported only at the later one) or still names the
+    // old name (a reference the rename missed); for a member, only where the containing type is named too. Documents
+    // with errors after the rename are compiled again without it, and only the errors it adds count, matched by id,
+    // message and the text of their line.
+    private static async Task<List<string>> FindNewErrors(Solution solution, Dictionary<string, SourceText> newTexts, ISymbol symbol, string newName)
     {
         var oldWord = new Regex($@"(?<![\w@]){Regex.Escape(symbol.Name)}(?!\w)");
+        var newWord = new Regex($@"(?<![\w@]){Regex.Escape(newName)}(?!\w)");
         var isMember = symbol.ContainingType is not null && symbol is not INamedTypeSymbol;
         var renamed = solution;
         var toCheck = new List<DocumentId>();
@@ -298,7 +310,7 @@ internal static class RenameCommand
             }
 
             var text = (await document.GetTextAsync()).ToString();
-            if (oldWord.IsMatch(text) && (!isMember || text.Contains(symbol.ContainingType!.Name, StringComparison.Ordinal)))
+            if ((oldWord.IsMatch(text) || newWord.IsMatch(text)) && (!isMember || text.Contains(symbol.ContainingType!.Name, StringComparison.Ordinal)))
             {
                 toCheck.Add(document.Id);
             }
@@ -313,12 +325,16 @@ internal static class RenameCommand
                 continue;
             }
 
-            var before = (await ErrorsOf(solution.GetDocument(documentId)!)).CountBy(diagnostic => diagnostic.Id).ToDictionary();
-            var seen = new Dictionary<string, int>();
+            var before = (await ErrorsOf(solution.GetDocument(documentId)!)).CountBy(diagnostic => ErrorKey(diagnostic)).ToDictionary();
             foreach (var diagnostic in after)
             {
-                seen[diagnostic.Id] = seen.GetValueOrDefault(diagnostic.Id) + 1;
-                if (seen[diagnostic.Id] > before.GetValueOrDefault(diagnostic.Id))
+                // The new name read as the old one, so an error on a renamed line still matches its earlier self.
+                var key = newWord.Replace(ErrorKey(diagnostic), symbol.Name);
+                if (before.GetValueOrDefault(key) > 0)
+                {
+                    before[key]--;
+                }
+                else
                 {
                     var span = diagnostic.Location.GetLineSpan();
                     problems.Add($"{Relative(span.Path)}:{span.StartLinePosition.Line + 1}: {diagnostic.Id} {diagnostic.GetMessage()}");
@@ -328,6 +344,13 @@ internal static class RenameCommand
 
         // Each copy of a multi-targeted file reports the same error.
         return problems.Distinct().ToList();
+    }
+
+    private static string ErrorKey(Diagnostic diagnostic)
+    {
+        var tree = diagnostic.Location.SourceTree;
+        var line = tree is null ? string.Empty : tree.GetText().Lines.GetLineFromPosition(diagnostic.Location.SourceSpan.Start).ToString().Trim();
+        return $"{diagnostic.Id}|{diagnostic.GetMessage()}|{line}";
     }
 
     private static async Task<List<Diagnostic>> ErrorsOf(Document document)

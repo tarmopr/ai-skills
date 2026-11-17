@@ -16,7 +16,7 @@ if [[ ! -f "$dll" ]]; then
   lock="$cache_root/$version.lock"
   waited=0
   until mkdir "$lock" 2>/dev/null; do
-    # A stale lock is removed once; one that can't be removed (not an empty folder) waits out the limit below.
+    # A stale lock is removed when found; one that can't be removed (not an empty folder) waits out the limit below.
     if [[ -n "$(find "$lock" -maxdepth 0 -mmin +10 2>/dev/null)" ]] && rmdir "$lock" 2>/dev/null; then
       continue
     fi

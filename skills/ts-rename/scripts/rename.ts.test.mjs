@@ -358,7 +358,7 @@ if (TS) {
     const r = repo(t, { 'src/a.ts': 'const bar = 1;\nexport function f() {\n  const foo = 2;\n  return foo + bar;\n}\n' });
     const out = r.run('--at', 'src/a.ts:3:9', '--new-name', 'bar');
     assert.equal(out.status, 1);
-    assert.match(out.stdout, /^Nothing changed: renaming foo -> bar would break the code:\n {2}src\/a\.ts:\d+: bar is already declared at src\/a\.ts:1/);
+    assert.match(out.stdout, /^Nothing changed: renaming foo -> bar would break the code:\n {2}src\/a\.ts:4: bar here would refer to src\/a\.ts:3 instead of src\/a\.ts:1\n/);
     unchanged(r);
   });
 
@@ -468,5 +468,110 @@ if (TS) {
     assert.equal(run2.status, 0, run2.stdout + run2.stderr);
     assert.equal(r.read('src/note.ts'), '// Gadget is used here\nexport {};\n');
     assert.equal(other.read('src/note.ts'), '// Widget elsewhere\n');
+  });
+
+  // Round 4: the files where a break shows, and renames that are fine.
+  const refused = (r, out, re) => { assert.equal(out.status, 1, out.stdout + out.stderr); assert.match(out.stdout, re); unchanged(r); };
+
+  test('an untyped object in an unchanged file, passed to the renamed type elsewhere, fails the check', (t) => {
+    const r = repo(t, {
+      'src/o.ts': 'export interface Opts { timeoutMs: number }\nexport function run(o: Opts) { return o.timeoutMs; }\n',
+      'src/cfg.ts': 'export const cfg = { timeoutMs: 5 };\n',
+      'src/main.ts': "import { run } from './o';\nimport { cfg } from './cfg';\nrun(cfg);\n",
+    });
+    refused(r, r.run('--symbol', 'Opts.timeoutMs', '--new-name', 'waitMs'), /src\/main\.ts:3: TS2345 /);
+  });
+
+  test('an interface merged in an unchanged file that already has the new name fails the check', (t) => {
+    const r = repo(t, { 'src/a.ts': 'interface Win { alpha: number }\n', 'src/b.ts': 'interface Win { beta: string }\n' });
+    refused(r, r.run('--symbol', 'Win.alpha', '--new-name', 'beta'), /TS2717 /);
+  });
+
+  test('an error the file already had with the same code is not reported in place of the new one', (t) => {
+    const r = repo(t, { 'src/c.ts': 'export class C {\n  alpha() { return 1; }\n  beta() { return 2; }\n}\nclass D { x() {} x() {} }\n' });
+    const out = r.run('--symbol', 'C.alpha', '--new-name', 'beta');
+    refused(r, out, /src\/c\.ts:2: TS2393 /);
+    assert.doesNotMatch(out.stdout, /src\/c\.ts:5:/);
+  });
+
+  test('an error already on a line the rename changes is not counted as new', (t) => {
+    const r = repo(t, { 'src/a.ts': 'export function foo() { return 1; }\nexport const x: string = foo();\n' });
+    const out = r.run('--symbol', 'foo', '--new-name', 'bar');
+    assert.equal(out.status, 0, out.stdout + out.stderr);
+    assert.match(r.read('src/a.ts'), /const x: string = bar\(\);/);
+  });
+
+  test('a barrel that already exports the new name fails the check', (t) => {
+    const r = repo(t, {
+      'src/a.ts': 'export const foo = 1;\n', 'src/b.ts': 'export const bar = 2;\n',
+      'src/index.ts': "export { foo } from './a';\nexport { bar } from './b';\n",
+    });
+    refused(r, r.run('--symbol', 'a.foo', '--new-name', 'bar'), /src\/index\.ts:\d: TS2300 /);
+  });
+
+  test('an export * that would export the new name twice fails the check in the files that see it', (t) => {
+    const r = repo(t, {
+      'src/a.ts': 'export const foo = 1;\n', 'src/b.ts': "export const bar = 'x';\n",
+      'src/index.ts': "export * from './a';\nexport * from './b';\n",
+      'src/use.ts': "import { bar } from './index';\nexport const n: string = bar;\n",
+    });
+    refused(r, r.run('--symbol', 'a.foo', '--new-name', 'bar'), /src\/(index|use)\.ts:\d: TS2308 /);
+  });
+
+  test('a member renamed onto one a subclass already has fails the check, even when the types fit', (t) => {
+    const r = repo(t, {
+      'src/base.ts': 'export class Base {\n  run() { return 1; }\n  kick() { return this.run(); }\n}\n',
+      'src/sub.ts': "import { Base } from './base';\nexport class Sub extends Base {\n  go() { return 2; }\n}\n",
+    });
+    refused(r, r.run('--symbol', 'Base.run', '--new-name', 'go'), /src\/sub\.ts:3: Sub already has go/);
+  });
+
+  test('a member renamed onto one a base class already has fails the check', (t) => {
+    const r = repo(t, {
+      'src/base.ts': 'export class Base {\n  bar = "s";\n}\n',
+      'src/c.ts': "import { Base } from './base';\nexport interface I { foo: number }\nexport class C extends Base implements I {\n  foo = 1;\n}\n",
+    });
+    refused(r, r.run('--symbol', 'I.foo', '--new-name', 'bar'), /TS2416 /);
+  });
+
+  test('--dry-run reports the problems and exits 1', (t) => {
+    const r = repo(t, { 'src/c.ts': 'export class C {\n  alpha() { return 1; }\n  beta() { return 2; }\n}\n' });
+    refused(r, r.run('--symbol', 'C.alpha', '--new-name', 'beta', '--dry-run'), /^Nothing changed: renaming alpha -> beta would break the code:/);
+  });
+
+  test('a new name that exists elsewhere but changes no reference is not a problem', (t) => {
+    const r = repo(t, {
+      'src/api.ts': 'export function foo() { return 1; }\n',
+      'src/q.ts': "import * as api from './api';\nimport { foo as f } from './api';\nconst bar = 2;\nexport function g(items: number[]) { return items.length + bar; }\nexport const v = api.foo() + f() + bar;\n",
+      'src/t.ts': 'export interface Foo { a: number }\nexport const Bar = 1;\n',
+      'src/fn.ts': 'export function bar() { return 1; }\nexport function h(items: number[]) { return items.length; }\n',
+    });
+    for (const [args, file, re] of [
+      [['--symbol', 'api.foo', '--new-name', 'bar'], 'src/q.ts', /api\.bar\(\) \+ f\(\) \+ bar/],
+      [['--symbol', 'Foo', '--new-name', 'Bar'], 'src/t.ts', /interface Bar \{/],
+      [['--at', 'src/fn.ts:2:19', '--new-name', 'bar'], 'src/fn.ts', /function h\(bar: number\[\]\) \{ return bar\.length; \}/],
+    ]) {
+      const out = r.run(...args);
+      assert.equal(out.status, 0, args.join(' ') + '\n' + out.stdout + out.stderr);
+      assert.match(r.read(file), re, args.join(' '));
+      r.git('checkout', '-q', '-f', '.');
+    }
+  });
+
+  test('--at on an aliased import renames the alias only, and on a default import does not rename the file', (t) => {
+    const r = repo(t, {
+      'src/a.ts': 'export function foo() { return 1; }\n',
+      'src/Widget.ts': 'export default function Widget() { return 1; }\n',
+      'src/use.ts': "import { foo as f } from './a';\nimport Widget from './Widget';\nexport const v = f() + Widget();\n",
+    });
+    let out = r.run('--at', 'src/use.ts:3:18', '--new-name', 'g');
+    assert.equal(out.status, 0, out.stdout + out.stderr);
+    assert.equal(r.read('src/a.ts'), 'export function foo() { return 1; }\n');
+    assert.match(r.read('src/use.ts'), /import \{ foo as g \} from '\.\/a';/);
+    r.git('checkout', '-q', '-f', '.');
+    out = r.run('--at', 'src/use.ts:3:24', '--new-name', 'Gadget');
+    assert.equal(out.status, 0, out.stdout + out.stderr);
+    assert.match(out.stdout, /0 file renames/);
+    assert.ok(fs.existsSync(path.join(r.dir, 'src/Widget.ts')));
   });
 }
