@@ -1,6 +1,6 @@
 # ts-rename SKILL.md: rationale
 
-Reasons behind skills/ts-rename. Read when changing a rule or the script's output, not when running the skill.
+Reasons behind plugins/symbol-rename/skills/ts-rename. Read when changing a rule or the script's output, not when running the skill.
 
 ## Why a script, and why this output
 

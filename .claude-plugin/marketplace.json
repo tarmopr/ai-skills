@@ -8,7 +8,12 @@
     {
       "name": "ai-skills",
       "source": ".",
-      "description": "Ship a plan, an issue or a queue of a parent issue's sub-issues to merged PRs on GitHub or Azure DevOps with Jira, Linear, GitHub Issues or no tracker, verify a branch to merge-ready, hand off work between sessions, and rename TypeScript and C# symbols across a repo in one call."
+      "description": "Ship a plan, an issue or a queue of a parent issue's sub-issues to merged PRs on GitHub or Azure DevOps with Jira, Linear, GitHub Issues or no tracker, verify a branch to merge-ready, and hand off work between sessions."
+    },
+    {
+      "name": "symbol-rename",
+      "source": "./plugins/symbol-rename",
+      "description": "Rename TypeScript and C# symbols, and every reference to them, across a repo in one call: the TypeScript language service across all tsconfig projects, Roslyn across a .NET solution."
     }
   ]
 }

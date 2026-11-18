@@ -1,0 +1,10 @@
+{
+  "name": "symbol-rename",
+  "description": "Rename TypeScript and C# symbols, and every reference to them, across a repo in one call: the TypeScript language service across all tsconfig projects, Roslyn across a .NET solution.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Tarmo Protsin"
+  },
+  "repository": "https://github.com/tarmopr/ai-skills",
+  "license": "MIT"
+}

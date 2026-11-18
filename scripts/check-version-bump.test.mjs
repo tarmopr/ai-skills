@@ -177,3 +177,67 @@ test('plugin.json that is JSON but not an object: could not check (exit 2), name
   assert.equal(r.status, 2);
   assert.match(r.stderr, /plugin\.json at HEAD: not a version: undefined/);
 });
+
+// Two plugins: the repo root and plugins/q, listed in the marketplace.
+const market = (...sources) => `${JSON.stringify({ name: 'm', plugins: sources.map((s, i) => ({ name: `p${i}`, source: s })) }, null, 2)}\n`;
+function twoPlugins() {
+  const dir = repo();
+  git(dir, 'switch', '-q', 'main');
+  commit(dir, {
+    '.claude-plugin/marketplace.json': market('.', './plugins/q'),
+    'plugins/q/.claude-plugin/plugin.json': manifest('0.1.0'),
+    'plugins/q/skills/r/SKILL.md': 'r\n',
+  });
+  git(dir, 'switch', '-q', '-C', 'b');
+  return dir;
+}
+
+test('a nested plugin changed: its own manifest must be bumped, not the root one', () => {
+  let dir = twoPlugins();
+  commit(dir, { 'plugins/q/skills/r/SKILL.md': 's\n', '.claude-plugin/plugin.json': manifest('1.2.4') });
+  let r = run(dir);
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stderr, /^plugins\/q\/skills\/ or plugins\/q\/hooks\/ changed: bump version in plugins\/q\/\.claude-plugin\/plugin\.json \(must be higher than main's 0\.1\.0\)$/m);
+  dir = twoPlugins();
+  commit(dir, { 'plugins/q/skills/r/SKILL.md': 's\n', 'plugins/q/.claude-plugin/plugin.json': manifest('0.1.1') });
+  r = run(dir);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /plugins\/q\/\.claude-plugin\/plugin\.json: version bumped: 0\.1\.0 -> 0\.1\.1/);
+  assert.match(r.stdout, /no change under skills\/ or hooks\/: no bump needed/);
+});
+
+test('both plugins changed and only one bumped: fails naming the other', () => {
+  const dir = twoPlugins();
+  commit(dir, { 'skills/a/SKILL.md': 'b\n', 'plugins/q/skills/r/SKILL.md': 's\n', 'plugins/q/.claude-plugin/plugin.json': manifest('0.2.0') });
+  const r = run(dir);
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stderr, /^skills\/ or hooks\/ changed: bump version in \.claude-plugin\/plugin\.json/m);
+  assert.doesNotMatch(r.stderr, /plugins\/q/);
+});
+
+test('a plugin the base does not have yet: passes with a valid version, fails without one', () => {
+  let dir = repo();
+  commit(dir, {
+    '.claude-plugin/marketplace.json': market('.', './plugins/q'),
+    'plugins/q/.claude-plugin/plugin.json': manifest('0.1.0'),
+    'plugins/q/skills/r/SKILL.md': 'r\n',
+  });
+  let r = run(dir);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /plugins\/q\/\.claude-plugin\/plugin\.json: new plugin at version 0\.1\.0/);
+  dir = repo();
+  commit(dir, { '.claude-plugin/marketplace.json': market('.', './plugins/q'), 'plugins/q/skills/r/SKILL.md': 'r\n' });
+  r = run(dir);
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /cannot read plugins\/q\/\.claude-plugin\/plugin\.json at HEAD/);
+});
+
+test('a marketplace source outside the repo, or not a local path: could not check (exit 2)', () => {
+  for (const [source, re] of [['../x', /outside the repo/], [{ source: 'github', repo: 'a/b' }, /has no local source/]]) {
+    const dir = repo();
+    commit(dir, { '.claude-plugin/marketplace.json': market('.', source), 'skills/a/SKILL.md': 'b\n' });
+    const r = run(dir);
+    assert.equal(r.status, 2, JSON.stringify(source));
+    assert.match(r.stderr, re);
+  }
+});

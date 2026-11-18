@@ -63,6 +63,16 @@ test('a private name in docs/rationale/ and in the scenarios is caught', () => {
   assert.match(r.stdout, /^scenarios\/s\.md: C13 private: line 1 /m);
 });
 
+test('a private name or a home path in another plugin\'s skills (plugins/*/skills/) is caught', () => {
+  const dir = tree({ patterns: `${WORD}\n` });
+  mkdirSync(join(dir, 'plugins', 'q', 'skills', 'r'), { recursive: true });
+  writeFileSync(join(dir, 'plugins', 'q', 'skills', 'r', 'SKILL.md'), `x\n${WORD}\n/Users/someone/x\n`);
+  const r = run(dir);
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /^plugins\/q\/skills\/r\/SKILL\.md: C13 private: line 2 /m);
+  assert.match(r.stdout, /^plugins\/q\/skills\/r\/SKILL\.md: C13 private: line 3 /m);
+});
+
 test('a private name in the root .md files or .claude/ship-plan.md is caught', () => {
   const dir = tree({ patterns: `${WORD}\n` });
   writeFileSync(join(dir, 'CLAUDE.md'), `x\n${WORD}\n`);
