@@ -446,7 +446,7 @@ for (const f of files) {
 // before doesn't block a valid rename, even when the rename rewrites its line, its message or its code. Not caught: a
 // rename that fixes an error and adds another on the same line, or whose break TypeScript folds into an error already
 // reported (a second missing property of the same argument). Refused by mistake: an error TypeScript hid behind an
-// earlier one (it reports one excess property per object) and shows once the rename fixes that one.
+// earlier one on another line (it reports one excess property per object) and shows once the rename fixes that one.
 // Not covered: a break in a file the rename didn't change (an untyped object passed to the renamed type elsewhere, a
 // subclass in another file, a clashing `export *`), and a rename that compiles but means something else (a capture,
 // an override). The repo's own typecheck and tests find those.
@@ -463,9 +463,9 @@ try {
     if (s && inRepo(f)) toCheck.set(f, s);
   }
   const errorsOf = (s, f) => [...s.ls.getSyntacticDiagnostics(f), ...s.ls.getSemanticDiagnostics(f)].filter((d) => d.category === ts.DiagnosticCategory.Error);
-  // An error is matched to one from before by its line only. A rename never adds or removes a line, and it can change
-  // the code of an error already there: TypeScript gives an error a "did you mean" code (2551, 2552, 2724, …) when a
-  // similar name exists, and the rename can make or drop that name.
+  // Errors are counted per line: a line with more than before is a problem. A rename never adds or removes a line,
+  // and it can change the code of an error already there: TypeScript gives an error a "did you mean" code (2551, 2552,
+  // 2724, …) when a similar name exists, and the rename can make or drop that name.
   const errorKey = (d) => (d.file ? d.file.getLineAndCharacterOfPosition(d.start).line : -1);
   const bump = (list) => { for (const f of list) versions.set(f, (versions.get(f) ?? 0) + 1); };
   overlay = new Map();
@@ -481,7 +481,8 @@ try {
   if (after.size) {
     const saved = overlay;
     overlay = null; bump(changedPaths);
-    const msg = (d) => ts.flattenDiagnosticMessageText(d.messageText, ' ').replace(wordRe(opts.newName), oldName);
+    const msgs = new Map(); // diagnostic -> its message with the new name read as the old
+    const msg = (d) => { if (!msgs.has(d)) msgs.set(d, ts.flattenDiagnosticMessageText(d.messageText, ' ').replace(wordRe(opts.newName), () => oldName)); return msgs.get(d); };
     const before = new Map(); // file -> line -> the errors on it
     for (const f of after.keys()) {
       const byLine = new Map();
