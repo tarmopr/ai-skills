@@ -25,8 +25,8 @@ jobs:
       # `ls` fails when a glob matches nothing; `node --test` alone would pass with 0 tests.
       - name: Unit tests
         run: |
-          ls hooks/*.test.mjs skills/*/scripts/*.test.mjs scripts/*.test.mjs > /dev/null
-          node --test 'hooks/*.test.mjs' 'skills/*/scripts/*.test.mjs' 'scripts/*.test.mjs'
+          ls hooks/*.test.mjs skills/*/scripts/*.test.mjs plugins/*/skills/*/scripts/*.test.mjs scripts/*.test.mjs > /dev/null
+          node --test 'hooks/*.test.mjs' 'skills/*/scripts/*.test.mjs' 'plugins/*/skills/*/scripts/*.test.mjs' 'scripts/*.test.mjs'
 
       # C4's private patterns are not in this public repo, so CI checks staging host names only.
       - name: Skill shape check

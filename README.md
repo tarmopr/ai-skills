@@ -1,6 +1,9 @@
 # ai-skills
 
-Claude Code skills by Tarmo Protsin.
+Claude Code skills by Tarmo Protsin, in two plugins you install separately: `ai-skills` (shipping and handoffs)
+and `symbol-rename` (TypeScript and C# renames).
+
+## ai-skills
 
 | Skill | What it does |
 | :- | :- |
@@ -11,19 +14,29 @@ Claude Code skills by Tarmo Protsin.
 | `handoff` | Writes session state to a handoff file so work can continue in a fresh context |
 | `continue-handoff` | Picks up the newest pending handoff in a new session |
 | `retro` | Turns the current session's learnings into proposed changes to skills, CLAUDE.md/AGENTS.md, hooks, run logs and memory, and applies the ones you pick |
+
+## symbol-rename
+
+| Skill | What it does |
+| :- | :- |
 | `ts-rename` | Renames a TypeScript symbol and every reference across all tsconfig projects with the TypeScript language service in one call, renames its file and import paths, and lists the mentions the compiler can't resolve with one command that fixes them. Uses the repo's own `typescript` |
 | `csharp-rename` | Renames a C# symbol and every reference across a .NET solution with Roslyn in one call. Needs the .NET 10 SDK |
+
+Until `ai-skills` 0.19.0 these two skills came with `ai-skills`. Updating `ai-skills` removes them; install
+`symbol-rename` to keep them.
 
 ## Install
 
 ```bash
 claude plugin marketplace add tarmopr/ai-skills
-claude plugin install ai-skills@tarmopr
+claude plugin install ai-skills@tarmopr       # shipping and handoffs
+claude plugin install symbol-rename@tarmopr   # TypeScript and C# renames
 ```
 
-From a clone of this repo, `./scripts/install-plugin.sh` does both, skipping whichever is already done.
+From a clone of this repo, `./scripts/install-plugin.sh ai-skills symbol-rename` does the same, skipping whatever is
+already done; with no arguments it installs `ai-skills` only.
 
-Skills are then available as `/ai-skills:ship-plan`, `/ai-skills:verify-and-fix` and so on. Get updates with
+Skills are then available as `/ai-skills:ship-plan`, `/ai-skills:verify-and-fix`, `/symbol-rename:ts-rename` and so on. Get updates with
 `claude plugin marketplace update tarmopr`.
 
 ## Switching a repo to GitHub Issues
@@ -76,12 +89,13 @@ This repo is the source of truth. Every machine, the author's included, uses the
 marketplace plugin (see Install), not through symlinks in `~/.claude/skills/`. Edit the skills here only:
 the installed copy under `~/.claude/plugins/cache/` is replaced on every update.
 
-- **New machine:** run the two Install commands, or `./scripts/install-plugin.sh` from a clone.
+- **New machine:** run the Install commands for the plugins you want, or `./scripts/install-plugin.sh <plugin …>` from a clone.
   Cloning the repo is only needed to edit it.
-- **New skill:** create `skills/<name>/SKILL.md` in this repo. Never add a copy or a symlink to
+- **New skill:** create `skills/<name>/SKILL.md` in this repo, or `plugins/symbol-rename/skills/<name>/SKILL.md`
+  for a rename skill. Never add a copy or a symlink to
   `~/.claude/skills/`: with the plugin installed, every skill would load twice.
-- **Publish a change:** commit on a branch, open a PR, and bump `version` in
-  `.claude-plugin/plugin.json` so installed copies get the update. Once it is merged, run
+- **Publish a change:** commit on a branch, open a PR, and bump `version` in the changed plugin's manifest
+  (`.claude-plugin/plugin.json`, or `plugins/symbol-rename/.claude-plugin/plugin.json`) so installed copies get the update. Once it is merged, run
   `./scripts/update-plugin.sh` (marketplace update, then plugin update), then `/reload-plugins` in each running
   Claude Code session (new sessions load it on their own).
-- **Check before pushing:** `claude plugin validate .`
+- **Check before pushing:** `claude plugin validate .` and `claude plugin validate plugins/symbol-rename`

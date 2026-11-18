@@ -4,23 +4,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-A Claude Code plugin (`ai-skills@tarmopr`, manifest `.claude-plugin/plugin.json`, marketplace `.claude-plugin/marketplace.json`) holding Markdown skills plus a few dependency-free Node scripts. The repo is public: plans and specs that name real repos stay local (`docs/superpowers/plans/`, `docs/superpowers/specs/`, `.superpowers/` are gitignored).
+A Claude Code marketplace (`tarmopr`, `.claude-plugin/marketplace.json`) with two plugins of Markdown skills plus a few dependency-free Node scripts:
+- `ai-skills@tarmopr`, the repo root (manifest `.claude-plugin/plugin.json`, skills in `skills/`, hooks in `hooks/`): the ship, handoff and retro skills.
+- `symbol-rename@tarmopr`, in `plugins/symbol-rename/` (its own `.claude-plugin/plugin.json`): `ts-rename` and `csharp-rename`. Kept separate so users can install them without the ship skills, or skip them when another plugin already has a rename skill.
+
+The repo is public: plans and specs that name real repos stay local (`docs/superpowers/plans/`, `docs/superpowers/specs/`, `.superpowers/` are gitignored).
 
 The repo is the source of truth. Installed copies come only through the marketplace plugin. Never add copies or symlinks to `~/.claude/skills/`, or every skill loads twice. Never edit `~/.claude/plugins/cache/`, because each update replaces it.
 
 ## Commands
 
-- Unit tests: `node --test 'hooks/*.test.mjs' 'skills/*/scripts/*.test.mjs' 'scripts/*.test.mjs'`. With globs that match nothing, `node --test` passes with 0 tests, so the gate and CI run `ls` on the globs first.
+- Unit tests: `node --test 'hooks/*.test.mjs' 'skills/*/scripts/*.test.mjs' 'plugins/*/skills/*/scripts/*.test.mjs' 'scripts/*.test.mjs'`. With globs that match nothing, `node --test` passes with 0 tests, so the gate and CI run `ls` on the globs first.
 - Single test file: `node --test skills/ship-plan/scripts/runner-queue.test.mjs`. Filter by name with `--test-name-pattern='<regex>'`.
 - Skill shape check: `SKILLS_REQUIRE_PRIVATE=1 node scripts/check-skills.mjs [skill file …]`. For the files in its `FILES` table (the four ship skills, ship-queue to verify-and-fix), it pins:
   - required headings, including the `##` operation headings in `hosts/`, `trackers/` and `notifiers/`;
   - the phrases and read-line forms the skills must keep;
   - each of those skills' exact `allowed-tools`.
 
-  A full run (no arguments) skips any file missing from `FILES`; naming one as an argument fails with "not a known skill file". So add new ship-skill files there. A full run also scans the published `.md` files for private data: `skills/`, `docs/superpowers/scenarios/`, `docs/rationale/`, the root `.md` files and `.claude/ship-plan.md`. Its YAML check needs `ruby`.
+  A full run (no arguments) skips any file missing from `FILES`; naming one as an argument fails with "not a known skill file". So add new ship-skill files there. A full run also scans the published `.md` files for private data: `skills/`, `plugins/*/skills/`, `docs/superpowers/scenarios/`, `docs/rationale/`, the root `.md` files and `.claude/ship-plan.md`. Its YAML check needs `ruby`.
 - Private patterns: names from other repos live in the gitignored `.claude/check-skills-private.txt` of the main checkout (worktrees find it there) or in a non-empty `SKILLS_PRIVATE_PATTERNS`. Format: one regex per line, matched case-insensitively and across a line break. A comment goes on its own line, starting with `#`; a `#` after a space inside a pattern line is refused. A full run applies them to the names and contents of the published `.md` files and of every other file git does not ignore. No failure message shows the matched text, and the ok line says how many patterns loaded and from where. Never commit them: this repo is public. `SKILLS_REQUIRE_PRIVATE=1` (the local gate) fails when none load. CI runs without them, so there it checks staging host names only.
 - Version bump check: `node scripts/check-version-bump.mjs origin/main`.
-- Plugin manifest check: `claude plugin validate .`. Its expected warnings: `CLAUDE.md` at the plugin root isn't loaded as context (intended, the file is for working on this repo), no icon, and local `.DS_Store` files (gitignored). Only errors block.
+- Plugin manifest check: `claude plugin validate .` and `claude plugin validate plugins/symbol-rename`. Its expected warnings: `CLAUDE.md` at the plugin root isn't loaded as context (intended, the file is for working on this repo), no icon, and local `.DS_Store` files (gitignored). Only errors block.
 - There are no dependencies and no `package.json`: the scripts use only Node built-in modules. Glob arguments to `node --test` need Node 21 or newer.
 - After a merge: run `./scripts/update-plugin.sh`, then `/reload-plugins` in running sessions.
 
@@ -28,7 +32,7 @@ CI (`.github/workflows/ci.yml`, job `test`) runs the unit tests and the shape ch
 
 ## Publishing rule
 
-Any change under `skills/**` or `hooks/**` must raise `version` in `.claude-plugin/plugin.json` above the version on `main`. Without the bump, installed copies never get the change, and the `Version bump` gate fails.
+Any change under a plugin's `skills/**` or `hooks/**` must raise `version` in that plugin's manifest above the version on `main`: `.claude-plugin/plugin.json` for `skills/` and `hooks/`, `plugins/symbol-rename/.claude-plugin/plugin.json` for `plugins/symbol-rename/`. The check reads the plugin list from the marketplace. Without the bump, installed copies never get the change, and the `Version bump` gate fails.
 
 ## Architecture
 

@@ -449,9 +449,14 @@ if (!C4_PRIVATE && process.env.SKILLS_REQUIRE_PRIVATE === '1') {
   process.exit(2);
 }
 const MAIN = /(origin\/main\b|\bmain CI\b|green main\b)/;
-// C13: no private information in the published .md files: skills/, docs/superpowers/scenarios/,
-// docs/rationale/, the repo root's .md files and .claude/ship-plan.md. All sit beside skills/.
+// C13: no private information in the published .md files: skills/, the other plugins' plugins/*/skills/,
+// docs/superpowers/scenarios/, docs/rationale/, the repo root's .md files and .claude/ship-plan.md.
+// All sit beside skills/.
 const REPO_ROOT = resolve(ROOT, '..');
+const PLUGINS = resolve(REPO_ROOT, 'plugins');
+const pluginSkills = () => (existsSync(PLUGINS)
+  ? readdirSync(PLUGINS).sort().flatMap((p) => mdUnder(join(PLUGINS, p, 'skills')))
+  : []);
 const SCENARIOS = resolve(REPO_ROOT, 'docs/superpowers/scenarios');
 const RATIONALE = resolve(REPO_ROOT, 'docs/rationale');
 const ISSUE_KEY = /\b[A-Z][A-Z0-9]+-\d+\b/g;
@@ -599,14 +604,15 @@ const mdUnder = (dir) => (existsSync(dir)
   : []);
 const privateTargets = process.argv.length > 2
   ? targets.map((f) => join(ROOT, f)).filter(existsSync)
-  : [...mdUnder(ROOT), ...mdUnder(SCENARIOS), ...mdUnder(RATIONALE),
+  : [...mdUnder(ROOT), ...pluginSkills(), ...mdUnder(SCENARIOS), ...mdUnder(RATIONALE),
     ...readdirSync(REPO_ROOT).filter((f) => f.endsWith('.md')).sort().map((f) => join(REPO_ROOT, f)),
     ...[join(REPO_ROOT, '.claude', 'ship-plan.md')].filter(existsSync)];
 for (const path of privateTargets) {
-  const inSkills = !relative(ROOT, path).startsWith('..');
+  const inPlugins = !relative(PLUGINS, path).startsWith('..');
+  const inSkills = inPlugins || !relative(ROOT, path).startsWith('..');
   const inScenarios = !relative(SCENARIOS, path).startsWith('..');
   const inRationale = !relative(RATIONALE, path).startsWith('..');
-  const file = inSkills ? relative(ROOT, path)
+  const file = inPlugins ? `plugins/${relative(PLUGINS, path)}` : inSkills ? relative(ROOT, path)
     : inScenarios ? `scenarios/${relative(SCENARIOS, path)}`
     : inRationale ? `rationale/${relative(RATIONALE, path)}` : relative(REPO_ROOT, path);
   const text = readFileSync(path, 'utf8');

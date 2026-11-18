@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Install the ai-skills plugin on this machine: add the tarmopr marketplace if it is missing,
-# then install ai-skills@tarmopr if it is not installed yet. Safe to run again.
+# Install plugins from this repo on this machine: add the tarmopr marketplace if it is missing,
+# then install each named plugin that is not installed yet. Safe to run again.
+# Usage: scripts/install-plugin.sh [plugin …]   (default: ai-skills; the other is symbol-rename)
 # Later updates: scripts/update-plugin.sh
 set -euo pipefail
 
@@ -10,9 +11,15 @@ else
   claude plugin marketplace add tarmopr/ai-skills
 fi
 
-if claude plugin list --json | grep -q '"id": "ai-skills@tarmopr"'; then
-  echo "ok         ai-skills@tarmopr (already installed; scripts/update-plugin.sh updates it)"
-else
-  claude plugin install ai-skills@tarmopr
+installed=0
+for plugin in "${@:-ai-skills}"; do
+  if claude plugin list --json | grep -q "\"id\": \"$plugin@tarmopr\""; then
+    echo "ok         $plugin@tarmopr (already installed; scripts/update-plugin.sh updates it)"
+  else
+    claude plugin install "$plugin@tarmopr"
+    installed=1
+  fi
+done
+if (( installed )); then
   echo "Run /reload-plugins in a running Claude Code session, or start a new one, to load the skills."
 fi
