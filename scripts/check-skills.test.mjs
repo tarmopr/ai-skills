@@ -67,8 +67,10 @@ test('a private name or a home path in another plugin\'s skills (plugins/*/skill
   const dir = tree({ patterns: `${WORD}\n` });
   mkdirSync(join(dir, 'plugins', 'q', 'skills', 'r'), { recursive: true });
   writeFileSync(join(dir, 'plugins', 'q', 'skills', 'r', 'SKILL.md'), `x\n${WORD}\n/Users/someone/x\n`);
+  writeFileSync(join(dir, 'plugins', 'q', 'README.md'), 'See abc-123 and PR #42.\n');
   const r = run(dir);
   assert.equal(r.status, 1);
+  assert.doesNotMatch(r.stdout, /plugins\/q\/README\.md/, 'only plugins/*/skills/ gets the skill-prose checks');
   assert.match(r.stdout, /^plugins\/q\/skills\/r\/SKILL\.md: C13 private: line 2 /m);
   assert.match(r.stdout, /^plugins\/q\/skills\/r\/SKILL\.md: C13 private: line 3 /m);
 });

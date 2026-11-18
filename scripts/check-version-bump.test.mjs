@@ -241,3 +241,29 @@ test('a marketplace source outside the repo, or not a local path: could not chec
     assert.match(r.stderr, re);
   }
 });
+
+test('a nested plugin whose version drops while its skills are unchanged: fails', () => {
+  const dir = twoPlugins();
+  commit(dir, { 'plugins/q/.claude-plugin/plugin.json': manifest('0.0.9') });
+  const r = run(dir);
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stderr, /^plugins\/q\/\.claude-plugin\/plugin\.json: version 0\.0\.9 is lower than main's 0\.1\.0$/m);
+});
+
+test('a plugin dropped from the marketplace but changed on the branch still needs its bump', () => {
+  const dir = twoPlugins();
+  commit(dir, { '.claude-plugin/marketplace.json': market('.'), 'plugins/q/skills/r/SKILL.md': 's\n' });
+  const r = run(dir);
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stderr, /bump version in plugins\/q\/\.claude-plugin\/plugin\.json/);
+});
+
+test('a marketplace that is not JSON or has no plugins list: could not check (exit 2)', () => {
+  for (const [text, re] of [['{ nope', /marketplace\.json at HEAD is not valid JSON/], ['{"name":"m"}\n', /marketplace\.json at HEAD: no plugins list/]]) {
+    const dir = repo();
+    commit(dir, { '.claude-plugin/marketplace.json': text, 'skills/a/SKILL.md': 'b\n' });
+    const r = run(dir);
+    assert.equal(r.status, 2, text);
+    assert.match(r.stderr, re);
+  }
+});

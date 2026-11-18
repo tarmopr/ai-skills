@@ -3,7 +3,7 @@
 // or hooks/ must raise `version` in its .claude-plugin/plugin.json above the base branch's, or
 // installed copies never update. Any other change to plugin.json may keep the version but never
 // lower it below where the branch started (the merge base). A plugin the base branch doesn't have
-// yet needs only a valid version. With no .claude-plugin/marketplace.json, the repo root is the one plugin.
+// yet needs only a valid version (a plugin moved to a new folder counts as new). With no .claude-plugin/marketplace.json, the repo root is the one plugin.
 // Usage: node scripts/check-version-bump.mjs [base ref, default origin/main]   (from anywhere in the repo)
 // Exit: 0 pass, 1 bump missing or version lowered, 2 could not check (missing ref, unreadable
 // or invalid plugin.json or marketplace.json, a failed git command).
@@ -38,12 +38,12 @@ const higher = (a, b) => {
   return false;
 };
 
-// Each plugin's folder, from the marketplace at HEAD: `.` for the repo root, else e.g. `plugins/<name>`.
-function pluginDirs() {
-  if (!exists('HEAD', MARKETPLACE)) return ['.'];
+// Each plugin's folder, from the marketplace at a ref: `.` for the repo root, else e.g. `plugins/<name>`.
+function pluginDirs(ref) {
+  if (!exists(ref, MARKETPLACE)) return ['.'];
   let plugins;
-  try { plugins = JSON.parse(git('show', `HEAD:${MARKETPLACE}`))?.plugins; } catch { stop(2, `${MARKETPLACE} at HEAD is not valid JSON`); }
-  if (!Array.isArray(plugins)) stop(2, `${MARKETPLACE} at HEAD: no plugins list`);
+  try { plugins = JSON.parse(git('show', `${ref}:${MARKETPLACE}`))?.plugins; } catch { stop(2, `${MARKETPLACE} at ${ref} is not valid JSON`); }
+  if (!Array.isArray(plugins)) stop(2, `${MARKETPLACE} at ${ref}: no plugins list`);
   return plugins.map((p) => {
     if (typeof p?.source !== 'string') stop(2, `${MARKETPLACE}: plugin ${JSON.stringify(p?.name)} has no local source`);
     const dir = posix.normalize(p.source).replace(/\/$/, '');
@@ -55,7 +55,8 @@ function pluginDirs() {
 if (git('rev-parse', '--verify', '--quiet', `${base}^{commit}`) === null) stop(2, `base ref ${base} not found (fetch it first)`);
 const name = base.replace(/^origin\//, '');
 const errors = [];
-for (const dir of pluginDirs()) {
+// The base's plugins too: a branch that drops a plugin from the marketplace still bumps what it changed in it.
+for (const dir of new Set([...pluginDirs(base), ...pluginDirs('HEAD')])) {
   const at = (p) => (dir === '.' ? p : `${dir}/${p}`);
   const MANIFEST = at('.claude-plugin/plugin.json');
   const watched = `${at('skills/')} or ${at('hooks/')}`;

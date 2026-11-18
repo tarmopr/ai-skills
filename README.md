@@ -33,8 +33,8 @@ claude plugin install ai-skills@tarmopr       # shipping and handoffs
 claude plugin install symbol-rename@tarmopr   # TypeScript and C# renames
 ```
 
-From a clone of this repo, `./scripts/install-plugin.sh [plugin …]` (default `ai-skills`) does the same,
-skipping whatever is already done.
+From a clone of this repo, `./scripts/install-plugin.sh ai-skills symbol-rename` does the same, skipping whatever is
+already done; with no arguments it installs `ai-skills` only.
 
 Skills are then available as `/ai-skills:ship-plan`, `/ai-skills:verify-and-fix`, `/symbol-rename:ts-rename` and so on. Get updates with
 `claude plugin marketplace update tarmopr`.
@@ -89,7 +89,7 @@ This repo is the source of truth. Every machine, the author's included, uses the
 marketplace plugin (see Install), not through symlinks in `~/.claude/skills/`. Edit the skills here only:
 the installed copy under `~/.claude/plugins/cache/` is replaced on every update.
 
-- **New machine:** run the two Install commands, or `./scripts/install-plugin.sh` from a clone.
+- **New machine:** run the Install commands for the plugins you want, or `./scripts/install-plugin.sh <plugin …>` from a clone.
   Cloning the repo is only needed to edit it.
 - **New skill:** create `skills/<name>/SKILL.md` in this repo, or `plugins/symbol-rename/skills/<name>/SKILL.md`
   for a rename skill. Never add a copy or a symlink to
